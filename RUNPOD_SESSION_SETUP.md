@@ -78,7 +78,7 @@ python3 -m vllm.entrypoints.openai.api_server \
 ### A. Qdrant storage: `storage.sqlite`
 
 - Path:
-  - `/workspace/AI-assistant/artifacts/qdrant_local/collection/rent_listings/storage.sqlite`
+  - `/workspace/AI-assistant/artifacts/skills/search/data/qdrant_local/collection/rent_listings/storage.sqlite`
 - What it is:
   - Local Qdrant collection payload/vector storage file.
   - Contains the indexed listing payload used by Stage A retrieval (including location prefilter fields such as `location_postcode_tokens`, `location_station_tokens`, `location_region_tokens`).
@@ -89,7 +89,7 @@ python3 -m vllm.entrypoints.openai.api_server \
 
 ```bash
 cd /workspace/AI-assistant
-export RENT_QDRANT_PATH=/workspace/AI-assistant/artifacts/qdrant_local
+export RENT_QDRANT_PATH=/workspace/AI-assistant/artifacts/skills/search/data/qdrant_local
 export RENT_QDRANT_COLLECTION=rent_listings
 export RENT_QDRANT_SOURCE_PATH=/workspace/AI-assistant/data/web_data/properties_clean.jsonl
 export RENT_QDRANT_RESET=1
@@ -99,7 +99,7 @@ python3 /workspace/AI-assistant/data/qdrant/build_qdrant_from_source.py
 ### B. Stage C sidecar: `pref_vectors.parquet`
 
 - Path (default):
-  - `/workspace/AI-assistant/artifacts/features/pref_vectors.parquet`
+  - `/workspace/AI-assistant/artifacts/skills/search/data/pref_vectors.parquet`
 - What it is:
   - Stage C preference sidecar vectors (features/description segment embeddings).
   - Used for soft preference matching in rerank stage.
@@ -114,7 +114,7 @@ python3 /workspace/AI-assistant/data/qdrant/build_qdrant_from_source.py
 ```bash
 cd /workspace/AI-assistant
 export RENT_PREF_VECTOR_SOURCE_PATH=/workspace/AI-assistant/data/web_data/properties_clean.jsonl
-export RENT_PREF_VECTOR_PATH=/workspace/AI-assistant/artifacts/features/pref_vectors.parquet
+export RENT_PREF_VECTOR_PATH=/workspace/AI-assistant/artifacts/skills/search/data/pref_vectors.parquet
 python3 /workspace/AI-assistant/data/qdrant/build_preference_sidecar_vectors.py
 ```
 

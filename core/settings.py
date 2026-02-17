@@ -4,7 +4,7 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 QDRANT_LOCAL_PATH = os.environ.get(
     "RENT_QDRANT_PATH",
-    os.path.join(ROOT_DIR, "artifacts", "qdrant_local"),
+    os.path.join(ROOT_DIR, "artifacts", "skills", "search", "data", "qdrant_local"),
 )
 QDRANT_COLLECTION = os.environ.get("RENT_QDRANT_COLLECTION", "rent_listings")
 QDRANT_ENABLE_PREFILTER = os.environ.get("RENT_QDRANT_ENABLE_PREFILTER", "1") != "0"
@@ -35,7 +35,7 @@ UNKNOWN_PENALTY_CAP = 0.60
 
 RANKING_LOG_PATH = os.environ.get(
     "RENT_RANKING_LOG_PATH",
-    os.path.join(ROOT_DIR, "artifacts", "debug", "ranking_log.jsonl"),
+    os.path.join(ROOT_DIR, "artifacts", "skills", "search", "logs", "ranking_log.jsonl"),
 )
 
 STRUCTURED_POLICY = os.environ.get("RENT_STRUCTURED_POLICY", "RULE_FIRST").strip().upper()
@@ -44,11 +44,11 @@ if STRUCTURED_POLICY not in {"RULE_FIRST", "HYBRID", "LLM_FIRST"}:
 
 STRUCTURED_CONFLICT_LOG_PATH = os.environ.get(
     "RENT_STRUCTURED_CONFLICT_LOG_PATH",
-    os.path.join(ROOT_DIR, "artifacts", "debug", "structured_conflicts.jsonl"),
+    os.path.join(ROOT_DIR, "artifacts", "skills", "search", "logs", "structured_conflicts.jsonl"),
 )
 STRUCTURED_TRAINING_LOG_PATH = os.environ.get(
     "RENT_STRUCTURED_TRAINING_LOG_PATH",
-    os.path.join(ROOT_DIR, "artifacts", "debug", "structured_training_samples.jsonl"),
+    os.path.join(ROOT_DIR, "artifacts", "skills", "search", "logs", "structured_training_samples.jsonl"),
 )
 ENABLE_STRUCTURED_CONFLICT_LOG = os.environ.get("RENT_STRUCTURED_CONFLICT_LOG", "1") != "0"
 ENABLE_STRUCTURED_TRAINING_LOG = os.environ.get("RENT_STRUCTURED_TRAINING_LOG", "1") != "0"
@@ -81,7 +81,7 @@ FRESHNESS_HALF_LIFE_DAYS = float(os.environ.get("RENT_FRESHNESS_HALF_LIFE_DAYS",
 PREF_VECTOR_ENABLED = os.environ.get("RENT_PREF_VECTOR_ENABLED", "1") != "0"
 PREF_VECTOR_PATH = os.environ.get(
     "RENT_PREF_VECTOR_PATH",
-    os.path.join(ROOT_DIR, "artifacts", "qdrant_local", "collection", "rent_listings", "pref_vectors.parquet"),
+    os.path.join(ROOT_DIR, "artifacts", "skills", "search", "data", "pref_vectors.parquet"),
 )
 PREF_VECTOR_FEATURE_WEIGHT = float(os.environ.get("RENT_PREF_VECTOR_FEATURE_WEIGHT", "0.80"))
 PREF_VECTOR_DESCRIPTION_WEIGHT = float(os.environ.get("RENT_PREF_VECTOR_DESCRIPTION_WEIGHT", "0.60"))

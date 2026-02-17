@@ -1117,7 +1117,17 @@ def _iter_location_vocab_sources() -> List[str]:
     if explicit:
         return [explicit]
     return [
-        os.path.join(ROOT_DIR, "artifacts", "qdrant_local", "collection", "rent_listings", "storage.sqlite"),
+        os.path.join(
+            ROOT_DIR,
+            "artifacts",
+            "skills",
+            "search",
+            "data",
+            "qdrant_local",
+            "collection",
+            "rent_listings",
+            "storage.sqlite",
+        ),
     ]
 
 
