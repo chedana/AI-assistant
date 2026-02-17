@@ -42,6 +42,28 @@ from skills.search.extractors import (
     repair_extracted_constraints,
     summarize_constraint_changes,
 )
+from skills.search.formatter import format_listing_row as format_listing_row_v2
+from skills.search.pipeline import (
+    build_stage_a_records,
+    build_stage_c_records,
+    summarize_stage_b_failures,
+)
+from skills.search.pipeline_service import (
+    ExplainDeps,
+    ExtractDeps,
+    LoggingDeps,
+    PipelineDeps,
+    SearchDeps,
+    run_normal_query,
+)
+from skills.search.state_ops import (
+    init_runtime_state,
+    parse_command as parse_command_v2,
+    reset_runtime_state,
+    set_k_value,
+    set_recall_value,
+    set_view_mode,
+)
 from core.logger import (
     LOG_LEVEL,
     RANKING_LOG_DETAIL,
@@ -1440,19 +1462,52 @@ def parse_command(s: str) -> Tuple[Optional[str], str]:
     return cmd, arg
 
 
+def build_pipeline_deps(stage_note):
+    return PipelineDeps(
+        stage_note=stage_note,
+        extract=ExtractDeps(
+            llm_extract_all_signals=llm_extract_all_signals,
+            llm_extract=llm_extract,
+            repair_extracted_constraints=repair_extracted_constraints,
+            apply_structured_policy=apply_structured_policy,
+            append_structured_conflict_log=append_structured_conflict_log,
+            append_structured_training_samples=append_structured_training_samples,
+            merge_constraints=merge_constraints,
+            normalize_budget_to_pcm=normalize_budget_to_pcm,
+            normalize_constraints=normalize_constraints,
+            summarize_constraint_changes=summarize_constraint_changes,
+            compact_constraints_view=compact_constraints_view,
+            split_query_signals=split_query_signals,
+        ),
+        search=SearchDeps(
+            build_stage_a_query=build_stage_a_query,
+            stage_a_search=stage_a_search,
+            candidate_snapshot=candidate_snapshot,
+            apply_hard_filters_with_audit=apply_hard_filters_with_audit,
+            rank_stage_c=rank_stage_c,
+            build_stage_a_records=build_stage_a_records,
+            summarize_stage_b_failures=summarize_stage_b_failures,
+            build_stage_c_records=build_stage_c_records,
+        ),
+        explain=ExplainDeps(
+            build_evidence_for_row=build_evidence_for_row,
+            llm_grounded_explain=llm_grounded_explain,
+            render_stage_d_for_user=render_stage_d_for_user,
+            format_grounded_evidence=format_grounded_evidence,
+            format_listing_row=format_listing_row_v2,
+        ),
+        logging=LoggingDeps(
+            append_ranking_log_entry=append_ranking_log_entry,
+            log_message=log_message,
+        ),
+    )
+
+
 def run_chat():
     qdrant_client = load_stage_a_resources()
     embedder = SentenceTransformer(EMBED_MODEL)
 
-    state = {
-        "history": [],   # list of (user, assistant_text) for your own future use
-        "k": DEFAULT_K,
-        "recall": DEFAULT_RECALL,
-        "last_query": None,
-        "last_df": None,
-        "constraints": None,
-        "view_mode": "summary",
-    }
+    state = init_runtime_state()
 
     def stage_note(stage: str, detail: str) -> None:
         print(f"\nBot> [{stage}] {detail}")
@@ -1481,56 +1536,25 @@ def run_chat():
         if not user_in:
             continue
 
-        cmd, arg = parse_command(user_in)
+        cmd, arg = parse_command_v2(user_in)
 
         if cmd == "/exit":
             print("Bye.")
             break
 
         if cmd == "/reset":
-            state["history"] = []
-            state["last_query"] = None
-            state["last_df"] = None
-            state["constraints"] = None
+            reset_runtime_state(state)
             print("State reset.")
             continue
 
         if cmd == "/k":
-            try:
-                n = int(arg)
-                if n <= 0 or n > 50:
-                    raise ValueError()
-                state["k"] = n
-                # Keep constraints.k in sync so downstream uses the updated k.
-                if state["constraints"] is None:
-                    state["constraints"] = {
-                        "k": n,
-                        "location_keywords": [],
-                        "max_rent_pcm": None,
-                        "available_from": None,
-                        "available_from_op": None,
-                        "furnish_type": None,
-                        "let_type": None,
-                        "layout_options": [],
-                        "min_tenancy_months": None,
-                        "min_size_sqm": None,
-                    }
-                else:
-                    state["constraints"]["k"] = n
-                print(f"OK. k = {n}")
-            except:
-                print("Usage: /k 5   (1~50)")
+            _, msg = set_k_value(state, arg)
+            print(msg)
             continue
 
         if cmd == "/recall":
-            try:
-                n = int(arg)
-                if n <= 0 or n > 2000:
-                    raise ValueError()
-                state["recall"] = n
-                print(f"OK. recall = {n}")
-            except:
-                print("Usage: /recall 200   (1~2000)")
+            _, msg = set_recall_value(state, arg)
+            print(msg)
             continue
 
         if cmd == "/show":
@@ -1540,15 +1564,11 @@ def run_chat():
             df = state["last_df"]
             print(f"\nBot> Showing last results (k={state['k']}, recall={state['recall']})")
             for i, r in df.iterrows():
-                print(format_listing_row(r.to_dict(), i + 1, view_mode=state.get("view_mode", "summary")))
+                print(format_listing_row_v2(r.to_dict(), i + 1, view_mode=state.get("view_mode", "summary")))
             continue
         if cmd == "/view":
-            mode = str(arg or "").strip().lower()
-            if mode not in {"summary", "debug"}:
-                print("Usage: /view summary   or   /view debug")
-                continue
-            state["view_mode"] = mode
-            print(f"OK. view = {mode}")
+            _, msg = set_view_mode(state, arg)
+            print(msg)
             continue
         if cmd == "/constraints":
             print(json.dumps(state.get("constraints") or {}, ensure_ascii=False, indent=2))
@@ -1563,305 +1583,22 @@ def run_chat():
             print(f"RENT_LOG_LEVEL={LOG_LEVEL}")
             print(f"RENT_RANKING_LOG_DETAIL={RANKING_LOG_DETAIL}")
             continue
-        # normal query
-        # query = user_in
-        # k = int(state["k"])
-        # recall = int(state["recall"])
-        prev_constraints = dict(state["constraints"] or {})
-        stage_note("Pre Stage A", "Parsing input and extracting/repairing constraints and preference signals")
-        semantic_parse_source = "llm_combined"
-        combined = {"constraints": {}, "semantic_terms": {}}
-        llm_extracted: Dict[str, Any] = {}
-        rule_extracted: Dict[str, Any] = {}
-        structured_audit: Dict[str, Any] = {}
-        try:
-            combined = llm_extract_all_signals(user_in, state["constraints"])
-            llm_extracted = combined.get("constraints") or {}
-            semantic_terms = combined.get("semantic_terms") or {}
-        except Exception:
-            semantic_parse_source = "fallback_split_calls"
-            llm_extracted = llm_extract(user_in, state["constraints"])
-            semantic_terms = {}
-        llm_extracted_raw = copy.deepcopy(llm_extracted or {})
-        rule_extracted = repair_extracted_constraints(llm_extracted, user_in)
-        extracted, structured_audit = apply_structured_policy(
-            user_text=user_in,
-            llm_constraints=llm_extracted,
-            rule_constraints=rule_extracted,
-            policy=STRUCTURED_POLICY,
+        result = run_normal_query(
+            user_in=user_in,
+            state=state,
+            qdrant_client=qdrant_client,
+            embedder=embedder,
+            deps=build_pipeline_deps(stage_note),
         )
-        if str(os.environ.get("RENT_STRUCTURED_DEBUG_PRINT", "0")).strip().lower() in {"1", "true", "yes", "on"}:
-            llm_loc = (llm_extracted_raw or {}).get("location_keywords") or []
-            rule_loc = (rule_extracted or {}).get("location_keywords") or []
-            final_loc = (extracted or {}).get("location_keywords") or []
-            log_message(
-                "INFO",
-                "structured_debug location_keywords "
-                + json.dumps(
-                    {
-                        "llm": llm_loc,
-                        "rule": rule_loc,
-                        "final": final_loc,
-                        "policy": STRUCTURED_POLICY,
-                    },
-                    ensure_ascii=False,
-                ),
-            )
-        append_structured_conflict_log(
-            user_text=user_in,
-            semantic_parse_source=semantic_parse_source,
-            audit=structured_audit,
-        )
-        append_structured_training_samples(
-            user_text=user_in,
-            semantic_parse_source=semantic_parse_source,
-            audit=structured_audit,
-        )
-        state["constraints"] = merge_constraints(state["constraints"], extracted)
-        state["constraints"] = normalize_budget_to_pcm(state["constraints"])
-        state["constraints"] = normalize_constraints(state["constraints"])
-
-        changes_line = summarize_constraint_changes(prev_constraints, state["constraints"])
-        active_line = compact_constraints_view(state["constraints"])
-        stage_note("Pre Stage A", f"Because the input changed constraints, state was updated to: {changes_line}")
-        stage_note("Pre Stage A", f"Because retrieval/filtering depends on active constraints, current constraints: {json.dumps(active_line, ensure_ascii=False)}")
-        c = state["constraints"] or {}
-        signals = split_query_signals(
-            user_in,
-            c,
-            precomputed_semantic_terms=semantic_terms,
-            semantic_parse_source=semantic_parse_source,
-        )
-
-        log_message("INFO", f"state changes: {changes_line}")
-        log_message("INFO", f"state active_constraints: {json.dumps(active_line, ensure_ascii=False)}")
-        conflict_count = int(structured_audit.get("conflict_count", 0))
-        if conflict_count > 0:
-            log_message(
-                "INFO",
-                f"state structured_conflicts: policy={STRUCTURED_POLICY}, "
-                f"count={conflict_count}, agreement_rate={float(structured_audit.get('agreement_rate', 1.0)):.3f}",
-            )
-        if VERBOSE_STATE_LOG:
-            log_message("DEBUG", f"state verbose llm_constraints: {json.dumps(llm_extracted, ensure_ascii=False)}")
-            log_message("DEBUG", f"state verbose rule_constraints: {json.dumps(rule_extracted, ensure_ascii=False)}")
-            log_message("DEBUG", f"state verbose selected_constraints: {json.dumps(extracted, ensure_ascii=False)}")
-            log_message("DEBUG", f"state verbose llm_semantic_terms: {json.dumps(semantic_terms, ensure_ascii=False)}")
-            log_message("DEBUG", f"state verbose signals: {json.dumps(signals, ensure_ascii=False)}")
-
-        k = int(c.get("k", DEFAULT_K) or DEFAULT_K)
-        recall = int(state["recall"])
-        query = build_stage_a_query(signals, user_in)
-
-        # Stage A: recall pool
-        stage_note("Stage A", f"Because we need a broad candidate pool first, running vector recall (recall={recall})")
-        stage_a_df = stage_a_search(qdrant_client, embedder, query=query, recall=recall, c=c)
-        prefilter_count = stage_a_df.attrs.get("prefilter_count") if hasattr(stage_a_df, "attrs") else None
-        if prefilter_count is not None:
-            stage_note(
-                "Stage A",
-                f"Because prefilter finished first, candidate pool={prefilter_count}; after vector recall limit, got {len(stage_a_df)} candidates",
-            )
-        else:
-            stage_note("Stage A", f"Because recall finished, got {len(stage_a_df)} candidates")
-        stage_a_records = []
-        if stage_a_df is not None and len(stage_a_df) > 0:
-            for i, row in stage_a_df.reset_index(drop=True).iterrows():
-                rec = candidate_snapshot(row.to_dict())
-                rec["rank"] = i + 1
-                rec["score"] = rec.get("qdrant_score")
-                rec["score_formula"] = "score = qdrant_cosine_similarity(query_A, listing_embedding)"
-                stage_a_records.append(rec)
-
-        # Stage B: hard filters (audit all candidates)
-        stage_note("Stage B", "Because these are hard constraints, applying hard filters (budget/layout/move-in, etc.)")
-        filtered, hard_audits = apply_hard_filters_with_audit(stage_a_df, c)
-        stage_b_pass_records = [x for x in hard_audits if x.get("hard_pass")]
-        fail_counter: Dict[str, int] = {}
-        for rec in hard_audits:
-            if rec.get("hard_pass"):
-                continue
-            reasons = rec.get("hard_fail_reasons") or []
-            if not reasons:
-                continue
-            key = str(reasons[0]).split(" ", 1)[0]
-            fail_counter[key] = fail_counter.get(key, 0) + 1
-        fail_brief = ", ".join([f"{k}:{v}" for k, v in sorted(fail_counter.items(), key=lambda x: x[1], reverse=True)[:3]])
-        if fail_brief:
-            stage_note("Stage B", f"Because of hard filtering, result is pass={len(filtered)}/{len(stage_a_df)}; top eliminations: {fail_brief}")
-        else:
-            stage_note("Stage B", f"Because of hard filtering, result is pass={len(filtered)}/{len(stage_a_df)}")
-
-        # Stage C: rerank only on topic/preference scores (qdrant score as tie-break)
-        pref_terms_all = (
-            list(signals.get("topic_preferences", {}).get("transit_terms", []) or [])
-            + list(signals.get("topic_preferences", {}).get("school_terms", []) or [])
-            + list(signals.get("general_semantic", []) or [])
-        )
-        pref_preview = ", ".join([str(x) for x in pref_terms_all[:3]]) if pref_terms_all else "no explicit preference"
-        stage_note("Stage C", f"Because preference signals are [{pref_preview}], running soft rerank and unknown-pass penalties")
-        ranked, stage_c_weights = rank_stage_c(filtered, signals, embedder=embedder)
-        stage_note("Stage C", f"Because reranking finished, ranked={len(ranked)}; weights={json.dumps(stage_c_weights, ensure_ascii=False)}")
-        stage_c_records = []
-        if ranked is not None and len(ranked) > 0:
-            for i, row in ranked.iterrows():
-                rec = candidate_snapshot(row.to_dict())
-                rec["rank"] = i + 1
-                rec["score"] = float(row.get("final_score", 0.0))
-                rec["score_formula"] = str(row.get("score_formula", ""))
-                rec["components"] = {
-                    "transit_score": float(row.get("transit_score", 0.0)),
-                    "school_score": float(row.get("school_score", 0.0)),
-                    "preference_score": float(row.get("preference_score", 0.0)),
-                    "penalty_score": float(row.get("penalty_score", 0.0)),
-                    "weights": stage_c_weights,
-                }
-                rec["hits"] = {
-                    "transit_hits": str(row.get("transit_hits", "") or ""),
-                    "school_hits": str(row.get("school_hits", "") or ""),
-                    "preference_hits": str(row.get("preference_hits", "") or ""),
-                    "penalty_reasons": str(row.get("penalty_reasons", "") or ""),
-                }
-                stage_c_records.append(rec)
-
-        log_message(
-            "INFO",
-            f"pipeline counts: stageA={len(stage_a_df)} stageB={len(filtered)} "
-            f"stageC={len(ranked)} k={k} recall={recall}",
-        )
-        stage_d_payload: Optional[Dict[str, Any]] = None
-        stage_d_output: str = ""
-        stage_d_raw_output: str = ""
-        stage_d_error: str = ""
-
-        if len(filtered) < k:
-            print("\nBot> Not enough listings pass current hard constraints (price/bedrooms/bathrooms/move-in/furnishing/tenancy/size). You can relax budget or update constraints.")
-            df = ranked.reset_index(drop=True)
-        else:
-            df = ranked.head(k).reset_index(drop=True)
-
-        if ENABLE_STAGE_D_EXPLAIN and df is not None and len(df) > 0:
-            stage_note("Stage D", "Because explainability is required, building evidence and generating grounded explanation")
-            df = df.copy()
-            df["evidence"] = df.apply(lambda row: build_evidence_for_row(row.to_dict(), c, user_in), axis=1)
-
-
-        
-        if df is None or len(df) == 0:
-            append_ranking_log_entry(RANKING_LOG_PATH, 
-                {
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
-                    "log_path": RANKING_LOG_PATH,
-                    "user_query": user_in,
-                    "stage_a_query": query,
-                    "constraints": c,
-                    "structured_audit": structured_audit,
-                    "signals": signals,
-                    "counts": {
-                        "stage_a": len(stage_a_df),
-                        "stage_b": len(filtered),
-                        "stage_c": len(ranked),
-                        "k": k,
-                        "recall": recall,
-                    },
-                    "stage_a_candidates": stage_a_records,
-                    "stage_b_hard_audit": hard_audits,
-                    "stage_b_pass_candidates": stage_b_pass_records,
-                    "stage_c_candidates": stage_c_records,
-                    "stage_d": {
-                        "enabled": True,
-                        "system_prompt": GROUNDED_EXPLAIN_SYSTEM,
-                        "payload": None,
-                        "output": "",
-                        "raw_output": "",
-                        "error": "no_candidates",
-                    },
-                }
-            )
-            out = "I couldn't find any matching listings. Try different keywords (area, budget, bedrooms, bathrooms, available date)."
-            print("\nBot> " + out)
-            state["history"].append((user_in, out))
-            state["last_query"] = query
-            state["last_df"] = df
-            continue
-
-        # print results
-        top_lines = [f"Top {min(k, len(df))} results:"]
-        for i, r in df.iterrows():
-            top_lines.append(format_listing_row(r.to_dict(), i + 1, view_mode=state.get("view_mode", "summary")))
-        lines: List[str] = []
-        if state.get("view_mode", "summary") == "debug":
-            lines.extend(top_lines)
-        if ENABLE_STAGE_D_EXPLAIN:
-            try:
-                grounded_out, stage_d_payload, stage_d_raw_output = llm_grounded_explain(
-                    user_query=user_in,
-                    c=c,
-                    signals=signals,
-                    df=df,
-                )
-                stage_d_output = grounded_out
-                if grounded_out:
-                    lines.append("")
-                    lines.append("Recommendation summary:")
-                    if state.get("view_mode", "summary") == "debug":
-                        lines.append(grounded_out)
-                    else:
-                        lines.append(render_stage_d_for_user(grounded_out, df=df, max_items=min(8, len(df))))
-                elif state.get("view_mode", "summary") != "debug":
-                    lines.extend(top_lines)
-                if state.get("view_mode", "summary") == "debug":
-                    ev_txt = format_grounded_evidence(df=df, max_items=min(8, len(df)))
-                    if ev_txt:
-                        lines.append("")
-                        lines.append("Grounded evidence:")
-                        lines.append(ev_txt)
-            except Exception as e:
-                stage_d_error = str(e)
-                if state.get("view_mode", "summary") == "debug":
-                    lines.append("")
-                    lines.append(f"[warn] grounded explanation unavailable: {e}")
-                lines.extend(top_lines)
-        else:
-            stage_d_error = "disabled_by_config"
-            lines.extend(top_lines)
-        append_ranking_log_entry(RANKING_LOG_PATH, 
-            {
-                "timestamp": datetime.utcnow().isoformat() + "Z",
-                "log_path": RANKING_LOG_PATH,
-                "user_query": user_in,
-                "stage_a_query": query,
-                "constraints": c,
-                "structured_audit": structured_audit,
-                "signals": signals,
-                "counts": {
-                    "stage_a": len(stage_a_df),
-                    "stage_b": len(filtered),
-                    "stage_c": len(ranked),
-                    "k": k,
-                    "recall": recall,
-                },
-                "stage_a_candidates": stage_a_records,
-                "stage_b_hard_audit": hard_audits,
-                "stage_b_pass_candidates": stage_b_pass_records,
-                "stage_c_candidates": stage_c_records,
-                "stage_d": {
-                    "enabled": True,
-                    "system_prompt": GROUNDED_EXPLAIN_SYSTEM,
-                    "payload": stage_d_payload,
-                    "output": stage_d_output,
-                    "raw_output": stage_d_raw_output,
-                    "error": stage_d_error,
-                },
-            }
-        )
-        out = "\n".join(lines)
-
+        for msg in result.get("pre_reply_messages", []):
+            print("\nBot> " + msg)
+        out = result["out"]
         print("\nBot> " + out)
-
         state["history"].append((user_in, out))
-        state["last_query"] = query
-        state["last_df"] = df
+        state["last_query"] = result["query"]
+        state["last_df"] = result["df"]
+        if result.get("stop_turn"):
+            continue
 
 
 if __name__ == "__main__":
