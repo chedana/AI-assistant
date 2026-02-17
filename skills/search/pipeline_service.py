@@ -7,10 +7,10 @@ import json
 import os
 
 from core.chatbot_config import GROUNDED_EXPLAIN_SYSTEM
-from core.logger import RANKING_LOG_PATH
 from core.settings import (
     DEFAULT_K,
     ENABLE_STAGE_D_EXPLAIN,
+    RANKING_LOG_PATH,
     STRUCTURED_POLICY,
     VERBOSE_STATE_LOG,
 )
