@@ -99,7 +99,7 @@ python3 /workspace/AI-assistant/data/qdrant/build_qdrant_from_source.py
 ### B. Stage C sidecar: `pref_vectors.parquet`
 
 - Path (default):
-  - `/workspace/AI-assistant/artifacts/skills/search/data/pref_vectors.parquet`
+  - `/workspace/AI-assistant/artifacts/skills/search/data/features/pref_vectors.parquet`
 - What it is:
   - Stage C preference sidecar vectors (features/description segment embeddings).
   - Used for soft preference matching in rerank stage.
@@ -114,7 +114,7 @@ python3 /workspace/AI-assistant/data/qdrant/build_qdrant_from_source.py
 ```bash
 cd /workspace/AI-assistant
 export RENT_PREF_VECTOR_SOURCE_PATH=/workspace/AI-assistant/data/web_data/properties_clean.jsonl
-export RENT_PREF_VECTOR_PATH=/workspace/AI-assistant/artifacts/skills/search/data/pref_vectors.parquet
+export RENT_PREF_VECTOR_PATH=/workspace/AI-assistant/artifacts/skills/search/data/features/pref_vectors.parquet
 python3 /workspace/AI-assistant/data/qdrant/build_preference_sidecar_vectors.py
 ```
 

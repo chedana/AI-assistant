@@ -81,7 +81,7 @@ FRESHNESS_HALF_LIFE_DAYS = float(os.environ.get("RENT_FRESHNESS_HALF_LIFE_DAYS",
 PREF_VECTOR_ENABLED = os.environ.get("RENT_PREF_VECTOR_ENABLED", "1") != "0"
 PREF_VECTOR_PATH = os.environ.get(
     "RENT_PREF_VECTOR_PATH",
-    os.path.join(ROOT_DIR, "artifacts", "skills", "search", "data", "pref_vectors.parquet"),
+    os.path.join(ROOT_DIR, "artifacts", "skills", "search", "data", "features", "pref_vectors.parquet"),
 )
 PREF_VECTOR_FEATURE_WEIGHT = float(os.environ.get("RENT_PREF_VECTOR_FEATURE_WEIGHT", "0.80"))
 PREF_VECTOR_DESCRIPTION_WEIGHT = float(os.environ.get("RENT_PREF_VECTOR_DESCRIPTION_WEIGHT", "0.60"))
