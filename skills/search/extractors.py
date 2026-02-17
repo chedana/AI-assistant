@@ -30,6 +30,7 @@ from core.chatbot_config import (
     AVAILABLE_FROM_PREFIX_PATTERNS,
     AVAILABLE_FROM_BARE_PATTERNS,
 )
+from core.settings import ROOT_DIR
 
 DEFAULT_K = int(os.environ.get("RENT_K", "5"))
 _LOCATION_MATCH_INDEX_CACHE: Optional[Dict[str, Any]] = None
@@ -1112,12 +1113,11 @@ def _normalize_location_keyword(v: Any) -> str:
 
 
 def _iter_location_vocab_sources() -> List[str]:
-    base = os.path.dirname(__file__)
     explicit = _safe_text(os.environ.get("RENT_QDRANT_STORAGE_SQLITE")).strip()
     if explicit:
         return [explicit]
     return [
-        os.path.join(base, "artifacts", "qdrant_local", "collection", "rent_listings", "storage.sqlite"),
+        os.path.join(ROOT_DIR, "artifacts", "qdrant_local", "collection", "rent_listings", "storage.sqlite"),
     ]
 
 
