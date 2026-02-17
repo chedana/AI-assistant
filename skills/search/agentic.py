@@ -7,7 +7,13 @@ from typing import Any, Dict, List, Optional
 from sentence_transformers import SentenceTransformer
 
 from core.llm_client import llm_extract, llm_extract_all_signals
-from core.settings import DEFAULT_K, DEFAULT_RECALL, EMBED_MODEL, ENABLE_STAGE_D_EXPLAIN
+from core.settings import (
+    DEFAULT_K,
+    DEFAULT_RECALL,
+    EMBED_MODEL,
+    ENABLE_STAGE_D_EXPLAIN,
+    STRUCTURED_POLICY,
+)
 from skills.search.engine import load_stage_a_resources, stage_a_search
 from skills.search.extractors import (
     compact_constraints_view,
@@ -84,6 +90,7 @@ def run_search_skill(
         user_text=user_text,
         llm_constraints=llm_extracted_raw,
         rule_constraints=rule_extracted,
+        policy=STRUCTURED_POLICY,
     )
 
     merged = merge_constraints(state_constraints, extracted)
