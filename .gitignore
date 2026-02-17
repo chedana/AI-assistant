@@ -1,0 +1,10 @@
+
+# skill artifacts (local only)
+artifacts/skills/search/data/
+artifacts/skills/search/logs/
+artifacts/skills/search/cache/
+artifacts/skills/search/tmp/
+
+# common large binaries
+*.parquet
+*.sqlite
