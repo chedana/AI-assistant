@@ -135,7 +135,7 @@ def run_search_skill(
             lines.append(format_listing_row(row, i, view_mode="summary"))
         if ENABLE_STAGE_D_EXPLAIN:
             lines.append("")
-            lines.append("Tip: ask follow-up questions like “这套离地铁远吗？”")
+            lines.append("Tip: ask follow-up questions like 'How far is this listing from the station?'")
 
     return {
         "reply_text": "\n".join(lines),
