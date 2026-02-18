@@ -1,7 +1,19 @@
 import json
+import re
 from typing import Any, Dict
 
 from core.llm_client import qwen_chat
+
+
+def _strip_think_blocks(text: str) -> str:
+    s = str(text or "")
+    if not s:
+        return s
+    # Remove reasoning tags if model emits them.
+    s = re.sub(r"<think>.*?</think>", "", s, flags=re.IGNORECASE | re.DOTALL)
+    s = re.sub(r"^\s*\n+", "", s)
+    s = re.sub(r"\n{3,}", "\n\n", s)
+    return s.strip()
 
 
 def answer_single_listing_question(question: str, listing_payload: Dict[str, Any]) -> str:
@@ -31,7 +43,7 @@ def answer_single_listing_question(question: str, listing_payload: Dict[str, Any
         "Keep the answer concise."
     )
     try:
-        return qwen_chat(
+        out = qwen_chat(
             [
                 {"role": "system", "content": system_prompt},
                 {
@@ -44,6 +56,8 @@ def answer_single_listing_question(question: str, listing_payload: Dict[str, Any
             ],
             temperature=0.0,
         )
+        cleaned = _strip_think_blocks(out)
+        return cleaned or "Not provided in listing data. Please ask the agent to confirm."
     except Exception:
         station = distilled.get("nearest_station") or "not provided"
         distance = distilled.get("distance_to_station_m") or "not provided"

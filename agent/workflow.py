@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from typing import Optional
 
 from agent.router import route_turn
@@ -80,6 +81,23 @@ def run() -> None:
                 )
             )
 
+        if _is_focus_only_request(user_in, decision):
+            if decision.target_index is None:
+                bot_text = "Please specify which listing index to focus on."
+            else:
+                focus_err = _focus_by_index(state, decision.target_index)
+                if focus_err:
+                    bot_text = focus_err
+                else:
+                    title = str(state.current_focus_listing_payload.get("title") or state.current_focus_listing_id)
+                    bot_text = (
+                        f"Focus switched to listing {decision.target_index}: {title}. "
+                        "What would you like to know about it?"
+                    )
+            print("\nBot> " + bot_text)
+            state.history.append((user_in, bot_text))
+            continue
+
         if decision.intent == "Specific_QA" and decision.target_index is not None:
             focus_err = _focus_by_index(state, decision.target_index)
             if focus_err:
@@ -121,7 +139,7 @@ def run() -> None:
                     listing_payload=state.current_focus_listing_payload,
                 )
         elif decision.intent == "Chitchat":
-            bot_text = "Hi. I can help you search listings, refine constraints, or answer questions about the current listing."
+            bot_text = "Hi, how can I help?"
         else:
             bot_text = "I could not classify that request. You can provide budget/location/layout, or ask something like 'How far is this listing from the station?'"
 
@@ -163,6 +181,27 @@ def _focus_by_index(state: AgentState, idx: int) -> Optional[str]:
     state.current_focus_listing_id = str(picked.get("listing_id") or picked.get("url") or f"row_{idx}")
     state.current_focus_listing_payload = picked
     return None
+
+
+def _is_focus_only_request(user_in: str, decision) -> bool:
+    if decision.intent != "Specific_QA" or decision.target_index is None:
+        return False
+    t = (user_in or "").strip().lower()
+    if not t:
+        return False
+    # Pure index references and short pointer phrases should switch focus only.
+    focus_only_patterns = [
+        r"^#\s*\d{1,2}\??$",
+        r"^(?:the\s+)?\d{1,2}(?:st|nd|rd|th)\??$",
+        r"^(?:the\s+)?(?:first|second|third|fourth|fifth)\??$",
+        r"^(?:the\s+)?(?:first|second|third|fourth|fifth)\s+(?:one|listing|result|option|property|flat)\??$",
+        r"^(?:listing|result|option|property|flat)\s*#?\s*\d{1,2}\??$",
+        r"^(?:what about|how about)\s+(?:the\s+)?(?:first|second|third|fourth|fifth|\d{1,2}(?:st|nd|rd|th)|#\d{1,2})\??$",
+    ]
+    for p in focus_only_patterns:
+        if re.match(p, t):
+            return True
+    return False
 
 
 def _make_history_hint(state: AgentState, limit: int = 4) -> Optional[str]:
