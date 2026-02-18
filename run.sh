@@ -31,9 +31,9 @@ export ROUTER_DEBUG="${ROUTER_DEBUG:-0}"
 # Reasoning model (search extraction / QA / explanation)
 export QWEN_BASE_URL="${QWEN_BASE_URL:-http://127.0.0.1:8002/v1}"
 export QWEN_MODEL="${QWEN_MODEL:-Qwen3-8B}"
-# Router model (intent classification)
-export ROUTER_BASE_URL="${ROUTER_BASE_URL:-http://127.0.0.1:8003/v1}"
-export ROUTER_MODEL="${ROUTER_MODEL:-Qwen3-1.7B}"
+# Router model (intent classification) defaults to same as reasoning model.
+export ROUTER_BASE_URL="${ROUTER_BASE_URL:-${QWEN_BASE_URL}}"
+export ROUTER_MODEL="${ROUTER_MODEL:-${QWEN_MODEL}}"
 # API keys (Router falls back to OPENAI_API_KEY if ROUTER_API_KEY is unset)
 export OPENAI_API_KEY="${OPENAI_API_KEY:-dummy}"
 export ROUTER_API_KEY="${ROUTER_API_KEY:-${OPENAI_API_KEY}}"
