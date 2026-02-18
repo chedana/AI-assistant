@@ -103,8 +103,83 @@ def _is_refinement_hint(text: str) -> bool:
 def _route_no_listings(text: str) -> RouteDecision:
     if _is_chitchat(text):
         return RouteDecision(intent="Chitchat", reason="rule:chitchat_no_listings", confidence=1.0)
-    # Hard rule from design: when no listings, never QA.
-    return RouteDecision(intent="Search", reason="rule:no_listings_default_search", confidence=0.99)
+    # Non-trivial inputs should go to LLM for better generalization.
+    return RouteDecision(intent="Search", reason="defer_to_llm_no_listings", confidence=0.0)
+
+
+def _classify_with_llm_no_listings(text: str, history_hint: Optional[str]) -> Optional[RouteDecision]:
+    prompt = (
+        "You are a router for a rental assistant.\n"
+        "Current state always has_listings=false and has_focus=false.\n"
+        "Return STRICT JSON only with schema:\n"
+        '{"intent":"Search|Specific_QA|Chitchat","target_index":null,"confidence":0.0,"reason":"...",'
+        '"need_clarify":false,"clarify_question":null,"refinement_type":null}\n'
+        "Policy:\n"
+        "- Without listings, Specific_QA is invalid and should generally map to Search.\n"
+        "- Use Chitchat for greetings/small talk.\n"
+        "- Use Search for search requests or filter statements.\n"
+        "\n"
+        "Few-shot:\n"
+        "Query: 'How r you'\n"
+        'Output: {"intent":"Chitchat","target_index":null,"confidence":0.92,"reason":"small_talk","need_clarify":false,"clarify_question":null,"refinement_type":null}\n'
+        "Query: 'Find 1 bed near Waterloo under 2500'\n"
+        'Output: {"intent":"Search","target_index":null,"confidence":0.96,"reason":"search_request","need_clarify":false,"clarify_question":null,"refinement_type":null}\n'
+        "Query: 'Is it close to the station?'\n"
+        'Output: {"intent":"Search","target_index":null,"confidence":0.84,"reason":"no_listing_context_for_qa","need_clarify":false,"clarify_question":null,"refinement_type":null}'
+    )
+    user_payload = f"Conversation summary:\n{history_hint or '(none)'}\n\nUser input:\n{text}"
+    try:
+        raw = qwen_router_chat(
+            [
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": user_payload},
+            ],
+            temperature=0.0,
+        ).strip()
+    except Exception:
+        return None
+    obj = _extract_first_json_obj(raw)
+    if not obj:
+        return None
+
+    intent = str(obj.get("intent") or "").strip()
+    if intent not in _INTENTS:
+        return None
+    # Guardrail: no listings -> never QA.
+    if intent == "Specific_QA":
+        intent = "Search"
+
+    try:
+        conf = float(obj.get("confidence", 0.0))
+    except Exception:
+        conf = 0.0
+    conf = max(0.0, min(1.0, conf))
+    reason = str(obj.get("reason") or "llm_router_no_listings")
+    need_clarify = bool(obj.get("need_clarify", False))
+    clarify_question = obj.get("clarify_question")
+    clarify_question = str(clarify_question).strip() if clarify_question is not None else None
+    if clarify_question == "":
+        clarify_question = None
+    refinement_type = obj.get("refinement_type")
+    refinement_type = str(refinement_type).strip().lower() if refinement_type is not None else None
+    if refinement_type in {"", "none", "null"}:
+        refinement_type = None
+
+    # No listings: target index is always irrelevant.
+    target_index = None
+    if intent != "Search":
+        refinement_type = None
+    if not need_clarify:
+        clarify_question = None
+    return RouteDecision(
+        intent=intent,
+        reason=f"llm_no_listings:{reason}",
+        target_index=target_index,
+        refinement_type=refinement_type,
+        confidence=conf,
+        need_clarify=need_clarify,
+        clarify_question=clarify_question,
+    )
 
 
 def _classify_with_llm_for_listings(text: str, history_hint: Optional[str]) -> Optional[RouteDecision]:
@@ -212,7 +287,13 @@ def route_turn(
 
     # Decision Tree root: has_listings
     if not has_listings:
-        return _route_no_listings(text)
+        quick = _route_no_listings(text)
+        if quick.reason.startswith("rule:"):
+            return quick
+        llm_no_listings = _classify_with_llm_no_listings(text, history_hint=history_hint)
+        if llm_no_listings is not None:
+            return llm_no_listings
+        return RouteDecision(intent="Search", reason="fallback:no_listings_default_search", confidence=0.25)
 
     # has_listings=True branch: cheap rules first.
     if _is_chitchat(text):
