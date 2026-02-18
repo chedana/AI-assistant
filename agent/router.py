@@ -82,7 +82,27 @@ def _extract_target_index(text: str) -> Optional[int]:
 
 def _is_chitchat(text: str) -> bool:
     t = (text or "").strip().lower()
+    if not t:
+        return False
+    # Mixed utterances like "hi, need a flat near waterloo" should not be
+    # swallowed by chitchat rules.
+    if _has_search_intent(t):
+        return False
     return bool(re.search(r"\b(hello|hi|hey|thanks|thank you|good morning|good evening)\b", t))
+
+
+def _has_search_intent(text: str) -> bool:
+    t = (text or "").strip().lower()
+    if not t:
+        return False
+    patterns = [
+        r"\b(find|search|looking\s+for|need|want)\b",
+        r"\b(flat|apartment|studio|house|property|listing)\b",
+        r"\b(\d+\s*bed(room)?s?|\d+\s*b\d*)\b",
+        r"\b(under|below|budget|pcm|pcw|rent)\b",
+        r"\b(near|in|around)\s+[a-z0-9]",
+    ]
+    return any(re.search(p, t) for p in patterns)
 
 
 def _is_reset(text: str) -> bool:

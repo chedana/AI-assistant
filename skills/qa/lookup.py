@@ -184,7 +184,7 @@ def _match_structured_keys(signals: Dict[str, Any], fields: Dict[str, Any], raw_
                 if raw_key not in matched:
                     matched.append(raw_key)
 
-    return matched[:6]
+    return matched
 
 
 def structured_lookup(signals: Dict[str, Any], payload: Dict[str, Any], raw_question: str = "") -> LookupResult:
@@ -203,14 +203,14 @@ def structured_lookup(signals: Dict[str, Any], payload: Dict[str, Any], raw_ques
             items = parse_jsonish_items(val)
             if not items:
                 continue
-            facts[key] = items[:6]
-            for it in items[:3]:
+            facts[key] = items
+            for it in items:
                 evidence.append({"field": key, "text": it})
         elif isinstance(val, str):
             items = parse_jsonish_items(val)
             if len(items) > 1:
-                facts[key] = items[:6]
-                for it in items[:3]:
+                facts[key] = items
+                for it in items:
                     evidence.append({"field": key, "text": it})
             else:
                 txt = _safe_text(val)
@@ -224,7 +224,7 @@ def structured_lookup(signals: Dict[str, Any], payload: Dict[str, Any], raw_ques
 
     if not facts:
         return LookupResult(False, "structured", {}, [])
-    return LookupResult(True, "structured", facts, evidence[:6])
+    return LookupResult(True, "structured", facts, evidence)
 
 
 def semantic_lookup(signals: Dict[str, Any], payload: Dict[str, Any], raw_question: str = "") -> LookupResult:
@@ -247,7 +247,7 @@ def semantic_lookup(signals: Dict[str, Any], payload: Dict[str, Any], raw_questi
     if not scored:
         return LookupResult(False, "semantic", {}, [])
 
-    top = scored[:3]
+    top = scored
     evidence = [{"field": f, "text": t} for _, f, t in top]
     facts = {
         "matched_terms": terms,
