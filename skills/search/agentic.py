@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -68,6 +69,7 @@ def run_search_skill(
     user_text: str,
     state_constraints: Optional[Dict[str, Any]],
     runtime: SearchRuntime,
+    refinement_type: Optional[str] = None,
     k: int = DEFAULT_K,
     recall: int = DEFAULT_RECALL,
 ) -> Dict[str, Any]:
@@ -96,6 +98,18 @@ def run_search_skill(
     merged = merge_constraints(state_constraints, extracted)
     merged = normalize_budget_to_pcm(merged)
     merged = normalize_constraints(merged)
+    auto_refine_note: Optional[str] = None
+    if str(refinement_type or "").strip().lower() == "price_down":
+        current_budget = merged.get("max_rent_pcm")
+        if current_budget is not None:
+            factor = float(os.environ.get("RENT_PRICE_DOWN_FACTOR", "0.85"))
+            factor = min(max(factor, 0.5), 0.99)
+            new_budget = max(1.0, float(current_budget) * factor)
+            merged["max_rent_pcm"] = round(new_budget, 2)
+            auto_refine_note = (
+                f"Applied price-down refinement: max rent adjusted from {float(current_budget):.0f} to "
+                f"{float(merged['max_rent_pcm']):.0f}."
+            )
     if not merged.get("k"):
         merged["k"] = int(k)
 
@@ -130,6 +144,8 @@ def run_search_skill(
     if not listings:
         lines.append("I couldn't find any matching listings. Try changing area, budget, or layout.")
     else:
+        if auto_refine_note:
+            lines.append(auto_refine_note)
         lines.append(f"Top {min(int(k), len(listings))} results:")
         for i, row in enumerate(listings[: int(k)], start=1):
             lines.append(format_listing_row(row, i, view_mode="summary"))

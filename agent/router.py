@@ -11,89 +11,13 @@ class RouteDecision:
     intent: str
     reason: str
     target_index: Optional[int] = None
+    refinement_type: Optional[str] = None
     confidence: float = 0.0
+    need_clarify: bool = False
+    clarify_question: Optional[str] = None
 
 
-_INTENTS = {"Search", "Specific_QA", "Refinement", "Chitchat"}
-
-
-def _heuristic_route(user_text: str) -> str:
-    t = (user_text or "").strip().lower()
-    if not t:
-        return "Chitchat"
-
-    if re.search(r"\b(too expensive|cheaper|budget|change to|switch to|not ground floor|avoid ground floor)\b", t):
-        return "Refinement"
-    if re.search(r"\b(this one|this flat|that one|distance|pet|subway|metro|station|how far|near)\b", t):
-        return "Specific_QA"
-    if re.search(r"\b(hello|hi|thanks|thank you|hey)\b", t):
-        return "Chitchat"
-    return "Search"
-
-
-def _extract_target_index_rule(user_text: str) -> Optional[int]:
-    t = (user_text or "").strip().lower()
-    if not t:
-        return None
-    numeric_patterns = [
-        r"#\s*(\d{1,2})\b",  # #2
-        r"\b(?:no\.?|number)\s*(\d{1,2})\b",  # no 2 / number 2
-        r"\b(?:listing|result|option|property|flat)\s*(\d{1,2})\b",  # listing 2
-        r"\b(\d{1,2})(?:st|nd|rd|th)\b",  # 2nd
-        r"\b(\d{1,2})\s*(?:one|listing|result|option|property|flat)\b",  # 2 listing
-    ]
-    for pat in numeric_patterns:
-        m = re.search(pat, t)
-        if not m:
-            continue
-        try:
-            idx = int(m.group(1))
-            if idx >= 1:
-                return idx
-        except Exception:
-            continue
-    ord_map = {
-        "first": 1,
-        "second": 2,
-        "third": 3,
-        "fourth": 4,
-        "fifth": 5,
-        "sixth": 6,
-        "seventh": 7,
-        "eighth": 8,
-        "ninth": 9,
-        "tenth": 10,
-    }
-    for k, v in ord_map.items():
-        if re.search(rf"\b{k}\b", t):
-            return v
-    return None
-
-
-def _should_force_specific_qa(user_text: str, has_focus: bool) -> bool:
-    if not has_focus:
-        return False
-    t = (user_text or "").strip().lower()
-    if not t:
-        return False
-    qa_cues = [
-        "how far",
-        "distance",
-        "can i",
-        "is it",
-        "does it",
-        "pet",
-        "furnished",
-        "deposit",
-        "council tax",
-        "nearest station",
-        "this place",
-        "this one",
-        "that one",
-        "how far",
-        "near station",
-    ]
-    return any(cue in t for cue in qa_cues)
+_INTENTS = {"Search", "Specific_QA", "Chitchat"}
 
 
 def _extract_first_json_obj(raw_text: str) -> Optional[Dict[str, Any]]:
@@ -106,7 +30,6 @@ def _extract_first_json_obj(raw_text: str) -> Optional[Dict[str, Any]]:
             return obj
     except Exception:
         pass
-
     start = s.find("{")
     if start < 0:
         return None
@@ -118,9 +41,8 @@ def _extract_first_json_obj(raw_text: str) -> Optional[Dict[str, Any]]:
         elif ch == "}":
             depth -= 1
             if depth == 0:
-                chunk = s[start : i + 1]
                 try:
-                    obj = json.loads(chunk)
+                    obj = json.loads(s[start : i + 1])
                     if isinstance(obj, dict):
                         return obj
                 except Exception:
@@ -128,42 +50,93 @@ def _extract_first_json_obj(raw_text: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _classify_intent_with_llm(
-    user_text: str,
-    history_hint: Optional[str] = None,
-    has_listings: bool = False,
-    has_focus: bool = False,
-) -> Optional[Dict[str, Any]]:
+def _extract_target_index(text: str) -> Optional[int]:
+    t = (text or "").strip().lower()
+    if not t:
+        return None
+    # Strict index reference patterns to avoid matching constraint numbers
+    # like "1 bed", "zone 2", "under 2500".
+    patterns = [
+        r"^#\s*(\d{1,2})\??$",
+        r"^(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)(?:\s+(?:one|listing|result|option|property|flat))?\??$",
+        r"^(?:listing|result|option|property|flat)\s*#?\s*(\d{1,2})\??$",
+        r"^(?:what about|how about|tell me about)\s+(?:listing|result|option|property|flat)\s*#?\s*(\d{1,2})\??$",
+        r"^(?:no\.?|number)\s*(\d{1,2})\??$",
+    ]
+    for p in patterns:
+        m = re.match(p, t)
+        if not m:
+            continue
+        try:
+            idx = int(m.group(1))
+            if idx >= 1:
+                return idx
+        except Exception:
+            continue
+    ord_map = {"first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5}
+    for k, v in ord_map.items():
+        if re.match(rf"^(?:the\s+)?{k}(?:\s+(?:one|listing|result|option|property|flat))?\??$", t):
+            return v
+    return None
+
+
+def _is_chitchat(text: str) -> bool:
+    t = (text or "").strip().lower()
+    return bool(re.search(r"\b(hello|hi|hey|thanks|thank you|good morning|good evening)\b", t))
+
+
+def _is_reset(text: str) -> bool:
+    t = (text or "").strip().lower()
+    return bool(re.search(r"\b(start over|new search|reset|reset search|not looking anymore|stop searching)\b", t))
+
+
+def _is_refinement_hint(text: str) -> bool:
+    t = (text or "").strip().lower()
+    return bool(
+        re.search(
+            r"\b(too expensive|cheaper|lower budget|change area|another area|different location|balcony|with gym|closer to station|not ground floor)\b",
+            t,
+        )
+    )
+
+
+def _route_no_listings(text: str) -> RouteDecision:
+    if _is_chitchat(text):
+        return RouteDecision(intent="Chitchat", reason="rule:chitchat_no_listings", confidence=1.0)
+    # Hard rule from design: when no listings, never QA.
+    return RouteDecision(intent="Search", reason="rule:no_listings_default_search", confidence=0.99)
+
+
+def _classify_with_llm_for_listings(text: str, history_hint: Optional[str]) -> Optional[RouteDecision]:
     prompt = (
-        "You are an intent router for a rental assistant.\n"
-        "Return STRICT JSON only with this schema:\n"
-        '{"intent":"Search|Specific_QA|Refinement|Chitchat","target_index":null,"confidence":0.0,"reason":"..."}\n'
-        "Rules:\n"
-        "- target_index is 1-based when user references a result number; else null.\n"
-        "- confidence must be between 0 and 1.\n"
-        "- If the user asks about the current listing details, use Specific_QA.\n"
-        "- If the user changes constraints or asks for cheaper/different options, use Refinement.\n"
-        "- If user starts a new search request, use Search.\n"
-        "- If greeting/thanks/small talk, use Chitchat.\n"
+        "You are a router for a rental assistant.\n"
+        "Current state always has_listings=true.\n"
+        "Return STRICT JSON only with schema:\n"
+        '{"intent":"Search|Specific_QA|Chitchat","target_index":null,"confidence":0.0,"reason":"...",'
+        '"need_clarify":false,"clarify_question":null,"refinement_type":null}\n'
+        "Interpretation policy:\n"
+        "- Search includes both new-search and refinement/reset actions.\n"
+        "- Specific_QA is for detail questions about current results/listings.\n"
+        "- target_index is 1-based when user references a specific result number.\n"
+        "- If refinement request is underspecified (e.g., 'too expensive' without a target budget), set need_clarify=true.\n"
+        "- If QA target is ambiguous, set need_clarify=true and ask which listing.\n"
+        "- For clear price reduction requests, set intent=Search and refinement_type='price_down'.\n"
         "\n"
-        "Few-shot examples:\n"
-        "Input: has_listings=false, has_focus=false, query='Does it have a gym?'\n"
-        'Output: {"intent":"Search","target_index":null,"confidence":0.86,"reason":"No current listing context, treat as search filter."}\n'
-        "Input: has_listings=true, has_focus=true, query='Does it have a gym?'\n"
-        'Output: {"intent":"Specific_QA","target_index":null,"confidence":0.93,"reason":"Question about details of current listing."}\n'
-        "Input: has_listings=true, has_focus=false, query='second one?'\n"
-        'Output: {"intent":"Specific_QA","target_index":2,"confidence":0.95,"reason":"User references listing #2 for follow-up."}\n'
-        "Input: has_listings=true, has_focus=true, query='too expensive, cheaper please'\n"
-        'Output: {"intent":"Refinement","target_index":null,"confidence":0.97,"reason":"Budget refinement request."}\n'
-        "Input: has_listings=true, has_focus=true, query='start over, new search in Waterloo'\n"
-        'Output: {"intent":"Search","target_index":null,"confidence":0.97,"reason":"Explicit new search intent."}'
+        "Few-shot:\n"
+        "Query: 'too expensive, cheaper please'\n"
+        'Output: {"intent":"Search","target_index":null,"confidence":0.97,"reason":"refinement_request","need_clarify":false,"clarify_question":null,"refinement_type":"price_down"}\n'
+        "Query: 'does it have a gym?'\n"
+        'Output: {"intent":"Specific_QA","target_index":null,"confidence":0.90,"reason":"detail_question_about_listing","need_clarify":true,"clarify_question":"Which listing do you mean?","refinement_type":null}\n'
+        "Query: 'second one?'\n"
+        'Output: {"intent":"Specific_QA","target_index":2,"confidence":0.96,"reason":"explicit_result_reference","need_clarify":false,"clarify_question":null,"refinement_type":null}\n'
+        "Query: 'start over'\n"
+        'Output: {"intent":"Search","target_index":null,"confidence":0.98,"reason":"reset_search","need_clarify":false,"clarify_question":null,"refinement_type":null}\n'
+        "Query: 'thanks'\n"
+        'Output: {"intent":"Chitchat","target_index":null,"confidence":0.95,"reason":"small_talk","need_clarify":false,"clarify_question":null,"refinement_type":null}'
     )
-    user_payload = (
-        f"State:\n- has_listings={str(bool(has_listings)).lower()}\n- has_focus={str(bool(has_focus)).lower()}\n\n"
-        f"Conversation summary:\n{history_hint or '(none)'}\n\nUser input:\n{user_text}"
-    )
+    user_payload = f"Conversation summary:\n{history_hint or '(none)'}\n\nUser input:\n{text}"
     try:
-        out = qwen_router_chat(
+        raw = qwen_router_chat(
             [
                 {"role": "system", "content": prompt},
                 {"role": "user", "content": user_payload},
@@ -172,19 +145,28 @@ def _classify_intent_with_llm(
         ).strip()
     except Exception:
         return None
-
-    obj = _extract_first_json_obj(out)
+    obj = _extract_first_json_obj(raw)
     if not obj:
         return None
+
     intent = str(obj.get("intent") or "").strip()
     if intent not in _INTENTS:
         return None
-    conf_raw = obj.get("confidence", 0.0)
     try:
-        confidence = float(conf_raw)
+        conf = float(obj.get("confidence", 0.0))
     except Exception:
-        confidence = 0.0
-    confidence = max(0.0, min(1.0, confidence))
+        conf = 0.0
+    conf = max(0.0, min(1.0, conf))
+    reason = str(obj.get("reason") or "llm_router")
+    refinement_type = obj.get("refinement_type")
+    refinement_type = str(refinement_type).strip().lower() if refinement_type is not None else None
+    if refinement_type in {"", "none", "null"}:
+        refinement_type = None
+    need_clarify = bool(obj.get("need_clarify", False))
+    clarify_question = obj.get("clarify_question")
+    clarify_question = str(clarify_question).strip() if clarify_question is not None else None
+    if clarify_question == "":
+        clarify_question = None
     target_index = obj.get("target_index")
     try:
         target_index = int(target_index) if target_index is not None else None
@@ -192,52 +174,21 @@ def _classify_intent_with_llm(
             target_index = None
     except Exception:
         target_index = None
-    reason = str(obj.get("reason") or "llm_router")
-    return {
-        "intent": intent,
-        "confidence": confidence,
-        "target_index": target_index,
-        "reason": reason,
-    }
-
-
-def _is_reset_search(user_text: str) -> bool:
-    t = (user_text or "").strip().lower()
-    if not t:
-        return False
-    return bool(re.search(r"\b(start over|new search|reset search|ignore previous|from scratch)\b", t))
-
-
-def _default_decision(intent: str, reason: str, target_index: Optional[int] = None, confidence: float = 0.7) -> RouteDecision:
-    return RouteDecision(intent=intent, reason=reason, target_index=target_index, confidence=confidence)
-
-
-def _post_check_override(intent: str, user_text: str, has_focus: bool) -> str:
-    t = (user_text or "").strip().lower()
-    if intent == "Search" and has_focus and ("?" in t or _should_force_specific_qa(t, has_focus=True)):
-        return "Specific_QA"
-    return intent
-
-
-def _fallback_route(user_text: str, has_focus: bool) -> RouteDecision:
-    intent = _heuristic_route(user_text)
-    intent = _post_check_override(intent, user_text, has_focus=has_focus)
-    idx = _extract_target_index_rule(user_text) if intent == "Specific_QA" else None
-    return _default_decision(intent=intent, reason="heuristic_fallback", target_index=idx, confidence=0.51)
-
-
-def _route_by_rules(user_text: str, has_focus: bool) -> Optional[RouteDecision]:
-    t = (user_text or "").strip()
-    if t.startswith("/"):
-        return _default_decision(intent="control", reason="command", confidence=1.0)
-    if _is_reset_search(t):
-        return _default_decision(intent="Search", reason="explicit_new_search", confidence=1.0)
-    idx = _extract_target_index_rule(t)
-    if idx is not None:
-        return _default_decision(intent="Specific_QA", reason="explicit_index_reference", target_index=idx, confidence=0.98)
-    if _should_force_specific_qa(t, has_focus=has_focus):
-        return _default_decision(intent="Specific_QA", reason="focus_qa_override", confidence=0.95)
-    return None
+    if intent != "Specific_QA":
+        target_index = None
+    if intent != "Search":
+        refinement_type = None
+    if not need_clarify:
+        clarify_question = None
+    return RouteDecision(
+        intent=intent,
+        reason=f"llm:{reason}",
+        target_index=target_index,
+        refinement_type=refinement_type,
+        confidence=conf,
+        need_clarify=need_clarify,
+        clarify_question=clarify_question,
+    )
 
 
 def route_turn(
@@ -247,27 +198,51 @@ def route_turn(
     has_listings: bool = False,
     has_focus: bool = False,
 ) -> RouteDecision:
-    t = (user_text or "").strip()
-    rule_hit = _route_by_rules(t, has_focus=has_focus)
-    if rule_hit is not None:
-        return rule_hit
+    _ = (mode, has_focus)
+    text = (user_text or "").strip()
 
-    llm_out = _classify_intent_with_llm(
-        user_text=t,
-        history_hint=history_hint,
-        has_listings=has_listings,
-        has_focus=has_focus,
-    )
-    if llm_out:
-        intent = _post_check_override(llm_out["intent"], t, has_focus=has_focus)
-        target_index = llm_out.get("target_index")
-        if intent != "Specific_QA":
-            target_index = None
-        return _default_decision(
-            intent=intent,
-            reason=f"llm_classifier:{llm_out.get('reason', 'ok')}",
-            target_index=target_index,
-            confidence=float(llm_out.get("confidence", 0.0)),
+    # Fixed, simple command rules.
+    if text.lower() in {"/exit", "exit", "quit"}:
+        return RouteDecision(intent="control", reason="rule:exit", confidence=1.0)
+    if text.lower() in {"/state", "state"}:
+        return RouteDecision(intent="control", reason="rule:state", confidence=1.0)
+    m_focus = re.match(r"^/focus\s+(\d{1,2})\s*$", text.lower())
+    if m_focus:
+        return RouteDecision(intent="control", reason="rule:focus", target_index=int(m_focus.group(1)), confidence=1.0)
+
+    # Decision Tree root: has_listings
+    if not has_listings:
+        return _route_no_listings(text)
+
+    # has_listings=True branch: cheap rules first.
+    if _is_chitchat(text):
+        return RouteDecision(intent="Chitchat", reason="rule:chitchat_with_listings", confidence=1.0)
+    if _is_reset(text):
+        return RouteDecision(intent="Search", reason="rule:reset_with_listings", confidence=1.0, refinement_type=None)
+
+    idx = _extract_target_index(text)
+    if idx is not None:
+        return RouteDecision(intent="Specific_QA", reason="rule:index_reference", target_index=idx, confidence=0.98)
+    if _is_refinement_hint(text):
+        return RouteDecision(
+            intent="Search",
+            reason="rule:refinement_with_listings",
+            confidence=0.95,
+            need_clarify=False,
+            clarify_question=None,
+            refinement_type="price_down" if re.search(r"\b(too expensive|cheaper|lower budget)\b", text.lower()) else None,
         )
 
-    return _fallback_route(t, has_focus=has_focus)
+    # Complex language goes to LLM.
+    llm_decision = _classify_with_llm_for_listings(text, history_hint=history_hint)
+    if llm_decision is not None:
+        return llm_decision
+
+    # Safe fallback with listings present: prefer Search.
+    return RouteDecision(
+        intent="Search",
+        reason="fallback:search_with_listings",
+        confidence=0.25,
+        need_clarify=True,
+        clarify_question="Could you clarify whether you want to refine filters or ask about a specific listing?",
+    )

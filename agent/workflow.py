@@ -68,8 +68,11 @@ def run() -> None:
                     {
                         "intent": decision.intent,
                         "target_index": decision.target_index,
+                        "refinement_type": decision.refinement_type,
                         "confidence": decision.confidence,
                         "reason": decision.reason,
+                        "need_clarify": decision.need_clarify,
+                        "clarify_question": decision.clarify_question,
                         "has_listings": bool(state.last_results),
                         "has_focus": bool(state.current_focus_listing_payload),
                     },
@@ -77,11 +80,32 @@ def run() -> None:
                 )
             )
 
-        if decision.intent in {"Search", "Refinement"}:
+        if decision.intent == "Specific_QA" and decision.target_index is not None:
+            focus_err = _focus_by_index(state, decision.target_index)
+            if focus_err:
+                bot_text = focus_err
+                print("\nBot> " + bot_text)
+                state.history.append((user_in, bot_text))
+                continue
+            # Target index resolved explicitly, no need to ask follow-up clarification.
+            decision.need_clarify = False
+            decision.clarify_question = None
+
+        if decision.need_clarify and decision.clarify_question:
+            bot_text = decision.clarify_question
+        elif decision.intent in {"Search", "Refinement"}:
+            if decision.refinement_type == "price_down":
+                c = state.constraints or {}
+                if c.get("max_rent_pcm") is None:
+                    bot_text = "What budget range do you want now?"
+                    print("\nBot> " + bot_text)
+                    state.history.append((user_in, bot_text))
+                    continue
             out = run_search_skill(
                 user_text=user_in,
                 state_constraints=state.constraints,
                 runtime=runtime,
+                refinement_type=decision.refinement_type,
             )
             state.constraints = out.get("constraints")
             state.user_profile.update(out.get("profile_patch") or {})
@@ -125,13 +149,20 @@ def _handle_focus_command(user_in: str, state: AgentState) -> str:
         idx = int(parts[1])
     except ValueError:
         return "Usage: /focus 1"
+    err = _focus_by_index(state, idx)
+    if err:
+        return err
+    title = str(state.current_focus_listing_payload.get("title") or state.current_focus_listing_id)
+    return f"Focus switched to listing {idx}: {title}"
+
+
+def _focus_by_index(state: AgentState, idx: int) -> Optional[str]:
     if idx < 1 or idx > len(state.last_results):
         return f"Invalid index. Valid range: 1~{len(state.last_results)}"
     picked = state.last_results[idx - 1]
     state.current_focus_listing_id = str(picked.get("listing_id") or picked.get("url") or f"row_{idx}")
     state.current_focus_listing_payload = picked
-    title = str(picked.get("title") or state.current_focus_listing_id)
-    return f"Focus switched to listing {idx}: {title}"
+    return None
 
 
 def _make_history_hint(state: AgentState, limit: int = 4) -> Optional[str]:
