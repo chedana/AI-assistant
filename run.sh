@@ -40,6 +40,27 @@ export ROUTER_API_KEY="${ROUTER_API_KEY:-${OPENAI_API_KEY}}"
 
 mkdir -p "/workspace/AI-assistant/artifacts/skills/search/logs" || true
 
+check_model_exists() {
+  local base_url="$1"
+  local model_name="$2"
+  local label="$3"
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "[run][warn] curl not found; skip ${label} model check"
+    return 0
+  fi
+  local payload
+  if ! payload="$(curl -sS --max-time 8 "${base_url}/models")"; then
+    echo "[run][error] failed to query ${label} models endpoint: ${base_url}/models"
+    return 1
+  fi
+  if ! printf '%s' "${payload}" | grep -F "\"id\":\"${model_name}\"" >/dev/null 2>&1; then
+    echo "[run][error] ${label} model '${model_name}' not found at ${base_url}/models"
+    echo "[run][hint] available models payload: ${payload}"
+    return 1
+  fi
+  return 0
+}
+
 echo "[run] APP_DIR=${APP_DIR}"
 echo "[run] RENT_QDRANT_PATH=${RENT_QDRANT_PATH}"
 echo "[run] RENT_QDRANT_COLLECTION=${RENT_QDRANT_COLLECTION}"
@@ -59,5 +80,8 @@ echo "[run] QWEN_BASE_URL=${QWEN_BASE_URL}"
 echo "[run] QWEN_MODEL=${QWEN_MODEL}"
 echo "[run] ROUTER_BASE_URL=${ROUTER_BASE_URL}"
 echo "[run] ROUTER_MODEL=${ROUTER_MODEL}"
+
+check_model_exists "${QWEN_BASE_URL}" "${QWEN_MODEL}" "reasoning"
+check_model_exists "${ROUTER_BASE_URL}" "${ROUTER_MODEL}" "router"
 
 exec python3 main.py
