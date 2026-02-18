@@ -2,7 +2,11 @@ import json
 import re
 from typing import Any, Dict
 
-from core.llm_client import qwen_chat
+from core.llm_client import llm_extract, llm_extract_all_signals, qwen_chat
+from core.settings import STRUCTURED_POLICY
+from skills.qa.lookup import semantic_lookup, structured_lookup
+from skills.search.extractors import repair_extracted_constraints
+from skills.search.handler import apply_structured_policy, split_query_signals
 
 
 def _strip_think_blocks(text: str) -> str:
@@ -34,24 +38,71 @@ def answer_single_listing_question(question: str, listing_payload: Dict[str, Any
         "features": listing_payload.get("features"),
         "nearest_station": listing_payload.get("nearest_station"),
         "distance_to_station_m": listing_payload.get("distance_to_station_m"),
+        "schools": listing_payload.get("schools"),
+        "stations": listing_payload.get("stations"),
         "url": listing_payload.get("url"),
     }
+    semantic_parse_source = "llm_combined"
+    combined = {"constraints": {}, "semantic_terms": {}}
+    llm_constraints: Dict[str, Any] = {}
+    semantic_terms: Dict[str, Any] = {}
+    try:
+        combined = llm_extract_all_signals(question, existing_constraints=None)
+        llm_constraints = combined.get("constraints") or {}
+        semantic_terms = combined.get("semantic_terms") or {}
+    except Exception:
+        semantic_parse_source = "fallback_split_calls"
+        llm_constraints = llm_extract(question, existing_constraints=None)
+        semantic_terms = {}
+    rule_constraints = repair_extracted_constraints(llm_constraints, question)
+    final_constraints, _ = apply_structured_policy(
+        user_text=question,
+        llm_constraints=llm_constraints,
+        rule_constraints=rule_constraints,
+        policy=STRUCTURED_POLICY,
+    )
+    signals = split_query_signals(
+        question,
+        final_constraints or {},
+        precomputed_semantic_terms=semantic_terms,
+        semantic_parse_source=semantic_parse_source,
+    )
+
+    structured = structured_lookup(signals, distilled, raw_question=question)
+    semantic = structured if structured.found else semantic_lookup(signals, distilled, raw_question=question)
+    evidence_source = structured if structured.found else semantic
+
+    if not evidence_source.found:
+        return "This listing does not provide that information. Please ask the agent to confirm."
+
     system_prompt = (
         "You are a rental property QA assistant.\n"
-        "Answer ONLY using the provided listing JSON.\n"
-        "If info is not present, say it is not provided and suggest asking agent.\n"
-        "Keep the answer concise."
+        "You must answer using only the provided evidence and facts.\n"
+        "Do not guess or add information that is not in evidence.\n"
+        "If evidence is insufficient, say not provided and ask user to check with agent.\n"
+        "Keep answer concise and concrete."
     )
+    qa_payload = {
+        "question": question,
+        "signals": signals,
+        "lookup_mode": evidence_source.mode,
+        "facts": evidence_source.facts,
+        "evidence": evidence_source.evidence,
+        "listing": {
+            "title": distilled.get("title"),
+            "address": distilled.get("address"),
+            "price_pcm": distilled.get("price_pcm"),
+            "url": distilled.get("url"),
+        },
+    }
     try:
         out = qwen_chat(
             [
                 {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
-                    "content": "Question:\n"
-                    + question
-                    + "\n\nListing JSON:\n"
-                    + json.dumps(distilled, ensure_ascii=False),
+                    "content": "Answer based on this grounded QA JSON only:\n"
+                    + json.dumps(qa_payload, ensure_ascii=False),
                 },
             ],
             temperature=0.0,
@@ -59,9 +110,8 @@ def answer_single_listing_question(question: str, listing_payload: Dict[str, Any
         cleaned = _strip_think_blocks(out)
         return cleaned or "Not provided in listing data. Please ask the agent to confirm."
     except Exception:
-        station = distilled.get("nearest_station") or "not provided"
-        distance = distilled.get("distance_to_station_m") or "not provided"
-        return (
-            f"I can only answer from known fields. Nearest station: {station}; "
-            f"distance_to_station_m: {distance}. Other details may require asking agent."
-        )
+        top_evidence = evidence_source.evidence[:2]
+        if not top_evidence:
+            return "Not provided in listing data. Please ask the agent to confirm."
+        bits = [f"{x.get('field')}: {x.get('text')}" for x in top_evidence]
+        return "From listing details: " + "; ".join(bits)
