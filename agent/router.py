@@ -406,23 +406,13 @@ def route_turn(
     if idx is not None:
         return RouteDecision(intent="Specific_QA", reason="rule:index_reference", target_index=idx, confidence=0.98)
     idx_inline = _extract_target_index_in_text(text, max_index=max_index)
-    if idx_inline is not None and _looks_like_contextual_qa(text):
+    if idx_inline is not None:
         return RouteDecision(
             intent="Specific_QA",
             reason="rule:inline_index_reference",
             target_index=idx_inline,
             confidence=0.97,
         )
-    if _is_refinement_hint(text):
-        return RouteDecision(
-            intent="Search",
-            reason="rule:refinement_with_listings",
-            confidence=0.95,
-            need_clarify=False,
-            clarify_question=None,
-            refinement_type="price_down" if re.search(r"\b(too expensive|cheaper|lower budget)\b", text.lower()) else None,
-        )
-
     # Complex language goes to LLM.
     llm_decision = _classify_with_llm_for_listings(text, history_hint=history_hint)
     if llm_decision is not None:
