@@ -35,14 +35,23 @@ def _extract_target_index_rule(user_text: str) -> Optional[int]:
     t = (user_text or "").strip().lower()
     if not t:
         return None
-    m = re.search(r"(?:^|[\s#])(\d{1,2})(?:st|nd|rd|th)?(?:\s*(?:one|listing|result|option|flat|property))?\b", t)
-    if m:
+    numeric_patterns = [
+        r"#\s*(\d{1,2})\b",  # #2
+        r"\b(?:no\.?|number)\s*(\d{1,2})\b",  # no 2 / number 2
+        r"\b(?:listing|result|option|property|flat)\s*(\d{1,2})\b",  # listing 2
+        r"\b(\d{1,2})(?:st|nd|rd|th)\b",  # 2nd
+        r"\b(\d{1,2})\s*(?:one|listing|result|option|property|flat)\b",  # 2 listing
+    ]
+    for pat in numeric_patterns:
+        m = re.search(pat, t)
+        if not m:
+            continue
         try:
             idx = int(m.group(1))
             if idx >= 1:
                 return idx
         except Exception:
-            pass
+            continue
     ord_map = {
         "first": 1,
         "second": 2,
