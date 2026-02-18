@@ -20,9 +20,32 @@ def _strip_think_blocks(text: str) -> str:
     return s.strip()
 
 
+def _has_index_reference(text: str) -> bool:
+    s = str(text or "").strip()
+    if not s:
+        return False
+    patterns = [
+        r"\b(?:the\s+)?(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d{1,2}(?:st|nd|rd|th))\s+(?:one|listing|result|option|property|flat)\b",
+        r"\b(?:listing|result|option|property|flat)\s*#?\s*\d{1,2}\b",
+        r"(?<!\w)#\s*\d{1,2}(?!\w)",
+    ]
+    for p in patterns:
+        if re.search(p, s, flags=re.IGNORECASE):
+            return True
+    return False
+
+
 def answer_single_listing_question(question: str, listing_payload: Dict[str, Any]) -> str:
     if not listing_payload:
         return "I don't have the selected listing details yet."
+    question_text = str(question or "").strip()
+    extraction_input = question_text
+    if _has_index_reference(question_text):
+        extraction_input += (
+            "\n\nRouting note: If something is used as an index reference "
+            "(e.g., first/second/#3/listing 2), remove it from constraints "
+            "or condition terms for semantic matching."
+        )
 
     distilled = {
         "listing_id": listing_payload.get("listing_id"),
@@ -47,29 +70,29 @@ def answer_single_listing_question(question: str, listing_payload: Dict[str, Any
     llm_constraints: Dict[str, Any] = {}
     semantic_terms: Dict[str, Any] = {}
     try:
-        combined = llm_extract_all_signals(question, existing_constraints=None)
+        combined = llm_extract_all_signals(extraction_input, existing_constraints=None)
         llm_constraints = combined.get("constraints") or {}
         semantic_terms = combined.get("semantic_terms") or {}
     except Exception:
         semantic_parse_source = "fallback_split_calls"
-        llm_constraints = llm_extract(question, existing_constraints=None)
+        llm_constraints = llm_extract(extraction_input, existing_constraints=None)
         semantic_terms = {}
-    rule_constraints = repair_extracted_constraints(llm_constraints, question)
+    rule_constraints = repair_extracted_constraints(llm_constraints, extraction_input)
     final_constraints, _ = apply_structured_policy(
-        user_text=question,
+        user_text=extraction_input,
         llm_constraints=llm_constraints,
         rule_constraints=rule_constraints,
         policy=STRUCTURED_POLICY,
     )
     signals = split_query_signals(
-        question,
+        extraction_input,
         final_constraints or {},
         precomputed_semantic_terms=semantic_terms,
         semantic_parse_source=semantic_parse_source,
     )
 
-    structured = structured_lookup(signals, distilled, raw_question=question)
-    semantic = structured if structured.found else semantic_lookup(signals, distilled, raw_question=question)
+    structured = structured_lookup(signals, distilled, raw_question=question_text)
+    semantic = structured if structured.found else semantic_lookup(signals, distilled, raw_question=question_text)
     evidence_source = structured if structured.found else semantic
 
     if not evidence_source.found:
@@ -84,6 +107,7 @@ def answer_single_listing_question(question: str, listing_payload: Dict[str, Any
     )
     qa_payload = {
         "question": question,
+        "extraction_input": extraction_input,
         "signals": signals,
         "lookup_mode": evidence_source.mode,
         "facts": evidence_source.facts,
