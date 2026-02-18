@@ -3,7 +3,7 @@ import re
 from typing import Dict, List, Tuple
 
 QWEN_BASE_URL = os.environ.get("QWEN_BASE_URL", "http://127.0.0.1:8000/v1")
-QWEN_MODEL = os.environ.get("QWEN_MODEL", "./Qwen3-14B")
+QWEN_MODEL = os.environ.get("QWEN_MODEL", "./Qwen3-8B")
 QWEN_API_KEY = os.environ.get("OPENAI_API_KEY", "dummy")
 ROUTER_BASE_URL = os.environ.get("ROUTER_BASE_URL", QWEN_BASE_URL)
 ROUTER_MODEL = os.environ.get("ROUTER_MODEL", QWEN_MODEL)
