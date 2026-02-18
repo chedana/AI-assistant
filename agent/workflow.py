@@ -61,6 +61,7 @@ def run() -> None:
             history_hint=history_hint,
             has_listings=bool(state.last_results),
             has_focus=bool(state.current_focus_listing_payload),
+            listings_count=len(state.last_results),
         )
         if router_debug:
             print(
