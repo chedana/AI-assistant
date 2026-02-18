@@ -12,6 +12,9 @@ from core.chatbot_config import (
     QWEN_API_KEY,
     QWEN_BASE_URL,
     QWEN_MODEL,
+    ROUTER_API_KEY,
+    ROUTER_BASE_URL,
+    ROUTER_MODEL,
 )
 from core.settings import DEFAULT_K
 from skills.search.extractors import (
@@ -23,11 +26,21 @@ from skills.search.extractors import (
 )
 
 qwen_client = OpenAI(base_url=QWEN_BASE_URL, api_key=QWEN_API_KEY)
+router_client = OpenAI(base_url=ROUTER_BASE_URL, api_key=ROUTER_API_KEY)
 
 
 def qwen_chat(messages, temperature=0.0) -> str:
     r = qwen_client.chat.completions.create(
         model=QWEN_MODEL,
+        messages=messages,
+        temperature=temperature,
+    )
+    return r.choices[0].message.content.strip()
+
+
+def qwen_router_chat(messages, temperature=0.0) -> str:
+    r = router_client.chat.completions.create(
+        model=ROUTER_MODEL,
         messages=messages,
         temperature=temperature,
     )

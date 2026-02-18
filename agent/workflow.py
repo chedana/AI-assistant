@@ -1,4 +1,5 @@
 import json
+import os
 from typing import Optional
 
 from agent.router import route_turn
@@ -10,6 +11,7 @@ from skills.search.agentic import build_search_runtime, run_search_skill
 def run() -> None:
     runtime = build_search_runtime()
     state = AgentState()
+    router_debug = str(os.environ.get("ROUTER_DEBUG", "0")).strip().lower() in {"1", "true", "yes", "on"}
 
     print("Rent Assistant (agentic MVP)")
     print("Intents: Search / Specific_QA / Refinement / Chitchat")
@@ -52,7 +54,28 @@ def run() -> None:
             continue
 
         history_hint = _make_history_hint(state)
-        decision = route_turn(user_in, mode=state.mode, history_hint=history_hint)
+        decision = route_turn(
+            user_in,
+            mode=state.mode,
+            history_hint=history_hint,
+            has_listings=bool(state.last_results),
+            has_focus=bool(state.current_focus_listing_payload),
+        )
+        if router_debug:
+            print(
+                "Bot> [router] "
+                + json.dumps(
+                    {
+                        "intent": decision.intent,
+                        "target_index": decision.target_index,
+                        "confidence": decision.confidence,
+                        "reason": decision.reason,
+                        "has_listings": bool(state.last_results),
+                        "has_focus": bool(state.current_focus_listing_payload),
+                    },
+                    ensure_ascii=False,
+                )
+            )
 
         if decision.intent in {"Search", "Refinement"}:
             out = run_search_skill(
@@ -67,16 +90,16 @@ def run() -> None:
             bot_text = out.get("reply_text") or "No result."
         elif decision.intent == "Specific_QA":
             if not state.current_focus_listing_payload:
-                bot_text = "你指的是哪一套房源？可以用 /focus 1 先选中一套。"
+                bot_text = "Which listing do you mean? Use /focus 1 to select one first."
             else:
                 bot_text = answer_single_listing_question(
                     question=user_in,
                     listing_payload=state.current_focus_listing_payload,
                 )
         elif decision.intent == "Chitchat":
-            bot_text = "你好，我可以帮你找房、调整条件，或者回答当前房源细节问题。"
+            bot_text = "Hi. I can help you search listings, refine constraints, or answer questions about the current listing."
         else:
-            bot_text = "我没理解你的意思。你可以直接说预算、区域、户型，或者问“这套房离地铁远吗？”"
+            bot_text = "I could not classify that request. You can provide budget/location/layout, or ask something like 'How far is this listing from the station?'"
 
         print("\nBot> " + bot_text)
         state.history.append((user_in, bot_text))
@@ -97,18 +120,18 @@ def _handle_focus_command(user_in: str, state: AgentState) -> str:
     if len(parts) != 2:
         return "Usage: /focus 1"
     if not state.last_results:
-        return "当前没有可选房源，请先搜索。"
+        return "There are no selectable listings yet. Please run a search first."
     try:
         idx = int(parts[1])
     except ValueError:
         return "Usage: /focus 1"
     if idx < 1 or idx > len(state.last_results):
-        return f"无效序号。可选范围: 1~{len(state.last_results)}"
+        return f"Invalid index. Valid range: 1~{len(state.last_results)}"
     picked = state.last_results[idx - 1]
     state.current_focus_listing_id = str(picked.get("listing_id") or picked.get("url") or f"row_{idx}")
     state.current_focus_listing_payload = picked
     title = str(picked.get("title") or state.current_focus_listing_id)
-    return f"已切换到第 {idx} 套：{title}"
+    return f"Focus switched to listing {idx}: {title}"
 
 
 def _make_history_hint(state: AgentState, limit: int = 4) -> Optional[str]:
