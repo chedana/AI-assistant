@@ -8,3 +8,7 @@ artifacts/skills/search/tmp/
 # common large binaries
 *.parquet
 *.sqlite
+
+# local helper wrappers (use *.sh scripts)
+/pull
+/push
