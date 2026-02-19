@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import ast
 import io
 import copy
 import pickle
@@ -710,10 +711,83 @@ def repair_extracted_constraints(extracted: Dict[str, Any], user_text: str) -> D
 
     return out
 def _extract_json_obj(txt: str) -> dict:
-    m = re.search(r"\{.*\}", txt, flags=re.S)
-    if not m:
-        raise ValueError("No JSON found. Got:\n" + txt)
-    return json.loads(m.group(0))
+    s = str(txt or "").strip()
+    if not s:
+        return {}
+
+    # Prefer content outside reasoning blocks when available.
+    s_no_think = re.sub(r"<think>.*?</think>", " ", s, flags=re.I | re.S).strip()
+    if s_no_think:
+        s = s_no_think
+
+    # Unwrap fenced code blocks if present.
+    fence = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", s, flags=re.I)
+    candidates: List[str] = []
+    if fence:
+        candidates.append(fence.group(1).strip())
+
+    # Collect balanced JSON object candidates from left to right.
+    start_positions = [i for i, ch in enumerate(s) if ch == "{"]
+    for st in start_positions[:20]:
+        depth = 0
+        for i in range(st, len(s)):
+            ch = s[i]
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    seg = s[st : i + 1].strip()
+                    if seg:
+                        candidates.append(seg)
+                    break
+
+    # Last resort: keep legacy greedy capture for compatibility.
+    m = re.search(r"\{.*\}", s, flags=re.S)
+    if m:
+        candidates.append(m.group(0).strip())
+
+    seen = set()
+    deduped: List[str] = []
+    for c in candidates:
+        if c in seen:
+            continue
+        seen.add(c)
+        deduped.append(c)
+
+    for c in deduped:
+        # 1) strict JSON
+        try:
+            obj = json.loads(c)
+            if isinstance(obj, dict):
+                return obj
+        except Exception:
+            pass
+
+        # 2) tolerant JSON: remove trailing commas
+        try:
+            c2 = re.sub(r",\s*([}\]])", r"\1", c)
+            obj = json.loads(c2)
+            if isinstance(obj, dict):
+                return obj
+        except Exception:
+            pass
+
+        # 3) python-literal-like dict (single quotes / True/False/None)
+        try:
+            py_like = c
+            py_like = re.sub(r"\btrue\b", "True", py_like, flags=re.I)
+            py_like = re.sub(r"\bfalse\b", "False", py_like, flags=re.I)
+            py_like = re.sub(r"\bnull\b", "None", py_like, flags=re.I)
+            py_like = re.sub(r",\s*([}\]])", r"\1", py_like)
+            obj = ast.literal_eval(py_like)
+            if isinstance(obj, dict):
+                return obj
+        except Exception:
+            pass
+
+    # Never crash the pipeline because of malformed LLM output.
+    return {}
 
 def _normalize_constraint_extract(obj: dict) -> dict:
     obj = obj or {}
@@ -989,6 +1063,36 @@ def merge_constraints(old: Optional[dict], new: dict) -> dict:
             out["layout_options"] = _normalize_layout_options((out.get("layout_options") or []) + new_layout)
         else:
             out["layout_options"] = new_layout
+
+    # Budget scope policy:
+    # - If no global budget exists, first seen layout budget becomes global.
+    # - If a budget is mentioned and only one active layout exists, sync that
+    #   layout budget with global budget.
+    # - With multiple layouts, missing layout budget keeps None and will
+    #   fallback to global budget during hard filtering.
+    layout_opts = _normalize_layout_options(out.get("layout_options") or [])
+    global_budget = out.get("max_rent_pcm")
+    mentioned_global_budget = new.get("max_rent_pcm") is not None
+    mentioned_layout_budget = any(
+        isinstance(x, dict) and x.get("max_rent_pcm") is not None
+        for x in (new.get("layout_options") or [])
+    )
+    budget_mentioned = bool(mentioned_global_budget or mentioned_layout_budget)
+
+    if global_budget is None:
+        for opt in layout_opts:
+            if not isinstance(opt, dict):
+                continue
+            b = opt.get("max_rent_pcm")
+            if b is not None:
+                out["max_rent_pcm"] = b
+                global_budget = b
+                break
+
+    if budget_mentioned and len(layout_opts) == 1 and global_budget is not None:
+        if isinstance(layout_opts[0], dict):
+            layout_opts[0]["max_rent_pcm"] = global_budget
+            out["layout_options"] = _normalize_layout_options(layout_opts)
 
     # default k
     if out.get("k") is None:
