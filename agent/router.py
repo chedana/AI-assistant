@@ -281,10 +281,14 @@ def _classify_with_llm_no_listings(text: str, history_hint: Optional[str]) -> Op
     )
 
 
-def _classify_with_llm_for_listings(text: str, history_hint: Optional[str]) -> Optional[RouteDecision]:
+def _classify_with_llm_for_listings(
+    text: str,
+    history_hint: Optional[str],
+    has_focus: bool,
+) -> Optional[RouteDecision]:
     prompt = (
         "You are a router for a rental assistant.\n"
-        "Current state always has_listings=true.\n"
+        f"Current state: has_listings=true, has_focus={'true' if has_focus else 'false'}.\n"
         "Return STRICT JSON only with schema:\n"
         '{"intent":"Search|Specific_QA|Chitchat","target_index":null,"confidence":0.0,"reason":"...",'
         '"need_clarify":false,"clarify_question":null,"refinement_type":null}\n'
@@ -292,15 +296,16 @@ def _classify_with_llm_for_listings(text: str, history_hint: Optional[str]) -> O
         "- Search includes both new-search and refinement/reset actions.\n"
         "- Specific_QA is for detail questions about current results/listings.\n"
         "- target_index is 1-based when user references a specific result number.\n"
+        "- If has_focus=true and user asks a listing detail question without index, keep intent=Specific_QA and need_clarify=false.\n"
+        "- If has_focus=false and QA target is ambiguous, set need_clarify=true.\n"
         "- If refinement request is underspecified (e.g., 'too expensive' without a target budget), set need_clarify=true.\n"
-        "- If QA target is ambiguous, set need_clarify=true and ask which listing.\n"
         "- For clear price reduction requests, set intent=Search and refinement_type='price_down'.\n"
         "\n"
         "Few-shot:\n"
         "Query: 'too expensive, cheaper please'\n"
         'Output: {"intent":"Search","target_index":null,"confidence":0.97,"reason":"refinement_request","need_clarify":false,"clarify_question":null,"refinement_type":"price_down"}\n'
         "Query: 'does it have a gym?'\n"
-        'Output: {"intent":"Specific_QA","target_index":null,"confidence":0.90,"reason":"detail_question_about_listing","need_clarify":true,"clarify_question":"Which listing do you mean?","refinement_type":null}\n'
+        'Output: {"intent":"Specific_QA","target_index":null,"confidence":0.90,"reason":"detail_question_about_listing","need_clarify":false,"clarify_question":null,"refinement_type":null}\n'
         "Query: 'second one?'\n"
         'Output: {"intent":"Specific_QA","target_index":2,"confidence":0.96,"reason":"explicit_result_reference","need_clarify":false,"clarify_question":null,"refinement_type":null}\n'
         "Query: 'start over'\n"
@@ -352,6 +357,9 @@ def _classify_with_llm_for_listings(text: str, history_hint: Optional[str]) -> O
         target_index = None
     if intent != "Search":
         refinement_type = None
+    if intent == "Specific_QA" and has_focus and target_index is None:
+        need_clarify = False
+        clarify_question = None
     if not need_clarify:
         clarify_question = None
     return RouteDecision(
@@ -373,7 +381,7 @@ def route_turn(
     has_focus: bool = False,
     listings_count: int = 0,
 ) -> RouteDecision:
-    _ = (mode, has_focus)
+    _ = mode
     text = (user_text or "").strip()
 
     # Fixed, simple command rules.
@@ -414,7 +422,7 @@ def route_turn(
             confidence=0.97,
         )
     # Complex language goes to LLM.
-    llm_decision = _classify_with_llm_for_listings(text, history_hint=history_hint)
+    llm_decision = _classify_with_llm_for_listings(text, history_hint=history_hint, has_focus=has_focus)
     if llm_decision is not None:
         return llm_decision
 

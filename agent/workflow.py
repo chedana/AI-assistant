@@ -109,6 +109,10 @@ def run() -> None:
             # Target index resolved explicitly, no need to ask follow-up clarification.
             decision.need_clarify = False
             decision.clarify_question = None
+        elif decision.intent == "Specific_QA" and state.current_focus_listing_payload:
+            # Keep QA continuity on current focus when user does not re-specify index.
+            decision.need_clarify = False
+            decision.clarify_question = None
 
         if decision.need_clarify and decision.clarify_question:
             bot_text = decision.clarify_question
