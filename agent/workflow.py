@@ -15,7 +15,7 @@ def run() -> None:
     router_debug = str(os.environ.get("ROUTER_DEBUG", "0")).strip().lower() in {"1", "true", "yes", "on"}
 
     print("Rent Assistant (agentic MVP)")
-    print("Intents: Search / Specific_QA / Refinement / Chitchat")
+    print("Intents: Search / Specific_QA / Chitchat")
     print("Commands: /exit /reset /state /focus N")
     print("----")
 
@@ -116,19 +116,12 @@ def run() -> None:
 
         if decision.need_clarify and decision.clarify_question:
             bot_text = decision.clarify_question
-        elif decision.intent in {"Search", "Refinement"}:
-            if decision.refinement_type == "price_down":
-                c = state.constraints or {}
-                if c.get("max_rent_pcm") is None:
-                    bot_text = "What budget range do you want now?"
-                    print("\nBot> " + bot_text)
-                    state.history.append((user_in, bot_text))
-                    continue
+        elif decision.intent == "Search":
             out = run_search_skill(
                 user_text=user_in,
                 state_constraints=state.constraints,
                 runtime=runtime,
-                refinement_type=decision.refinement_type,
+                refinement_type=None,
             )
             state.constraints = out.get("constraints")
             state.user_profile.update(out.get("profile_patch") or {})
