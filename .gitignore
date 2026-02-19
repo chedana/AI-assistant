@@ -12,3 +12,19 @@ artifacts/skills/search/tmp/
 # local helper wrappers (use *.sh scripts)
 /pull
 /push
+
+# python cache
+**/__pycache__/
+*.py[cod]
+
+# jupyter
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+
+# python cache
+**/__pycache__/
+*.py[cod]
+
+# jupyter
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
