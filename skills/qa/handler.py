@@ -20,32 +20,28 @@ def _strip_think_blocks(text: str) -> str:
     return s.strip()
 
 
-def _has_index_reference(text: str) -> bool:
+def _sanitize_question_for_qa(text: str) -> str:
     s = str(text or "").strip()
     if not s:
-        return False
+        return ""
     patterns = [
         r"\b(?:the\s+)?(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d{1,2}(?:st|nd|rd|th))\s+(?:one|listing|result|option|property|flat)\b",
         r"\b(?:listing|result|option|property|flat)\s*#?\s*\d{1,2}\b",
         r"(?<!\w)#\s*\d{1,2}(?!\w)",
     ]
+    out = s
     for p in patterns:
-        if re.search(p, s, flags=re.IGNORECASE):
-            return True
-    return False
+        out = re.sub(p, " ", out, flags=re.IGNORECASE)
+    out = re.sub(r"\s+", " ", out).strip(" ,.;:!?")
+    return out
 
 
 def answer_single_listing_question(question: str, listing_payload: Dict[str, Any]) -> str:
     if not listing_payload:
         return "I don't have the selected listing details yet."
     question_text = str(question or "").strip()
-    extraction_input = question_text
-    if _has_index_reference(question_text):
-        extraction_input += (
-            "\n\nRouting note: If something is used as an index reference "
-            "(e.g., first/second/#3/listing 2), remove it from constraints "
-            "or condition terms for semantic matching."
-        )
+    sanitized_question = _sanitize_question_for_qa(question_text)
+    extraction_input = sanitized_question or question_text
 
     distilled = {
         "listing_id": listing_payload.get("listing_id"),
@@ -91,8 +87,8 @@ def answer_single_listing_question(question: str, listing_payload: Dict[str, Any
         semantic_parse_source=semantic_parse_source,
     )
 
-    structured = structured_lookup(signals, distilled, raw_question=question_text)
-    semantic = structured if structured.found else semantic_lookup(signals, distilled, raw_question=question_text)
+    structured = structured_lookup(signals, distilled, raw_question=extraction_input)
+    semantic = structured if structured.found else semantic_lookup(signals, distilled, raw_question=extraction_input)
     evidence_source = structured if structured.found else semantic
 
     if not evidence_source.found:
@@ -106,8 +102,7 @@ def answer_single_listing_question(question: str, listing_payload: Dict[str, Any
         "Keep answer concise and concrete."
     )
     qa_payload = {
-        "question": question,
-        "extraction_input": extraction_input,
+        "question": extraction_input,
         "signals": signals,
         "lookup_mode": evidence_source.mode,
         "facts": evidence_source.facts,
