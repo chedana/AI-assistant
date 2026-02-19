@@ -1,7 +1,8 @@
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
+from core.internal_helpers import _collect_value_candidates, _score_single_intent
 from skills.search.extractors import _safe_text, parse_jsonish_items
 
 
@@ -11,21 +12,17 @@ class LookupResult:
     mode: str
     facts: Dict[str, Any]
     evidence: List[Dict[str, str]]
-def _extract_snippets(payload: Dict[str, Any]) -> List[Tuple[str, str]]:
-    snippets: List[Tuple[str, str]] = []
-    for item in parse_jsonish_items(payload.get("features")):
-        snippets.append(("features", item))
-    desc = _safe_text(payload.get("description"))
-    if desc:
-        for chunk in re.split(r"(?<=[\.\!\?;])\s+|\n+", desc):
-            c = _safe_text(chunk)
-            if len(c) >= 12:
-                snippets.append(("description", c))
-    for item in parse_jsonish_items(payload.get("schools")):
-        snippets.append(("schools", item))
-    for item in parse_jsonish_items(payload.get("stations")):
-        snippets.append(("stations", item))
-    return snippets
+
+
+def extract_snippets(payload: Dict[str, Any], allowed_fields: Optional[Set[str]] = None) -> List[Tuple[str, str]]:
+    # Reuse Search candidate splitter and filter by requested semantic fields.
+    allow = set(allowed_fields or {"features", "description"})
+    candidates = _collect_value_candidates(payload or {})
+    return [
+        (str(c.get("field") or ""), str(c.get("text") or ""))
+        for c in candidates
+        if str(c.get("field") or "") in allow and _safe_text(c.get("text"))
+    ]
 
 
 _NON_STRUCTURED_FALLBACK_FIELDS = {"description", "features"}
@@ -57,6 +54,15 @@ _GENERIC_QUERY_TERMS = {
     "with",
     "from",
     "about",
+    "one",
+    "ones",
+    "listing",
+    "result",
+    "option",
+    "property",
+    "flat",
+    "apartment",
+    "home",
 }
 
 
@@ -121,6 +127,21 @@ def _terms_from_signals(signals: Dict[str, Any], raw_question: str = "") -> List
         seen.add(n)
         dedup.append(t)
     return dedup[:20]
+
+
+def semantic_terms_from_signals(signals: Dict[str, Any], raw_question: str = "") -> List[str]:
+    terms = [x.lower().strip() for x in _terms_from_signals(signals, raw_question=raw_question) if _safe_text(x)]
+    terms = [x for x in terms if len(_normalize_token(x)) >= 3]
+    # Keep query-order while removing normalized duplicates.
+    out: List[str] = []
+    seen = set()
+    for x in terms:
+        nx = _normalize_token(x)
+        if not nx or nx in seen:
+            continue
+        seen.add(nx)
+        out.append(x)
+    return out
 
 
 def _structured_key_hints_from_signals(signals: Dict[str, Any]) -> List[str]:
@@ -227,8 +248,13 @@ def structured_lookup(signals: Dict[str, Any], payload: Dict[str, Any], raw_ques
     return LookupResult(True, "structured", facts, evidence)
 
 
-def semantic_lookup(signals: Dict[str, Any], payload: Dict[str, Any], raw_question: str = "") -> LookupResult:
-    snippets = _extract_snippets(payload)
+def semantic_lookup(
+    signals: Dict[str, Any],
+    payload: Dict[str, Any],
+    raw_question: str = "",
+    allowed_fields: Optional[Set[str]] = None,
+) -> LookupResult:
+    snippets = extract_snippets(payload, allowed_fields=allowed_fields)
     if not snippets:
         return LookupResult(False, "semantic", {}, [])
 
@@ -254,3 +280,93 @@ def semantic_lookup(signals: Dict[str, Any], payload: Dict[str, Any], raw_questi
         "matched_count": len(top),
     }
     return LookupResult(True, "semantic", facts, evidence)
+
+
+def semantic_vector_lookup(
+    signals: Dict[str, Any],
+    payload: Dict[str, Any],
+    embedder,
+    raw_question: str = "",
+    high_threshold: float = 0.75,
+    low_threshold: float = 0.60,
+    allowed_fields: Optional[Set[str]] = None,
+) -> Dict[str, Any]:
+    candidates = [
+        {"field": f, "text": t}
+        for f, t in extract_snippets(payload, allowed_fields=allowed_fields)
+        if _safe_text(t)
+    ]
+    if not candidates:
+        return {
+            "found": False,
+            "summary_label": "not_found",
+            "terms": [],
+            "term_matches": [],
+            "evidence": [],
+        }
+
+    terms = semantic_terms_from_signals(signals, raw_question=raw_question)
+    if not terms:
+        return {
+            "found": False,
+            "summary_label": "no_terms",
+            "terms": [],
+            "term_matches": [],
+            "evidence": [],
+        }
+
+    sim_cache: Dict[str, Any] = {}
+    term_matches: List[Dict[str, Any]] = []
+    for term in terms:
+        score, _detail, top_struct = _score_single_intent(
+            term,
+            candidates,
+            top_k=1,
+            embedder=embedder,
+            sim_cache=sim_cache,
+        )
+        best = top_struct[0] if top_struct else {}
+        best_score = float(score)
+        best_field = str(best.get("field") or "")
+        best_text = str(best.get("text") or "")
+        if best_score >= high_threshold:
+            label = "confirmed"
+        elif best_score >= low_threshold:
+            label = "uncertain"
+        else:
+            label = "not_found"
+        term_matches.append(
+            {
+                "term": term,
+                "score": round(best_score, 4),
+                "label": label,
+                "field": best_field,
+                "text": best_text,
+            }
+        )
+
+    labels = [str(x.get("label") or "not_found") for x in term_matches]
+    if labels and all(x == "confirmed" for x in labels):
+        summary_label = "confirmed"
+    elif labels and all(x != "not_found" for x in labels):
+        summary_label = "uncertain"
+    else:
+        summary_label = "not_found"
+
+    evidence = [
+        {
+            "field": str(x.get("field") or ""),
+            "text": str(x.get("text") or ""),
+            "term": str(x.get("term") or ""),
+            "score": str(x.get("score")),
+            "label": str(x.get("label") or ""),
+        }
+        for x in term_matches
+    ]
+    return {
+        "found": bool(term_matches),
+        "summary_label": summary_label,
+        "terms": terms,
+        "term_matches": term_matches,
+        "evidence": evidence,
+    }

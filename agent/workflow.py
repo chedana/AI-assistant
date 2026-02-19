@@ -1,11 +1,10 @@
 import json
 import os
-import re
 from typing import Optional
 
 from agent.router import route_turn
 from agent.state import AgentState
-from skills.qa.handler import answer_single_listing_question
+from skills.qa.handler import answer_multi_listing_question, answer_single_listing_question, classify_qa_scope
 from skills.search.agentic import build_search_runtime, run_search_skill
 
 
@@ -41,6 +40,8 @@ def run() -> None:
                 {
                     "user_profile": state.user_profile,
                     "current_focus_listing_id": state.current_focus_listing_id,
+                    "focus_source": state.focus_source,
+                    "last_qa_scope": state.last_qa_scope,
                     "history_size": len(state.history),
                     "constraints_active": bool(state.constraints),
                     "last_results_count": len(state.last_results),
@@ -82,25 +83,8 @@ def run() -> None:
                 )
             )
 
-        if _is_focus_only_request(user_in, decision):
-            if decision.target_index is None:
-                bot_text = "Please specify which listing index to focus on."
-            else:
-                focus_err = _focus_by_index(state, decision.target_index)
-                if focus_err:
-                    bot_text = focus_err
-                else:
-                    title = str(state.current_focus_listing_payload.get("title") or state.current_focus_listing_id)
-                    bot_text = (
-                        f"Focus switched to listing {decision.target_index}: {title}. "
-                        "What would you like to know about it?"
-                    )
-            print("\nBot> " + bot_text)
-            state.history.append((user_in, bot_text))
-            continue
-
         if decision.intent == "Specific_QA" and decision.target_index is not None:
-            focus_err = _focus_by_index(state, decision.target_index)
+            focus_err = _focus_by_index(state, decision.target_index, source="user_query")
             if focus_err:
                 bot_text = focus_err
                 print("\nBot> " + bot_text)
@@ -127,15 +111,60 @@ def run() -> None:
             state.user_profile.update(out.get("profile_patch") or {})
             state.last_results = list(out.get("listings") or [])
             _auto_focus_first(state)
+            state.last_qa_scope = None
             bot_text = out.get("reply_text") or "No result."
-        elif decision.intent == "Specific_QA":
-            if not state.current_focus_listing_payload:
-                bot_text = "Which listing do you mean? Use /focus 1 to select one first."
-            else:
-                bot_text = answer_single_listing_question(
-                    question=user_in,
-                    listing_payload=state.current_focus_listing_payload,
+            if state.last_results and state.current_focus_listing_payload:
+                focus_title = str(
+                    state.current_focus_listing_payload.get("title")
+                    or state.current_focus_listing_id
+                    or "listing #1"
                 )
+                bot_text += (
+                    f"\n\nNote: default focus is set to listing #1 ({focus_title}). "
+                    "Use /focus N to switch target, or ask 'which one has ...' to compare all current listings."
+                )
+        elif decision.intent == "Specific_QA":
+            # Explicit target index from router always means single-listing QA.
+            if decision.target_index is not None:
+                if not state.current_focus_listing_payload:
+                    bot_text = "Which listing do you mean? Use /focus 1 to select one first."
+                else:
+                    state.last_qa_scope = "single"
+                    bot_text = answer_single_listing_question(
+                        question=user_in,
+                        listing_payload=state.current_focus_listing_payload,
+                        embedder=runtime.embedder,
+                    )
+            else:
+                scope = classify_qa_scope(
+                    question=user_in,
+                    has_focus=bool(state.current_focus_listing_payload),
+                    has_listings=bool(state.last_results),
+                    last_qa_scope=state.last_qa_scope,
+                )
+                target_scope = str(scope.get("target_scope") or "").strip().lower()
+                if target_scope == "clarify":
+                    state.last_qa_scope = "clarify"
+                    bot_text = "Please specify which listing you mean (for example: listing 2), or ask 'which one has ...'."
+                elif target_scope == "list":
+                    state.last_qa_scope = "list"
+                    bot_text = answer_multi_listing_question(
+                        question=user_in,
+                        listings=state.last_results,
+                        embedder=runtime.embedder,
+                    )
+                elif not state.current_focus_listing_payload:
+                    state.last_qa_scope = "clarify"
+                    bot_text = "Which listing do you mean? Use /focus 1 to select one first."
+                else:
+                    state.last_qa_scope = "single"
+                    bot_text = answer_single_listing_question(
+                        question=user_in,
+                        listing_payload=state.current_focus_listing_payload,
+                        embedder=runtime.embedder,
+                    )
+                    if state.focus_source == "auto":
+                        bot_text += "\n\nNote: this answer is based on default focus listing #1."
         elif decision.intent == "Chitchat":
             bot_text = "Hi, how can I help?"
         else:
@@ -149,10 +178,12 @@ def _auto_focus_first(state: AgentState) -> None:
     if not state.last_results:
         state.current_focus_listing_id = None
         state.current_focus_listing_payload = None
+        state.focus_source = None
         return
     first = state.last_results[0]
     state.current_focus_listing_id = str(first.get("listing_id") or first.get("url") or "row_1")
     state.current_focus_listing_payload = first
+    state.focus_source = "auto"
 
 
 def _handle_focus_command(user_in: str, state: AgentState) -> str:
@@ -165,41 +196,21 @@ def _handle_focus_command(user_in: str, state: AgentState) -> str:
         idx = int(parts[1])
     except ValueError:
         return "Usage: /focus 1"
-    err = _focus_by_index(state, idx)
+    err = _focus_by_index(state, idx, source="user_command")
     if err:
         return err
     title = str(state.current_focus_listing_payload.get("title") or state.current_focus_listing_id)
     return f"Focus switched to listing {idx}: {title}"
 
 
-def _focus_by_index(state: AgentState, idx: int) -> Optional[str]:
+def _focus_by_index(state: AgentState, idx: int, source: str = "user_query") -> Optional[str]:
     if idx < 1 or idx > len(state.last_results):
         return f"Invalid index. Valid range: 1~{len(state.last_results)}"
     picked = state.last_results[idx - 1]
     state.current_focus_listing_id = str(picked.get("listing_id") or picked.get("url") or f"row_{idx}")
     state.current_focus_listing_payload = picked
+    state.focus_source = str(source or "user_query")
     return None
-
-
-def _is_focus_only_request(user_in: str, decision) -> bool:
-    if decision.intent != "Specific_QA" or decision.target_index is None:
-        return False
-    t = (user_in or "").strip().lower()
-    if not t:
-        return False
-    # Pure index references and short pointer phrases should switch focus only.
-    focus_only_patterns = [
-        r"^#\s*\d{1,2}\??$",
-        r"^(?:the\s+)?\d{1,2}(?:st|nd|rd|th)\??$",
-        r"^(?:the\s+)?(?:first|second|third|fourth|fifth)\??$",
-        r"^(?:the\s+)?(?:first|second|third|fourth|fifth)\s+(?:one|listing|result|option|property|flat)\??$",
-        r"^(?:listing|result|option|property|flat)\s*#?\s*\d{1,2}\??$",
-        r"^(?:what about|how about)\s+(?:the\s+)?(?:first|second|third|fourth|fifth|\d{1,2}(?:st|nd|rd|th)|#\d{1,2})\??$",
-    ]
-    for p in focus_only_patterns:
-        if re.match(p, t):
-            return True
-    return False
 
 
 def _make_history_hint(state: AgentState, limit: int = 4) -> Optional[str]:
