@@ -2,13 +2,11 @@ import json
 import re
 from typing import Any, Dict, List, Optional
 
-import pandas as pd
-
 from core.llm_client import llm_extract, llm_extract_all_signals, qwen_chat
 from core.settings import STRUCTURED_POLICY
 from skills.qa.lookup import semantic_lookup, semantic_vector_lookup, structured_lookup
 from skills.search.extractors import repair_extracted_constraints
-from skills.search.handler import apply_hard_filters_with_audit, apply_structured_policy, split_query_signals
+from skills.search.handler import apply_structured_policy, split_query_signals
 
 
 SEMANTIC_HIGH_THRESHOLD = 0.75
@@ -144,62 +142,6 @@ def _semantic_allowed_fields(signals: Dict[str, Any]) -> set:
     return {"features", "description"}
 
 
-def _has_active_structured_constraints(constraints: Dict[str, Any]) -> bool:
-    c = constraints or {}
-    if c.get("max_rent_pcm") is not None:
-        return True
-    if c.get("available_from") is not None:
-        return True
-    if c.get("furnish_type"):
-        return True
-    if c.get("let_type"):
-        return True
-    if c.get("min_tenancy_months") is not None:
-        return True
-    if c.get("min_size_sqm") is not None:
-        return True
-    if c.get("layout_options"):
-        return True
-    return False
-
-
-def _structured_match_eval(listing_payload: Dict[str, Any], constraints: Dict[str, Any]) -> Dict[str, Any]:
-    active = _has_active_structured_constraints(constraints)
-    if not active:
-        return {
-            "active": False,
-            "decisive": False,
-            "hard_pass": None,
-            "unknown_fields": [],
-            "fail_reasons": [],
-        }
-
-    df = pd.DataFrame([dict(listing_payload or {})])
-    _filtered, audits = apply_hard_filters_with_audit(df, constraints or {})
-    audit = (audits or [{}])[0]
-    checks = (audit or {}).get("hard_checks") or {}
-    unknown_fields: List[str] = []
-    for k, v in checks.items():
-        if not isinstance(v, dict):
-            continue
-        req = v.get("required")
-        actual = v.get("actual")
-        if req is None:
-            continue
-        if actual is None or (isinstance(actual, str) and not actual.strip()):
-            unknown_fields.append(str(k))
-
-    hard_pass = bool(audit.get("hard_pass"))
-    decisive = len(unknown_fields) == 0
-    return {
-        "active": True,
-        "decisive": decisive,
-        "hard_pass": hard_pass,
-        "unknown_fields": unknown_fields,
-        "fail_reasons": list(audit.get("hard_fail_reasons") or []),
-    }
-
-
 def classify_qa_scope(
     question: str,
     has_focus: bool,
@@ -268,16 +210,8 @@ def answer_single_listing_question(question: str, listing_payload: Dict[str, Any
     qa_ctx = _build_qa_signals(question)
     extraction_input = qa_ctx["extraction_input"]
     signals = qa_ctx["signals"]
-    final_constraints = qa_ctx.get("final_constraints") or {}
     allowed_fields = _semantic_allowed_fields(signals)
     distilled = _distill_listing_payload(listing_payload)
-    structured_eval = _structured_match_eval(distilled, final_constraints)
-
-    if structured_eval["active"] and structured_eval["decisive"]:
-        if structured_eval["hard_pass"]:
-            return "Yes, this listing matches the structured requirements in your question. Please confirm key details with the listing agent."
-        reasons = "; ".join(structured_eval["fail_reasons"][:2]) if structured_eval["fail_reasons"] else "it does not match required structured fields"
-        return f"No, based on structured listing fields, this does not match ({reasons}). Please confirm with the listing agent."
 
     structured = structured_lookup(signals, distilled, raw_question=extraction_input)
     semantic_fallback = semantic_lookup(
@@ -315,7 +249,6 @@ def answer_single_listing_question(question: str, listing_payload: Dict[str, Any
     qa_payload = {
         "question": extraction_input,
         "signals": signals,
-        "structured_match_eval": structured_eval,
         "structured": {
             "found": structured.found,
             "facts": structured.facts,
@@ -372,31 +305,12 @@ def answer_multi_listing_question(question: str, listings: List[Dict[str, Any]],
     qa_ctx = _build_qa_signals(question)
     extraction_input = qa_ctx["extraction_input"]
     signals = qa_ctx["signals"]
-    final_constraints = qa_ctx.get("final_constraints") or {}
     allowed_fields = _semantic_allowed_fields(signals)
 
     matched_confirmed: List[Dict[str, Any]] = []
     matched_uncertain: List[Dict[str, Any]] = []
     for idx, payload in enumerate(rows, start=1):
         distilled = _distill_listing_payload(payload)
-        structured_eval = _structured_match_eval(distilled, final_constraints)
-        if structured_eval["active"] and structured_eval["decisive"]:
-            label = "confirmed" if structured_eval["hard_pass"] else "not_found"
-            evidence = {
-                "text": "; ".join(structured_eval["fail_reasons"][:2]) if structured_eval["fail_reasons"] else "structured field match",
-            }
-            score = None
-            rec = {
-                "index": idx,
-                "title": str(distilled.get("title") or f"listing_{idx}"),
-                "label": label,
-                "evidence": str(evidence.get("text") or "").strip(),
-                "score": score,
-            }
-            if label == "confirmed":
-                matched_confirmed.append(rec)
-            continue
-
         if embedder is not None:
             vec = semantic_vector_lookup(
                 signals,
