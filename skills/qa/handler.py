@@ -2,11 +2,13 @@ import json
 import re
 from typing import Any, Dict, List, Optional
 
+import pandas as pd
+
 from core.llm_client import llm_extract, llm_extract_all_signals, qwen_chat
 from core.settings import STRUCTURED_POLICY
 from skills.qa.lookup import semantic_lookup, semantic_vector_lookup, structured_lookup
 from skills.search.extractors import repair_extracted_constraints
-from skills.search.handler import apply_structured_policy, split_query_signals
+from skills.search.handler import apply_hard_filters_with_audit, apply_structured_policy, split_query_signals
 
 
 SEMANTIC_HIGH_THRESHOLD = 0.75
@@ -87,6 +89,12 @@ def _distill_listing_payload(listing_payload: Dict[str, Any]) -> Dict[str, Any]:
         "distance_to_station_m": listing_payload.get("distance_to_station_m"),
         "schools": listing_payload.get("schools"),
         "stations": listing_payload.get("stations"),
+        "deposit": listing_payload.get("deposit"),
+        "min_tenancy": listing_payload.get("min_tenancy"),
+        "min_tenancy_months": listing_payload.get("min_tenancy_months"),
+        "size_sqm": listing_payload.get("size_sqm"),
+        "size_sqft": listing_payload.get("size_sqft"),
+        "property_type": listing_payload.get("property_type"),
         "url": listing_payload.get("url"),
     }
 
@@ -140,6 +148,71 @@ def _semantic_allowed_fields(signals: Dict[str, Any]) -> set:
     if has_transit:
         return {"stations", "description"}
     return {"features", "description"}
+
+
+def _has_active_structured_constraints(constraints: Dict[str, Any]) -> bool:
+    c = constraints or {}
+    return any(
+        [
+            c.get("max_rent_pcm") is not None,
+            c.get("available_from") is not None,
+            bool(c.get("furnish_type")),
+            bool(c.get("let_type")),
+            c.get("min_tenancy_months") is not None,
+            c.get("min_size_sqm") is not None,
+            bool(c.get("layout_options")),
+        ]
+    )
+
+
+def _structured_match_eval(listing_payload: Dict[str, Any], constraints: Dict[str, Any]) -> Dict[str, Any]:
+    if not _has_active_structured_constraints(constraints):
+        return {
+            "active": False,
+            "decisive": False,
+            "hard_pass": None,
+            "unknown_fields": [],
+            "fail_reasons": [],
+            "checks": {},
+        }
+    df = pd.DataFrame([dict(listing_payload or {})])
+    _filtered, audits = apply_hard_filters_with_audit(df, constraints or {})
+    audit = (audits or [{}])[0]
+    checks = (audit or {}).get("hard_checks") or {}
+    unknown_fields: List[str] = []
+    for k, v in checks.items():
+        if not isinstance(v, dict):
+            continue
+        req = v.get("required")
+        actual = v.get("actual")
+        if req is None:
+            continue
+        if actual is None or (isinstance(actual, str) and not actual.strip()):
+            unknown_fields.append(str(k))
+    return {
+        "active": True,
+        "decisive": len(unknown_fields) == 0,
+        "hard_pass": bool(audit.get("hard_pass")),
+        "unknown_fields": unknown_fields,
+        "fail_reasons": list(audit.get("hard_fail_reasons") or []),
+        "checks": checks,
+    }
+
+
+def _pick_decision_label(structured_eval: Dict[str, Any], vector_eval: Optional[Dict[str, Any]], semantic_fallback) -> Dict[str, Any]:
+    if structured_eval.get("active") and structured_eval.get("decisive"):
+        return {
+            "source": "structured_hard",
+            "label": "confirmed" if structured_eval.get("hard_pass") else "not_found",
+        }
+    if vector_eval and vector_eval.get("found"):
+        return {
+            "source": "semantic_vector",
+            "label": str(vector_eval.get("summary_label") or "not_found"),
+        }
+    if semantic_fallback and semantic_fallback.found:
+        return {"source": "semantic_keyword", "label": "confirmed"}
+    return {"source": "none", "label": "not_found"}
 
 
 def classify_qa_scope(
@@ -210,8 +283,10 @@ def answer_single_listing_question(question: str, listing_payload: Dict[str, Any
     qa_ctx = _build_qa_signals(question)
     extraction_input = qa_ctx["extraction_input"]
     signals = qa_ctx["signals"]
+    final_constraints = qa_ctx.get("final_constraints") or {}
     allowed_fields = _semantic_allowed_fields(signals)
     distilled = _distill_listing_payload(listing_payload)
+    structured_eval = _structured_match_eval(distilled, final_constraints)
 
     structured = structured_lookup(signals, distilled, raw_question=extraction_input)
     semantic_fallback = semantic_lookup(
@@ -234,9 +309,9 @@ def answer_single_listing_question(question: str, listing_payload: Dict[str, Any
         else None
     )
 
-    no_evidence = (not structured.found) and (not semantic_fallback.found) and not (vector_eval and vector_eval.get("found"))
-    if no_evidence:
-        return "This listing does not provide that information. Please ask the agent to confirm."
+    decision = _pick_decision_label(structured_eval, vector_eval, semantic_fallback)
+    if decision["label"] == "not_found" and decision["source"] == "none":
+        return "Not found in listing data. Please ask the agent to confirm."
 
     system_prompt = (
         "You are a rental property QA assistant.\n"
@@ -249,6 +324,9 @@ def answer_single_listing_question(question: str, listing_payload: Dict[str, Any
     qa_payload = {
         "question": extraction_input,
         "signals": signals,
+        "final_constraints": final_constraints,
+        "decision": decision,
+        "structured_match_eval": structured_eval,
         "structured": {
             "found": structured.found,
             "facts": structured.facts,
@@ -282,6 +360,10 @@ def answer_single_listing_question(question: str, listing_payload: Dict[str, Any
         cleaned = _strip_think_blocks(out)
         return cleaned or "Not provided in listing data. Please ask the agent to confirm."
     except Exception:
+        if decision["label"] == "confirmed":
+            return "Confirmed by listing data. Please confirm with the listing agent."
+        if decision["label"] == "uncertain":
+            return "Possibly matched, but not certain from listing data. Please confirm with the listing agent."
         top_evidence = []
         if vector_eval and vector_eval.get("evidence"):
             top_evidence = vector_eval["evidence"][:2]
@@ -305,12 +387,15 @@ def answer_multi_listing_question(question: str, listings: List[Dict[str, Any]],
     qa_ctx = _build_qa_signals(question)
     extraction_input = qa_ctx["extraction_input"]
     signals = qa_ctx["signals"]
+    final_constraints = qa_ctx.get("final_constraints") or {}
     allowed_fields = _semantic_allowed_fields(signals)
 
     matched_confirmed: List[Dict[str, Any]] = []
     matched_uncertain: List[Dict[str, Any]] = []
+    rows_eval: List[Dict[str, Any]] = []
     for idx, payload in enumerate(rows, start=1):
         distilled = _distill_listing_payload(payload)
+        structured_eval = _structured_match_eval(distilled, final_constraints)
         if embedder is not None:
             vec = semantic_vector_lookup(
                 signals,
@@ -338,33 +423,61 @@ def answer_multi_listing_question(question: str, listings: List[Dict[str, Any]],
             evidence = (sem.evidence or [{}])[0]
             score = None
 
+        decision = _pick_decision_label(structured_eval, vec if embedder is not None else None, sem if embedder is None else None)
+        label = str(decision.get("label") or label)
         rec = {
             "index": idx,
             "title": str(distilled.get("title") or f"listing_{idx}"),
             "label": label,
             "evidence": str(evidence.get("text") or "").strip(),
             "score": score,
+            "decision": decision,
+            "structured_match_eval": structured_eval,
         }
+        rows_eval.append(rec)
         if label == "confirmed":
             matched_confirmed.append(rec)
         elif label == "uncertain":
             matched_uncertain.append(rec)
 
     if not matched_confirmed and not matched_uncertain:
-        return "No listing shows clear evidence for that in features/description. Please confirm with the agent."
+        return "Not found in current listings. Please ask the agent to confirm."
+
+    system_prompt = (
+        "You are a rental property QA assistant.\n"
+        "Answer using ONLY the provided rows evaluation JSON.\n"
+        "Do not invent facts.\n"
+        "Summarize confirmed matches first, then uncertain matches if any.\n"
+        "Always remind user to confirm with listing agent."
+    )
+    qa_payload = {
+        "question": extraction_input,
+        "signals": signals,
+        "final_constraints": final_constraints,
+        "rows": rows_eval,
+    }
+    try:
+        out = qwen_chat(
+            [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": "Answer from this JSON only:\n" + json.dumps(qa_payload, ensure_ascii=False)},
+            ],
+            temperature=0.0,
+        )
+        cleaned = _strip_think_blocks(out)
+        if cleaned:
+            return cleaned
+    except Exception:
+        pass
 
     lines: List[str] = []
     if matched_confirmed:
         lines.append("Confirmed matches:")
         for x in matched_confirmed:
-            snippet = x["evidence"][:120]
-            detail = f" (score {x['score']})" if x.get("score") is not None else ""
-            lines.append(f"- #{x['index']} {x['title']}{detail}: {snippet}")
+            lines.append(f"- #{x['index']} {x['title']}")
     if matched_uncertain:
         lines.append("Possible matches (uncertain):")
         for x in matched_uncertain:
-            snippet = x["evidence"][:120]
-            detail = f" (score {x['score']})" if x.get("score") is not None else ""
-            lines.append(f"- #{x['index']} {x['title']}{detail}: {snippet}")
+            lines.append(f"- #{x['index']} {x['title']}")
     lines.append("Please confirm key details with the listing agent before final decision.")
     return "\n".join(lines)
