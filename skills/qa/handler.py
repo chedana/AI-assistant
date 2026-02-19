@@ -26,6 +26,16 @@ def _strip_think_blocks(text: str) -> str:
     return s.strip()
 
 
+def _sanitize_list_output(text: str) -> str:
+    s = str(text or "").strip()
+    if not s:
+        return s
+    s = s.replace("**", "")
+    s = re.sub(r"\bIndex\s+(\d+)\b", r"#\1", s, flags=re.IGNORECASE)
+    s = re.sub(r"[ \t]+$", "", s, flags=re.MULTILINE)
+    return s.strip()
+
+
 def _sanitize_question_for_qa(text: str) -> str:
     s = str(text or "").strip()
     if not s:
@@ -148,6 +158,33 @@ def _semantic_allowed_fields(signals: Dict[str, Any]) -> set:
     if has_transit:
         return {"stations", "description"}
     return {"features", "description"}
+
+
+def _requested_structured_fields(final_constraints: Dict[str, Any]) -> List[str]:
+    c = final_constraints or {}
+    fields: List[str] = []
+    if c.get("max_rent_pcm") is not None:
+        fields.append("price_pcm")
+    if c.get("available_from") is not None:
+        fields.append("available_from")
+    if c.get("furnish_type"):
+        fields.append("furnish_type")
+    if c.get("let_type"):
+        fields.append("let_type")
+    if c.get("min_tenancy_months") is not None:
+        fields.append("min_tenancy")
+    if c.get("min_size_sqm") is not None:
+        fields.extend(["size_sqm", "size_sqft"])
+    if c.get("layout_options"):
+        fields.extend(["bedrooms", "bathrooms", "property_type"])
+    out: List[str] = []
+    seen = set()
+    for f in fields:
+        if f in seen:
+            continue
+        seen.add(f)
+        out.append(f)
+    return out
 
 
 def _has_active_structured_constraints(constraints: Dict[str, Any]) -> bool:
@@ -415,6 +452,7 @@ def answer_multi_listing_question(question: str, listings: List[Dict[str, Any]],
     extraction_input = qa_ctx["extraction_input"]
     signals = qa_ctx["signals"]
     final_constraints = qa_ctx.get("final_constraints") or {}
+    requested_fields = _requested_structured_fields(final_constraints)
     allowed_fields = _semantic_allowed_fields(signals)
     rows_eval: List[Dict[str, Any]] = []
     for idx, payload in enumerate(rows, start=1):
@@ -493,14 +531,7 @@ def answer_multi_listing_question(question: str, listings: List[Dict[str, Any]],
                 "top_evidence": str(evidence.get("text") or "").strip(),
                 "score": score,
             },
-            "listing": {
-                "furnish_type": distilled.get("furnish_type"),
-                "let_type": distilled.get("let_type"),
-                "price_pcm": distilled.get("price_pcm"),
-                "bedrooms": distilled.get("bedrooms"),
-                "bathrooms": distilled.get("bathrooms"),
-                "available_from": distilled.get("available_from"),
-            },
+            "field_values": {k: distilled.get(k) for k in requested_fields},
         }
         rows_eval.append(rec)
 
@@ -508,8 +539,13 @@ def answer_multi_listing_question(question: str, listings: List[Dict[str, Any]],
         "You are a rental property QA assistant.\n"
         "Answer using ONLY the provided rows evaluation JSON.\n"
         "Do not invent facts.\n"
+        "Use plain bullet lists only (lines starting with '-').\n"
+        "Do not use markdown emphasis like **Index 5:**.\n"
+        "Use only query-relevant fields/evidence from each row.\n"
+        "Do NOT introduce unrelated attributes from other fields.\n"
         "Summarize which listings match, which do not match (and why, including actual values), and which are unknown.\n"
         "For not-match rows, include the conflicting structured value when available (e.g., unfurnished vs furnished).\n"
+        "If a section has no items, omit that section entirely.\n"
         "If none match, state that explicitly.\n"
         "Always remind user to confirm with listing agent."
     )
@@ -528,7 +564,7 @@ def answer_multi_listing_question(question: str, listings: List[Dict[str, Any]],
             ],
             temperature=0.0,
         )
-        cleaned = _strip_think_blocks(out)
+        cleaned = _sanitize_list_output(_strip_think_blocks(out))
         if cleaned:
             return cleaned
     except Exception:
@@ -537,9 +573,17 @@ def answer_multi_listing_question(question: str, listings: List[Dict[str, Any]],
     matched = [f"#{x['index']}" for x in rows_eval if x.get("status") == "match"]
     not_matched = [f"#{x['index']}" for x in rows_eval if x.get("status") == "not_match"]
     unknown = [f"#{x['index']}" for x in rows_eval if x.get("status") == "unknown"]
-    return (
-        f"Matched: {', '.join(matched) or 'none'}\n"
-        f"Not matched: {', '.join(not_matched) or 'none'}\n"
-        f"Unknown: {', '.join(unknown) or 'none'}\n"
-        "Please confirm key details with the listing agent before final decision."
-    )
+    lines: List[str] = []
+    if matched:
+        lines.append("Matched:")
+        lines.extend([f"- {x}" for x in matched])
+    if not_matched:
+        lines.append("Not matched:")
+        lines.extend([f"- {x}" for x in not_matched])
+    if unknown:
+        lines.append("Unknown:")
+        lines.extend([f"- {x}" for x in unknown])
+    if not lines:
+        lines.append("No matched listings found.")
+    lines.append("Please confirm key details with the listing agent before final decision.")
+    return "\n".join(lines)
