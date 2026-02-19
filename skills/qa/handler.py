@@ -134,10 +134,21 @@ def classify_qa_scope(question: str, has_focus: bool, has_listings: bool) -> Dic
         "Return STRICT JSON only:\n"
         '{"target_scope":"single|list|clarify","confidence":0.0,"reason":"..."}\n'
         "Policy:\n"
-        "- If has_focus=true and user asks about current listing (it/this/这个), target_scope=single.\n"
-        "- If user asks compare/filter across results (which one/哪一个/哪个/which listing), target_scope=list.\n"
+        "- IMPORTANT: has_focus may be auto-selected by system; do NOT assume user target is single unless user explicitly refers to current listing.\n"
+        "- If user asks about current listing with explicit deixis (it/this/this listing/这个/这套), target_scope=single.\n"
+        "- If user asks compare/filter across results (which one/哪一个/哪个/any listing has...), target_scope=list.\n"
+        "- If question asks existence over current result set without explicit single target (e.g., '有没有gym', 'any with gym', 'which has gym'), target_scope=list.\n"
         "- If has_focus=false and user uses unresolved deixis (it/this/这个), target_scope=clarify.\n"
-        "- When unsure, prefer list if question asks 'which one', otherwise clarify.\n"
+        "- When unsure with listings available, prefer list over single.\n"
+        "Few-shot:\n"
+        "State: has_focus=true, has_listings=true; Q: 有没有gym\n"
+        'Output: {"target_scope":"list","confidence":0.86,"reason":"existence_over_result_set"}\n'
+        "State: has_focus=true, has_listings=true; Q: 这个有gym吗\n"
+        'Output: {"target_scope":"single","confidence":0.90,"reason":"explicit_deixis_current_listing"}\n'
+        "State: has_focus=false, has_listings=true; Q: 这个有gym吗\n"
+        'Output: {"target_scope":"clarify","confidence":0.92,"reason":"deixis_without_target"}\n'
+        "State: has_focus=true, has_listings=true; Q: 哪一个有gym\n"
+        'Output: {"target_scope":"list","confidence":0.94,"reason":"which_one_over_candidates"}\n'
     )
     user_payload = (
         f"State: has_focus={'true' if has_focus else 'false'}, has_listings={'true' if has_listings else 'false'}\n"
