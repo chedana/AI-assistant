@@ -5,12 +5,6 @@ REMOTE="${REMOTE_NAME:-origin}"
 TARGET_BRANCH="${TARGET_BRANCH:-feature/rental}"
 CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 
-# Keep pull safe and predictable.
-if ! git diff --quiet || ! git diff --cached --quiet; then
-  echo "Working tree is not clean. Commit or stash before pull."
-  exit 1
-fi
-
 if [[ "$CURRENT_BRANCH" != "$TARGET_BRANCH" ]]; then
   echo "Switching branch: $CURRENT_BRANCH -> $TARGET_BRANCH"
   if git show-ref --verify --quiet "refs/heads/$TARGET_BRANCH"; then
