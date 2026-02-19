@@ -41,6 +41,7 @@ def run() -> None:
                     "user_profile": state.user_profile,
                     "current_focus_listing_id": state.current_focus_listing_id,
                     "focus_source": state.focus_source,
+                    "last_qa_scope": state.last_qa_scope,
                     "history_size": len(state.history),
                     "constraints_active": bool(state.constraints),
                     "last_results_count": len(state.last_results),
@@ -110,6 +111,7 @@ def run() -> None:
             state.user_profile.update(out.get("profile_patch") or {})
             state.last_results = list(out.get("listings") or [])
             _auto_focus_first(state)
+            state.last_qa_scope = None
             bot_text = out.get("reply_text") or "No result."
             if state.last_results and state.current_focus_listing_payload:
                 focus_title = str(
@@ -127,6 +129,7 @@ def run() -> None:
                 if not state.current_focus_listing_payload:
                     bot_text = "Which listing do you mean? Use /focus 1 to select one first."
                 else:
+                    state.last_qa_scope = "single"
                     bot_text = answer_single_listing_question(
                         question=user_in,
                         listing_payload=state.current_focus_listing_payload,
@@ -137,19 +140,24 @@ def run() -> None:
                     question=user_in,
                     has_focus=bool(state.current_focus_listing_payload),
                     has_listings=bool(state.last_results),
+                    last_qa_scope=state.last_qa_scope,
                 )
                 target_scope = str(scope.get("target_scope") or "").strip().lower()
                 if target_scope == "clarify":
+                    state.last_qa_scope = "clarify"
                     bot_text = "Please specify which listing you mean (for example: listing 2), or ask 'which one has ...'."
                 elif target_scope == "list":
+                    state.last_qa_scope = "list"
                     bot_text = answer_multi_listing_question(
                         question=user_in,
                         listings=state.last_results,
                         embedder=runtime.embedder,
                     )
                 elif not state.current_focus_listing_payload:
+                    state.last_qa_scope = "clarify"
                     bot_text = "Which listing do you mean? Use /focus 1 to select one first."
                 else:
+                    state.last_qa_scope = "single"
                     bot_text = answer_single_listing_question(
                         question=user_in,
                         listing_payload=state.current_focus_listing_payload,

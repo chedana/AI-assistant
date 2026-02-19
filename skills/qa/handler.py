@@ -2,11 +2,13 @@ import json
 import re
 from typing import Any, Dict, List, Optional
 
+import pandas as pd
+
 from core.llm_client import llm_extract, llm_extract_all_signals, qwen_chat
 from core.settings import STRUCTURED_POLICY
 from skills.qa.lookup import semantic_lookup, semantic_vector_lookup, structured_lookup
 from skills.search.extractors import repair_extracted_constraints
-from skills.search.handler import apply_structured_policy, split_query_signals
+from skills.search.handler import apply_hard_filters_with_audit, apply_structured_policy, split_query_signals
 
 
 SEMANTIC_HIGH_THRESHOLD = 0.75
@@ -125,24 +127,103 @@ def _build_qa_signals(question: str) -> Dict[str, Any]:
         "question_text": question_text,
         "extraction_input": extraction_input,
         "signals": signals,
+        "final_constraints": final_constraints or {},
     }
 
 
-def classify_qa_scope(question: str, has_focus: bool, has_listings: bool) -> Dict[str, Any]:
+def _semantic_allowed_fields(signals: Dict[str, Any]) -> set:
+    topic_pref = (signals or {}).get("topic_preferences") or {}
+    has_school = bool(topic_pref.get("school_terms"))
+    has_transit = bool(topic_pref.get("transit_terms"))
+    if has_school and has_transit:
+        return {"schools", "stations", "description"}
+    if has_school:
+        return {"schools", "description"}
+    if has_transit:
+        return {"stations", "description"}
+    return {"features", "description"}
+
+
+def _has_active_structured_constraints(constraints: Dict[str, Any]) -> bool:
+    c = constraints or {}
+    if c.get("max_rent_pcm") is not None:
+        return True
+    if c.get("available_from") is not None:
+        return True
+    if c.get("furnish_type"):
+        return True
+    if c.get("let_type"):
+        return True
+    if c.get("min_tenancy_months") is not None:
+        return True
+    if c.get("min_size_sqm") is not None:
+        return True
+    if c.get("layout_options"):
+        return True
+    return False
+
+
+def _structured_match_eval(listing_payload: Dict[str, Any], constraints: Dict[str, Any]) -> Dict[str, Any]:
+    active = _has_active_structured_constraints(constraints)
+    if not active:
+        return {
+            "active": False,
+            "decisive": False,
+            "hard_pass": None,
+            "unknown_fields": [],
+            "fail_reasons": [],
+        }
+
+    df = pd.DataFrame([dict(listing_payload or {})])
+    _filtered, audits = apply_hard_filters_with_audit(df, constraints or {})
+    audit = (audits or [{}])[0]
+    checks = (audit or {}).get("hard_checks") or {}
+    unknown_fields: List[str] = []
+    for k, v in checks.items():
+        if not isinstance(v, dict):
+            continue
+        req = v.get("required")
+        actual = v.get("actual")
+        if req is None:
+            continue
+        if actual is None or (isinstance(actual, str) and not actual.strip()):
+            unknown_fields.append(str(k))
+
+    hard_pass = bool(audit.get("hard_pass"))
+    decisive = len(unknown_fields) == 0
+    return {
+        "active": True,
+        "decisive": decisive,
+        "hard_pass": hard_pass,
+        "unknown_fields": unknown_fields,
+        "fail_reasons": list(audit.get("hard_fail_reasons") or []),
+    }
+
+
+def classify_qa_scope(
+    question: str,
+    has_focus: bool,
+    has_listings: bool,
+    last_qa_scope: Optional[str] = None,
+) -> Dict[str, Any]:
     prompt = (
         "You classify QA scope for rental listings.\n"
         "Return STRICT JSON only:\n"
         '{"target_scope":"single|list|clarify","confidence":0.0,"reason":"..."}\n'
         "Policy:\n"
-        "- IMPORTANT: has_focus may be auto-selected by system; do NOT assume user target is single unless user explicitly refers to current listing.\n"
+        "- Default behavior with has_focus=true is single-listing QA continuity.\n"
+        "- Use list ONLY when user explicitly asks cross-candidate comparison/selection (e.g., 'which one', '哪一个', '哪个房源').\n"
         "- If user asks about current listing with explicit deixis (it/this/this listing/这个/这套), target_scope=single.\n"
-        "- If user asks compare/filter across results (which one/哪一个/哪个/any listing has...), target_scope=list.\n"
-        "- If question asks existence over current result set without explicit single target (e.g., '有没有gym', 'any with gym', 'which has gym'), target_scope=list.\n"
         "- If has_focus=false and user uses unresolved deixis (it/this/这个), target_scope=clarify.\n"
-        "- When unsure with listings available, prefer list over single.\n"
+        "- If previous QA scope was single and current question has no explicit cross-candidate wording, keep target_scope=single.\n"
+        "- When unsure and has_focus=true, prefer single.\n"
         "Few-shot:\n"
+        "State: has_focus=true, has_listings=true, last_qa_scope=single; Q: How about transportation\n"
+        'Output: {"target_scope":"single","confidence":0.90,"reason":"qa_continuity_single"}\n'
+        "State: has_focus=true, has_listings=true, last_qa_scope=single; Q: How about schools\n"
+        'Output: {"target_scope":"single","confidence":0.90,"reason":"qa_continuity_single"}\n'
         "State: has_focus=true, has_listings=true; Q: 有没有gym\n"
-        'Output: {"target_scope":"list","confidence":0.86,"reason":"existence_over_result_set"}\n'
+        'Output: {"target_scope":"single","confidence":0.78,"reason":"default_focus_continuity"}\n'
         "State: has_focus=true, has_listings=true; Q: 这个有gym吗\n"
         'Output: {"target_scope":"single","confidence":0.90,"reason":"explicit_deixis_current_listing"}\n'
         "State: has_focus=false, has_listings=true; Q: 这个有gym吗\n"
@@ -151,7 +232,9 @@ def classify_qa_scope(question: str, has_focus: bool, has_listings: bool) -> Dic
         'Output: {"target_scope":"list","confidence":0.94,"reason":"which_one_over_candidates"}\n'
     )
     user_payload = (
-        f"State: has_focus={'true' if has_focus else 'false'}, has_listings={'true' if has_listings else 'false'}\n"
+        f"State: has_focus={'true' if has_focus else 'false'}, "
+        f"has_listings={'true' if has_listings else 'false'}, "
+        f"last_qa_scope={str(last_qa_scope or 'none').strip().lower()}\n"
         f"Question: {str(question or '').strip()}"
     )
     try:
@@ -175,7 +258,7 @@ def classify_qa_scope(question: str, has_focus: bool, has_listings: bool) -> Dic
         pass
 
     # No rule-based scope inference here: fallback is always clarify.
-    _ = question, has_focus, has_listings
+    _ = question, has_focus, has_listings, last_qa_scope
     return {"target_scope": "clarify", "confidence": 0.0, "reason": "fallback:llm_unavailable"}
 
 
@@ -185,10 +268,24 @@ def answer_single_listing_question(question: str, listing_payload: Dict[str, Any
     qa_ctx = _build_qa_signals(question)
     extraction_input = qa_ctx["extraction_input"]
     signals = qa_ctx["signals"]
+    final_constraints = qa_ctx.get("final_constraints") or {}
+    allowed_fields = _semantic_allowed_fields(signals)
     distilled = _distill_listing_payload(listing_payload)
+    structured_eval = _structured_match_eval(distilled, final_constraints)
+
+    if structured_eval["active"] and structured_eval["decisive"]:
+        if structured_eval["hard_pass"]:
+            return "Yes, this listing matches the structured requirements in your question. Please confirm key details with the listing agent."
+        reasons = "; ".join(structured_eval["fail_reasons"][:2]) if structured_eval["fail_reasons"] else "it does not match required structured fields"
+        return f"No, based on structured listing fields, this does not match ({reasons}). Please confirm with the listing agent."
 
     structured = structured_lookup(signals, distilled, raw_question=extraction_input)
-    semantic_fallback = semantic_lookup(signals, distilled, raw_question=extraction_input)
+    semantic_fallback = semantic_lookup(
+        signals,
+        distilled,
+        raw_question=extraction_input,
+        allowed_fields=allowed_fields,
+    )
     vector_eval = (
         semantic_vector_lookup(
             signals,
@@ -197,6 +294,7 @@ def answer_single_listing_question(question: str, listing_payload: Dict[str, Any
             raw_question=extraction_input,
             high_threshold=SEMANTIC_HIGH_THRESHOLD,
             low_threshold=SEMANTIC_LOW_THRESHOLD,
+            allowed_fields=allowed_fields,
         )
         if embedder is not None
         else None
@@ -217,6 +315,7 @@ def answer_single_listing_question(question: str, listing_payload: Dict[str, Any
     qa_payload = {
         "question": extraction_input,
         "signals": signals,
+        "structured_match_eval": structured_eval,
         "structured": {
             "found": structured.found,
             "facts": structured.facts,
@@ -273,11 +372,31 @@ def answer_multi_listing_question(question: str, listings: List[Dict[str, Any]],
     qa_ctx = _build_qa_signals(question)
     extraction_input = qa_ctx["extraction_input"]
     signals = qa_ctx["signals"]
+    final_constraints = qa_ctx.get("final_constraints") or {}
+    allowed_fields = _semantic_allowed_fields(signals)
 
     matched_confirmed: List[Dict[str, Any]] = []
     matched_uncertain: List[Dict[str, Any]] = []
     for idx, payload in enumerate(rows, start=1):
         distilled = _distill_listing_payload(payload)
+        structured_eval = _structured_match_eval(distilled, final_constraints)
+        if structured_eval["active"] and structured_eval["decisive"]:
+            label = "confirmed" if structured_eval["hard_pass"] else "not_found"
+            evidence = {
+                "text": "; ".join(structured_eval["fail_reasons"][:2]) if structured_eval["fail_reasons"] else "structured field match",
+            }
+            score = None
+            rec = {
+                "index": idx,
+                "title": str(distilled.get("title") or f"listing_{idx}"),
+                "label": label,
+                "evidence": str(evidence.get("text") or "").strip(),
+                "score": score,
+            }
+            if label == "confirmed":
+                matched_confirmed.append(rec)
+            continue
+
         if embedder is not None:
             vec = semantic_vector_lookup(
                 signals,
@@ -286,6 +405,7 @@ def answer_multi_listing_question(question: str, listings: List[Dict[str, Any]],
                 raw_question=extraction_input,
                 high_threshold=SEMANTIC_HIGH_THRESHOLD,
                 low_threshold=SEMANTIC_LOW_THRESHOLD,
+                allowed_fields=allowed_fields,
             )
             label = str(vec.get("summary_label") or "not_found")
             evidence = (vec.get("evidence") or [{}])[0]
@@ -294,7 +414,12 @@ def answer_multi_listing_question(question: str, listings: List[Dict[str, Any]],
             if term_matches:
                 score = term_matches[0].get("score")
         else:
-            sem = semantic_lookup(signals, distilled, raw_question=extraction_input)
+            sem = semantic_lookup(
+                signals,
+                distilled,
+                raw_question=extraction_input,
+                allowed_fields=allowed_fields,
+            )
             label = "confirmed" if sem.found else "not_found"
             evidence = (sem.evidence or [{}])[0]
             score = None
