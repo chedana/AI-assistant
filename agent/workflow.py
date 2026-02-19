@@ -122,30 +122,41 @@ def run() -> None:
                     "Use /focus N to switch target, or ask 'which one has ...' to compare all current listings."
                 )
         elif decision.intent == "Specific_QA":
-            scope = classify_qa_scope(
-                question=user_in,
-                has_focus=bool(state.current_focus_listing_payload),
-                has_listings=bool(state.last_results),
-            )
-            target_scope = str(scope.get("target_scope") or "").strip().lower()
-            if target_scope == "clarify":
-                bot_text = "Please specify which listing you mean (for example: listing 2), or ask 'which one has ...'."
-            elif target_scope == "list":
-                bot_text = answer_multi_listing_question(
-                    question=user_in,
-                    listings=state.last_results,
-                    embedder=runtime.embedder,
-                )
-            elif not state.current_focus_listing_payload:
-                bot_text = "Which listing do you mean? Use /focus 1 to select one first."
+            # Explicit target index from router always means single-listing QA.
+            if decision.target_index is not None:
+                if not state.current_focus_listing_payload:
+                    bot_text = "Which listing do you mean? Use /focus 1 to select one first."
+                else:
+                    bot_text = answer_single_listing_question(
+                        question=user_in,
+                        listing_payload=state.current_focus_listing_payload,
+                        embedder=runtime.embedder,
+                    )
             else:
-                bot_text = answer_single_listing_question(
+                scope = classify_qa_scope(
                     question=user_in,
-                    listing_payload=state.current_focus_listing_payload,
-                    embedder=runtime.embedder,
+                    has_focus=bool(state.current_focus_listing_payload),
+                    has_listings=bool(state.last_results),
                 )
-                if state.focus_source == "auto" and decision.target_index is None:
-                    bot_text += "\n\nNote: this answer is based on default focus listing #1."
+                target_scope = str(scope.get("target_scope") or "").strip().lower()
+                if target_scope == "clarify":
+                    bot_text = "Please specify which listing you mean (for example: listing 2), or ask 'which one has ...'."
+                elif target_scope == "list":
+                    bot_text = answer_multi_listing_question(
+                        question=user_in,
+                        listings=state.last_results,
+                        embedder=runtime.embedder,
+                    )
+                elif not state.current_focus_listing_payload:
+                    bot_text = "Which listing do you mean? Use /focus 1 to select one first."
+                else:
+                    bot_text = answer_single_listing_question(
+                        question=user_in,
+                        listing_payload=state.current_focus_listing_payload,
+                        embedder=runtime.embedder,
+                    )
+                    if state.focus_source == "auto":
+                        bot_text += "\n\nNote: this answer is based on default focus listing #1."
         elif decision.intent == "Chitchat":
             bot_text = "Hi, how can I help?"
         else:
