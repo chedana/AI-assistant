@@ -1,6 +1,6 @@
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from core.internal_helpers import _collect_value_candidates, _score_single_intent
 from skills.search.extractors import _safe_text, parse_jsonish_items
@@ -14,13 +14,14 @@ class LookupResult:
     evidence: List[Dict[str, str]]
 
 
-def extract_snippets(payload: Dict[str, Any]) -> List[Tuple[str, str]]:
-    # Reuse Search candidate splitter and keep QA scope on features/description only.
+def extract_snippets(payload: Dict[str, Any], allowed_fields: Optional[Set[str]] = None) -> List[Tuple[str, str]]:
+    # Reuse Search candidate splitter and filter by requested semantic fields.
+    allow = set(allowed_fields or {"features", "description"})
     candidates = _collect_value_candidates(payload or {})
     return [
         (str(c.get("field") or ""), str(c.get("text") or ""))
         for c in candidates
-        if str(c.get("field") or "") in {"features", "description"} and _safe_text(c.get("text"))
+        if str(c.get("field") or "") in allow and _safe_text(c.get("text"))
     ]
 
 
@@ -247,8 +248,13 @@ def structured_lookup(signals: Dict[str, Any], payload: Dict[str, Any], raw_ques
     return LookupResult(True, "structured", facts, evidence)
 
 
-def semantic_lookup(signals: Dict[str, Any], payload: Dict[str, Any], raw_question: str = "") -> LookupResult:
-    snippets = extract_snippets(payload)
+def semantic_lookup(
+    signals: Dict[str, Any],
+    payload: Dict[str, Any],
+    raw_question: str = "",
+    allowed_fields: Optional[Set[str]] = None,
+) -> LookupResult:
+    snippets = extract_snippets(payload, allowed_fields=allowed_fields)
     if not snippets:
         return LookupResult(False, "semantic", {}, [])
 
@@ -283,11 +289,12 @@ def semantic_vector_lookup(
     raw_question: str = "",
     high_threshold: float = 0.75,
     low_threshold: float = 0.60,
+    allowed_fields: Optional[Set[str]] = None,
 ) -> Dict[str, Any]:
     candidates = [
         {"field": f, "text": t}
-        for f, t in extract_snippets(payload)
-        if f in {"features", "description"} and _safe_text(t)
+        for f, t in extract_snippets(payload, allowed_fields=allowed_fields)
+        if _safe_text(t)
     ]
     if not candidates:
         return {
