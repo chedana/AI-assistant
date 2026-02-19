@@ -7,7 +7,7 @@ import pandas as pd
 from core.llm_client import llm_extract, llm_extract_all_signals, qwen_chat
 from core.settings import STRUCTURED_POLICY
 from skills.qa.lookup import semantic_lookup, semantic_vector_lookup, structured_lookup
-from skills.search.extractors import repair_extracted_constraints
+from skills.search.extractors import _norm_furnish_value, repair_extracted_constraints
 from skills.search.handler import apply_hard_filters_with_audit, apply_structured_policy, split_query_signals
 
 
@@ -215,6 +215,17 @@ def _pick_decision_label(structured_eval: Dict[str, Any], vector_eval: Optional[
     return {"source": "none", "label": "not_found"}
 
 
+def _norm_let_type_value(v: Any) -> str:
+    s = str(v or "").strip().lower()
+    if not s:
+        return ""
+    s = s.replace("_", " ").replace("-", " ")
+    s = re.sub(r"\s+", " ", s).strip()
+    if s in {"ask agent", "unknown", "not provided", "n/a", "na"}:
+        return "unknown"
+    return s
+
+
 def classify_qa_scope(
     question: str,
     has_focus: bool,
@@ -287,6 +298,22 @@ def answer_single_listing_question(question: str, listing_payload: Dict[str, Any
     allowed_fields = _semantic_allowed_fields(signals)
     distilled = _distill_listing_payload(listing_payload)
     structured_eval = _structured_match_eval(distilled, final_constraints)
+
+    # Structured-first short path for explicit categorical constraints.
+    if final_constraints.get("furnish_type"):
+        actual = _norm_furnish_value(distilled.get("furnish_type"))
+        if actual and actual != "ask agent":
+            req = _norm_furnish_value(final_constraints.get("furnish_type"))
+            if actual == req:
+                return f"Yes. Listing is {actual}. Please confirm with the listing agent."
+            return f"No. Listing is {actual}, not {req}. Please confirm with the listing agent."
+    if final_constraints.get("let_type"):
+        actual = _norm_let_type_value(distilled.get("let_type"))
+        if actual and actual != "unknown":
+            req = _norm_let_type_value(final_constraints.get("let_type"))
+            if actual == req:
+                return f"Yes. Listing let type is {actual}. Please confirm with the listing agent."
+            return f"No. Listing let type is {actual}, not {req}. Please confirm with the listing agent."
 
     structured = structured_lookup(signals, distilled, raw_question=extraction_input)
     semantic_fallback = semantic_lookup(
@@ -389,9 +416,6 @@ def answer_multi_listing_question(question: str, listings: List[Dict[str, Any]],
     signals = qa_ctx["signals"]
     final_constraints = qa_ctx.get("final_constraints") or {}
     allowed_fields = _semantic_allowed_fields(signals)
-
-    matched_confirmed: List[Dict[str, Any]] = []
-    matched_uncertain: List[Dict[str, Any]] = []
     rows_eval: List[Dict[str, Any]] = []
     for idx, payload in enumerate(rows, start=1):
         distilled = _distill_listing_payload(payload)
@@ -425,32 +449,72 @@ def answer_multi_listing_question(question: str, listings: List[Dict[str, Any]],
 
         decision = _pick_decision_label(structured_eval, vec if embedder is not None else None, sem if embedder is None else None)
         label = str(decision.get("label") or label)
+        if structured_eval.get("active") and structured_eval.get("decisive"):
+            status = "match" if structured_eval.get("hard_pass") else "not_match"
+            source = "structured"
+        else:
+            if label == "confirmed":
+                status = "match"
+            elif label == "not_found":
+                status = "unknown"
+            else:
+                status = "unknown"
+            source = str(decision.get("source") or "semantic")
+
+        check_values: List[Dict[str, Any]] = []
+        for k, v in (structured_eval.get("checks") or {}).items():
+            if not isinstance(v, dict):
+                continue
+            if v.get("required") is None:
+                continue
+            check_values.append(
+                {
+                    "field": str(k),
+                    "required": v.get("required"),
+                    "actual": v.get("actual"),
+                    "op": v.get("op"),
+                }
+            )
+
         rec = {
             "index": idx,
             "title": str(distilled.get("title") or f"listing_{idx}"),
-            "label": label,
-            "evidence": str(evidence.get("text") or "").strip(),
-            "score": score,
-            "decision": decision,
-            "structured_match_eval": structured_eval,
+            "status": status,
+            "source": source,
+            "decision_label": label,
+            "structured": {
+                "active": bool(structured_eval.get("active")),
+                "decisive": bool(structured_eval.get("decisive")),
+                "hard_pass": structured_eval.get("hard_pass"),
+                "fail_reasons": list(structured_eval.get("fail_reasons") or []),
+                "checks": check_values,
+            },
+            "semantic": {
+                "top_evidence": str(evidence.get("text") or "").strip(),
+                "score": score,
+            },
+            "listing": {
+                "furnish_type": distilled.get("furnish_type"),
+                "let_type": distilled.get("let_type"),
+                "price_pcm": distilled.get("price_pcm"),
+                "bedrooms": distilled.get("bedrooms"),
+                "bathrooms": distilled.get("bathrooms"),
+                "available_from": distilled.get("available_from"),
+            },
         }
         rows_eval.append(rec)
-        if label == "confirmed":
-            matched_confirmed.append(rec)
-        elif label == "uncertain":
-            matched_uncertain.append(rec)
-
-    if not matched_confirmed and not matched_uncertain:
-        return "Not found in current listings. Please ask the agent to confirm."
 
     system_prompt = (
         "You are a rental property QA assistant.\n"
         "Answer using ONLY the provided rows evaluation JSON.\n"
         "Do not invent facts.\n"
-        "Summarize confirmed matches first, then uncertain matches if any.\n"
+        "Summarize which listings match, which do not match (and why, including actual values), and which are unknown.\n"
+        "For not-match rows, include the conflicting structured value when available (e.g., unfurnished vs furnished).\n"
+        "If none match, state that explicitly.\n"
         "Always remind user to confirm with listing agent."
     )
     qa_payload = {
+        "user_question": extraction_input,
         "question": extraction_input,
         "signals": signals,
         "final_constraints": final_constraints,
@@ -470,14 +534,12 @@ def answer_multi_listing_question(question: str, listings: List[Dict[str, Any]],
     except Exception:
         pass
 
-    lines: List[str] = []
-    if matched_confirmed:
-        lines.append("Confirmed matches:")
-        for x in matched_confirmed:
-            lines.append(f"- #{x['index']} {x['title']}")
-    if matched_uncertain:
-        lines.append("Possible matches (uncertain):")
-        for x in matched_uncertain:
-            lines.append(f"- #{x['index']} {x['title']}")
-    lines.append("Please confirm key details with the listing agent before final decision.")
-    return "\n".join(lines)
+    matched = [f"#{x['index']}" for x in rows_eval if x.get("status") == "match"]
+    not_matched = [f"#{x['index']}" for x in rows_eval if x.get("status") == "not_match"]
+    unknown = [f"#{x['index']}" for x in rows_eval if x.get("status") == "unknown"]
+    return (
+        f"Matched: {', '.join(matched) or 'none'}\n"
+        f"Not matched: {', '.join(not_matched) or 'none'}\n"
+        f"Unknown: {', '.join(unknown) or 'none'}\n"
+        "Please confirm key details with the listing agent before final decision."
+    )
