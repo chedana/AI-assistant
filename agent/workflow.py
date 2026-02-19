@@ -40,6 +40,7 @@ def run() -> None:
                 {
                     "user_profile": state.user_profile,
                     "current_focus_listing_id": state.current_focus_listing_id,
+                    "focus_source": state.focus_source,
                     "history_size": len(state.history),
                     "constraints_active": bool(state.constraints),
                     "last_results_count": len(state.last_results),
@@ -82,7 +83,7 @@ def run() -> None:
             )
 
         if decision.intent == "Specific_QA" and decision.target_index is not None:
-            focus_err = _focus_by_index(state, decision.target_index)
+            focus_err = _focus_by_index(state, decision.target_index, source="user_query")
             if focus_err:
                 bot_text = focus_err
                 print("\nBot> " + bot_text)
@@ -110,6 +111,16 @@ def run() -> None:
             state.last_results = list(out.get("listings") or [])
             _auto_focus_first(state)
             bot_text = out.get("reply_text") or "No result."
+            if state.last_results and state.current_focus_listing_payload:
+                focus_title = str(
+                    state.current_focus_listing_payload.get("title")
+                    or state.current_focus_listing_id
+                    or "listing #1"
+                )
+                bot_text += (
+                    f"\n\nNote: default focus is set to listing #1 ({focus_title}). "
+                    "Use /focus N to switch target, or ask 'which one has ...' to compare all current listings."
+                )
         elif decision.intent == "Specific_QA":
             scope = classify_qa_scope(
                 question=user_in,
@@ -133,6 +144,8 @@ def run() -> None:
                     listing_payload=state.current_focus_listing_payload,
                     embedder=runtime.embedder,
                 )
+                if state.focus_source == "auto" and decision.target_index is None:
+                    bot_text += "\n\nNote: this answer is based on default focus listing #1."
         elif decision.intent == "Chitchat":
             bot_text = "Hi, how can I help?"
         else:
@@ -146,10 +159,12 @@ def _auto_focus_first(state: AgentState) -> None:
     if not state.last_results:
         state.current_focus_listing_id = None
         state.current_focus_listing_payload = None
+        state.focus_source = None
         return
     first = state.last_results[0]
     state.current_focus_listing_id = str(first.get("listing_id") or first.get("url") or "row_1")
     state.current_focus_listing_payload = first
+    state.focus_source = "auto"
 
 
 def _handle_focus_command(user_in: str, state: AgentState) -> str:
@@ -162,19 +177,20 @@ def _handle_focus_command(user_in: str, state: AgentState) -> str:
         idx = int(parts[1])
     except ValueError:
         return "Usage: /focus 1"
-    err = _focus_by_index(state, idx)
+    err = _focus_by_index(state, idx, source="user_command")
     if err:
         return err
     title = str(state.current_focus_listing_payload.get("title") or state.current_focus_listing_id)
     return f"Focus switched to listing {idx}: {title}"
 
 
-def _focus_by_index(state: AgentState, idx: int) -> Optional[str]:
+def _focus_by_index(state: AgentState, idx: int, source: str = "user_query") -> Optional[str]:
     if idx < 1 or idx > len(state.last_results):
         return f"Invalid index. Valid range: 1~{len(state.last_results)}"
     picked = state.last_results[idx - 1]
     state.current_focus_listing_id = str(picked.get("listing_id") or picked.get("url") or f"row_{idx}")
     state.current_focus_listing_payload = picked
+    state.focus_source = str(source or "user_query")
     return None
 
 
