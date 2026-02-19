@@ -9,17 +9,28 @@ fi
 
 MSG="$1"
 REMOTE="${REMOTE_NAME:-origin}"
-BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-ALLOW_MAIN_PUSH="${ALLOW_MAIN_PUSH:-0}"
+TARGET_BRANCH="${TARGET_BRANCH:-feature/rental}"
+CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 
-if [[ "$BRANCH" == "main" || "$BRANCH" == "master" ]]; then
-  if [[ "$ALLOW_MAIN_PUSH" != "1" ]]; then
-    echo "Refusing to commit/push on $BRANCH."
-    echo "Switch to a feature branch (e.g. feature/rental), then run ./push."
-    echo "If you really need this, run with: ALLOW_MAIN_PUSH=1 ./push \"message\""
+if [[ "$CURRENT_BRANCH" != "$TARGET_BRANCH" ]]; then
+  if ! git diff --quiet || ! git diff --cached --quiet; then
+    echo "Cannot switch from $CURRENT_BRANCH to $TARGET_BRANCH: working tree is not clean."
+    echo "Commit or stash first, then run ./push again."
+    exit 1
+  fi
+
+  echo "Switching branch: $CURRENT_BRANCH -> $TARGET_BRANCH"
+  if git show-ref --verify --quiet "refs/heads/$TARGET_BRANCH"; then
+    git checkout "$TARGET_BRANCH"
+  elif git ls-remote --exit-code --heads "$REMOTE" "$TARGET_BRANCH" >/dev/null 2>&1; then
+    git checkout -b "$TARGET_BRANCH" --track "$REMOTE/$TARGET_BRANCH"
+  else
+    echo "Target branch $TARGET_BRANCH does not exist locally or on $REMOTE."
     exit 1
   fi
 fi
+
+BRANCH="$TARGET_BRANCH"
 
 # 1) stage everything (including new files)
 git add -A
