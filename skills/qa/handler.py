@@ -105,6 +105,8 @@ def _distill_listing_payload(listing_payload: Dict[str, Any]) -> Dict[str, Any]:
         "size_sqm": listing_payload.get("size_sqm"),
         "size_sqft": listing_payload.get("size_sqft"),
         "property_type": listing_payload.get("property_type"),
+        "postcode": listing_payload.get("postcode"),
+        "layout_tag": listing_payload.get("layout_tag"),
         "url": listing_payload.get("url"),
     }
 
@@ -160,31 +162,65 @@ def _semantic_allowed_fields(signals: Dict[str, Any]) -> set:
     return {"features", "description"}
 
 
-def _requested_structured_fields(final_constraints: Dict[str, Any]) -> List[str]:
+def _is_unknown_value(v: Any) -> bool:
+    if v is None:
+        return True
+    s = str(v).strip().lower()
+    if s in {"", "none", "null", "unknown", "not provided", "ask agent", "n/a", "na"}:
+        return True
+    return False
+
+
+def _mentioned_structured_fields(question: str, final_constraints: Dict[str, Any]) -> List[str]:
+    q = str(question or "").lower()
     c = final_constraints or {}
-    fields: List[str] = []
-    if c.get("max_rent_pcm") is not None:
-        fields.append("price_pcm")
-    if c.get("available_from") is not None:
-        fields.append("available_from")
-    if c.get("furnish_type"):
-        fields.append("furnish_type")
-    if c.get("let_type"):
-        fields.append("let_type")
-    if c.get("min_tenancy_months") is not None:
-        fields.append("min_tenancy")
-    if c.get("min_size_sqm") is not None:
-        fields.extend(["size_sqm", "size_sqft"])
-    if c.get("layout_options"):
-        fields.extend(["bedrooms", "bathrooms", "property_type"])
     out: List[str] = []
+
+    # Constraint-derived mentions (preferred).
+    if c.get("max_rent_pcm") is not None:
+        out.append("price_pcm")
+    if c.get("available_from") is not None:
+        out.append("available_from")
+    if c.get("furnish_type"):
+        out.append("furnish_type")
+    if c.get("let_type"):
+        out.append("let_type")
+    if c.get("min_tenancy_months") is not None:
+        out.append("min_tenancy")
+    if c.get("min_size_sqm") is not None:
+        out.extend(["size_sqm", "size_sqft"])
+    if c.get("layout_options"):
+        out.extend(["bedrooms", "bathrooms", "property_type", "layout_tag"])
+
+    # Query mention fallback (for fields extractor may miss, e.g. deposit).
+    mention_map = [
+        (r"\bdeposit\b", ["deposit"]),
+        (r"\bfurnish|furnished|unfurnished|part[- ]?furnished\b", ["furnish_type"]),
+        (r"\blet\b|\bshort term\b|\blong term\b", ["let_type"]),
+        (r"\bprice\b|\brent\b|\bbudget\b|\bpcm\b", ["price_pcm"]),
+        (r"\bbed(room)?s?\b|\b\d+\s*bed\b", ["bedrooms"]),
+        (r"\bbath(room)?s?\b|\b\d+\s*bath\b", ["bathrooms"]),
+        (r"\bavailable\b|\bmove[- ]?in\b", ["available_from"]),
+        (r"\btenancy\b|\bmonth\b", ["min_tenancy"]),
+        (r"\bsize\b|\bsqm\b|\bsqft\b", ["size_sqm", "size_sqft"]),
+        (r"\bflat\b|\bapartment\b|\bhouse\b|\bstudio\b", ["property_type"]),
+        (r"\bpostcode\b", ["postcode"]),
+        (r"\blayout\b", ["layout_tag"]),
+        (r"\bschool\b", ["schools"]),
+        (r"\bstation\b|\btransport\b|\btube\b", ["stations", "nearest_station", "distance_to_station_m"]),
+    ]
+    for pat, keys in mention_map:
+        if re.search(pat, q):
+            out.extend(keys)
+
+    dedup: List[str] = []
     seen = set()
-    for f in fields:
-        if f in seen:
+    for k in out:
+        if k in seen:
             continue
-        seen.add(f)
-        out.append(f)
-    return out
+        seen.add(k)
+        dedup.append(k)
+    return dedup
 
 
 def _has_active_structured_constraints(constraints: Dict[str, Any]) -> bool:
@@ -215,7 +251,10 @@ def _structured_match_eval(listing_payload: Dict[str, Any], constraints: Dict[st
     df = pd.DataFrame([dict(listing_payload or {})])
     _filtered, audits = apply_hard_filters_with_audit(df, constraints or {})
     audit = (audits or [{}])[0]
-    checks = (audit or {}).get("hard_checks") or {}
+    checks: Dict[str, Any] = (audit or {}).get("hard_checks") or {}
+    fail_reasons: List[str] = list(audit.get("hard_fail_reasons") or [])
+    hard_pass = bool(audit.get("hard_pass"))
+
     unknown_fields: List[str] = []
     for k, v in checks.items():
         if not isinstance(v, dict):
@@ -229,9 +268,9 @@ def _structured_match_eval(listing_payload: Dict[str, Any], constraints: Dict[st
     return {
         "active": True,
         "decisive": len(unknown_fields) == 0,
-        "hard_pass": bool(audit.get("hard_pass")),
+        "hard_pass": bool(hard_pass),
         "unknown_fields": unknown_fields,
-        "fail_reasons": list(audit.get("hard_fail_reasons") or []),
+        "fail_reasons": fail_reasons,
         "checks": checks,
     }
 
@@ -452,7 +491,7 @@ def answer_multi_listing_question(question: str, listings: List[Dict[str, Any]],
     extraction_input = qa_ctx["extraction_input"]
     signals = qa_ctx["signals"]
     final_constraints = qa_ctx.get("final_constraints") or {}
-    requested_fields = _requested_structured_fields(final_constraints)
+    requested_fields = _mentioned_structured_fields(extraction_input, final_constraints)
     allowed_fields = _semantic_allowed_fields(signals)
     rows_eval: List[Dict[str, Any]] = []
     for idx, payload in enumerate(rows, start=1):
@@ -487,9 +526,16 @@ def answer_multi_listing_question(question: str, listings: List[Dict[str, Any]],
 
         decision = _pick_decision_label(structured_eval, vec if embedder is not None else None, sem if embedder is None else None)
         label = str(decision.get("label") or label)
+        field_values = {k: distilled.get(k) for k in requested_fields}
+        unknown_fields = [k for k, v in field_values.items() if _is_unknown_value(v)]
+        missing_structured = bool(requested_fields) and len(unknown_fields) > 0
         if structured_eval.get("active") and structured_eval.get("decisive"):
             status = "match" if structured_eval.get("hard_pass") else "not_match"
             source = "structured"
+        elif missing_structured:
+            # For fields missing in structured payload, defer decision to semantic/LLM.
+            status = "unknown"
+            source = "structured_missing"
         else:
             if label == "confirmed":
                 status = "match"
@@ -531,7 +577,9 @@ def answer_multi_listing_question(question: str, listings: List[Dict[str, Any]],
                 "top_evidence": str(evidence.get("text") or "").strip(),
                 "score": score,
             },
-            "field_values": {k: distilled.get(k) for k in requested_fields},
+            "requested_fields": requested_fields,
+            "field_values": field_values,
+            "unknown_fields": unknown_fields,
         }
         rows_eval.append(rec)
 
@@ -543,6 +591,8 @@ def answer_multi_listing_question(question: str, listings: List[Dict[str, Any]],
         "Do not use markdown emphasis like **Index 5:**.\n"
         "Use only query-relevant fields/evidence from each row.\n"
         "Do NOT introduce unrelated attributes from other fields.\n"
+        "For each row, rely on requested_fields/field_values first.\n"
+        "If unknown_fields is non-empty for requested fields, use semantic evidence for fallback and then classify.\n"
         "Summarize which listings match, which do not match (and why, including actual values), and which are unknown.\n"
         "For not-match rows, include the conflicting structured value when available (e.g., unfurnished vs furnished).\n"
         "If a section has no items, omit that section entirely.\n"
