@@ -7,7 +7,12 @@ from agent.merger import derive_snapshot, push_history, snapshot_from_constraint
 from agent.refinement_plan import build_refinement_plan
 from agent.router import route_turn
 from skills.common.context_provider import get_current_context_houses, get_focus_listing
-from skills.qa.handler import answer_multi_listing_question, answer_single_listing_question, classify_qa_scope
+from skills.qa.handler import (
+    answer_multi_listing_question,
+    answer_single_listing_question,
+    build_qa_context,
+    classify_qa_scope,
+)
 from skills.search.agentic import run_search_skill
 from skills.search.handler import format_listing_row
 
@@ -264,18 +269,49 @@ def search_node(state: GraphState) -> GraphState:
     return state
 
 
-def qa_node(state: GraphState) -> GraphState:
+def qa_plan_node(state: GraphState) -> GraphState:
     agent_state = state["agent_state"]
-    runtime = state["runtime"]
     user_in = str(state.get("user_input") or "")
+    qa_ctx = build_qa_context(user_in)
+    state["qa_ctx"] = qa_ctx
+
+    if state.get("target_index") is not None:
+        target_scope = "single"
+    else:
+        scope = classify_qa_scope(
+            question=user_in,
+            has_focus=bool(agent_state.current_focus_listing_payload),
+            has_listings=bool(agent_state.last_results),
+            last_qa_scope=agent_state.last_qa_scope,
+        )
+        target_scope = str(scope.get("target_scope") or "").strip().lower() or "clarify"
+    state["qa_target_scope"] = target_scope
+
+    signals = (qa_ctx or {}).get("signals") or {}
     _debug_print(
         bool(state.get("router_debug")),
         {
-            "phase": "qa",
+            "phase": "qa_plan",
             "intent": "Specific_QA",
+            "qa_scope": target_scope,
+            "plan_source": (qa_ctx or {}).get("plan_source"),
+            "hard_constraints": signals.get("hard_constraints") or {},
+            "soft_terms": {
+                "topic_preferences": signals.get("topic_preferences") or {},
+                "general_semantic": signals.get("general_semantic") or [],
+            },
             "constraints_current": agent_state.constraints or {},
         },
     )
+    return state
+
+
+def qa_execute_node(state: GraphState) -> GraphState:
+    agent_state = state["agent_state"]
+    runtime = state["runtime"]
+    user_in = str(state.get("user_input") or "")
+    qa_ctx = state.get("qa_ctx") or {}
+    target_scope = str(state.get("qa_target_scope") or "").strip().lower()
 
     if state.get("target_index") is not None:
         focus_listing = get_focus_listing(agent_state)
@@ -287,16 +323,10 @@ def qa_node(state: GraphState) -> GraphState:
             question=user_in,
             listing_payload=focus_listing,
             embedder=runtime.embedder,
+            qa_ctx=qa_ctx,
         )
         return state
 
-    scope = classify_qa_scope(
-        question=user_in,
-        has_focus=bool(agent_state.current_focus_listing_payload),
-        has_listings=bool(agent_state.last_results),
-        last_qa_scope=agent_state.last_qa_scope,
-    )
-    target_scope = str(scope.get("target_scope") or "").strip().lower()
     if target_scope == "clarify":
         agent_state.last_qa_scope = "clarify"
         state["reply_text"] = "Please specify which listing you mean (for example: listing 2), or ask 'which one has ...'."
@@ -313,6 +343,7 @@ def qa_node(state: GraphState) -> GraphState:
             question=user_in,
             listings=listings,
             embedder=runtime.embedder,
+            qa_ctx=qa_ctx,
         )
     elif not get_focus_listing(agent_state):
         agent_state.last_qa_scope = "clarify"
@@ -324,11 +355,17 @@ def qa_node(state: GraphState) -> GraphState:
             question=user_in,
             listing_payload=focus_listing,
             embedder=runtime.embedder,
+            qa_ctx=qa_ctx,
         )
         if agent_state.focus_source == "auto":
             bot_text += "\n\nNote: this answer is based on default focus listing #1."
         state["reply_text"] = bot_text
     return state
+
+
+def qa_node(state: GraphState) -> GraphState:
+    # Backward-compatible composite entrypoint.
+    return qa_execute_node(qa_plan_node(state))
 
 
 def chitchat_node(state: GraphState) -> GraphState:
