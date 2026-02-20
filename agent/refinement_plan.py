@@ -89,7 +89,9 @@ def _try_build_plan_via_llm(
         "}\n"
         "Rules:\n"
         "- Only use these 8 set_fields keys; do not add others.\n"
-        "- clear_fields means explicit remove semantics: only include fields when user clearly says remove/clear/no-preference/unlimited. (e.g., "no budget limit", "don't care about furnishing", "remove size requirement") \n"         "- Default behavior is SET (add/update). Do not guess CLEAR.\n"
+        "- clear_fields means explicit remove semantics: only include fields when user clearly says remove/clear/no-preference/unlimited "
+        '(e.g., "no budget limit", "don\'t care about furnishing", "remove size requirement").\n'
+        "- Default behavior is SET (add/update). Do not guess CLEAR.\n"
         "- If uncertain, leave fields null/empty instead of guessing.\n"
         "- For location_keywords, do verbatim extraction from user text spans only.\n"
         "- Do NOT correct spelling, expand abbreviations, canonicalize, or rewrite location text.\n"
