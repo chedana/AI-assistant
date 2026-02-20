@@ -11,6 +11,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+# Ensure assistant workflow points to local vLLM when backend is started standalone.
+os.environ.setdefault("QWEN_BASE_URL", "http://127.0.0.1:8002/v1")
+os.environ.setdefault("ROUTER_BASE_URL", os.environ["QWEN_BASE_URL"])
+os.environ.setdefault("OPENAI_API_KEY", "dummy")
+os.environ.setdefault("ROUTER_API_KEY", os.environ["OPENAI_API_KEY"])
+
 from agent.state import AgentState
 from agent.workflow import process_turn
 from skills.search.agentic import build_search_runtime
