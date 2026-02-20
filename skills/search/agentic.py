@@ -1,19 +1,17 @@
 from __future__ import annotations
 
-import copy
 import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from sentence_transformers import SentenceTransformer
 
-from core.llm_client import llm_extract, llm_extract_all_signals
+from skills.common.parse_signals import derive_signals, parse_signals
 from core.settings import (
     DEFAULT_K,
     DEFAULT_RECALL,
     EMBED_MODEL,
     ENABLE_STAGE_D_EXPLAIN,
-    STRUCTURED_POLICY,
 )
 from skills.search.engine import load_stage_a_resources, stage_a_search
 from skills.search.extractors import (
@@ -21,16 +19,13 @@ from skills.search.extractors import (
     merge_constraints,
     normalize_budget_to_pcm,
     normalize_constraints,
-    repair_extracted_constraints,
     summarize_constraint_changes,
 )
 from skills.search.handler import (
     apply_hard_filters_with_audit,
-    apply_structured_policy,
     build_stage_a_query,
     format_listing_row,
     rank_stage_c,
-    split_query_signals,
 )
 
 
@@ -70,32 +65,30 @@ def run_search_skill(
     state_constraints: Optional[Dict[str, Any]],
     runtime: SearchRuntime,
     refinement_type: Optional[str] = None,
+    override_constraints: Optional[Dict[str, Any]] = None,
+    precomputed_semantic_terms: Optional[Dict[str, Any]] = None,
     k: int = DEFAULT_K,
     recall: int = DEFAULT_RECALL,
 ) -> Dict[str, Any]:
-    semantic_parse_source = "llm_combined"
-    combined: Dict[str, Any] = {"constraints": {}, "semantic_terms": {}}
-    llm_extracted: Dict[str, Any] = {}
-    try:
-        combined = llm_extract_all_signals(user_text, state_constraints)
-        llm_extracted = combined.get("constraints") or {}
-        semantic_terms = combined.get("semantic_terms") or {}
-    except Exception:
-        semantic_parse_source = "fallback_split_calls"
-        llm_extracted = llm_extract(user_text, state_constraints)
-        semantic_terms = {}
-
     prev_constraints = dict(state_constraints or {})
-    llm_extracted_raw = copy.deepcopy(llm_extracted or {})
-    rule_extracted = repair_extracted_constraints(llm_extracted, user_text)
-    extracted, structured_audit = apply_structured_policy(
-        user_text=user_text,
-        llm_constraints=llm_extracted_raw,
-        rule_constraints=rule_extracted,
-        policy=STRUCTURED_POLICY,
-    )
+    structured_audit = {}
+    if override_constraints is None:
+        parsed = parse_signals(
+            user_text,
+            state_constraints,
+            emit_audit=True,
+            audit_context="search",
+        )
+        extracted = parsed.get("final_constraints") or {}
+        structured_audit = parsed.get("structured_audit") or {}
+        merged = merge_constraints(state_constraints, extracted)
+        semantic_terms = parsed.get("semantic_terms") or {}
+        semantic_source = str(parsed.get("semantic_parse_source") or "llm_combined")
+    else:
+        merged = dict(override_constraints or {})
+        semantic_terms = dict(precomputed_semantic_terms or {})
+        semantic_source = "precomputed_plan"
 
-    merged = merge_constraints(state_constraints, extracted)
     merged = normalize_budget_to_pcm(merged)
     merged = normalize_constraints(merged)
     auto_refine_note: Optional[str] = None
@@ -113,11 +106,14 @@ def run_search_skill(
     if not merged.get("k"):
         merged["k"] = int(k)
 
-    signals = split_query_signals(
-        user_text,
-        merged,
-        precomputed_semantic_terms=semantic_terms,
-        semantic_parse_source=semantic_parse_source,
+    signals = derive_signals(
+        parsed={
+            "semantic_terms": semantic_terms,
+            "semantic_parse_source": semantic_source,
+            "final_constraints": merged,
+        },
+        user_text=user_text,
+        constraints=merged,
     )
     stage_a_query = build_stage_a_query(signals, user_text)
     stage_a_df = stage_a_search(

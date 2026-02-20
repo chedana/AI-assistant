@@ -3,7 +3,10 @@ from __future__ import annotations
 import json
 from typing import Literal
 
+from agent.merger import derive_snapshot, push_history, snapshot_from_constraints, snapshot_to_constraints
+from agent.refinement_plan import build_refinement_plan
 from agent.router import route_turn
+from skills.common.context_provider import get_current_context_houses, get_focus_listing
 from skills.qa.handler import answer_multi_listing_question, answer_single_listing_question, classify_qa_scope
 from skills.search.agentic import run_search_skill
 
@@ -105,19 +108,113 @@ def route_node(state: GraphState) -> GraphState:
 def search_node(state: GraphState) -> GraphState:
     agent_state = state["agent_state"]
     runtime = state["runtime"]
-    out = run_search_skill(
+    prev_results = list(agent_state.last_results or [])
+    prev_focus_id = agent_state.current_focus_listing_id
+    prev_focus_payload = agent_state.current_focus_listing_payload
+    prev_focus_source = agent_state.focus_source
+
+    # Build merge plan from current user turn before running physical search.
+    plan = build_refinement_plan(
         user_text=str(state.get("user_input") or ""),
-        state_constraints=agent_state.constraints,
-        runtime=runtime,
-        refinement_type=state.get("refinement_type"),
+        existing_constraints=agent_state.constraints,
     )
+
+    old_snapshot = snapshot_from_constraints(
+        agent_state.constraints,
+        results=agent_state.last_results,
+    )
+    target_snapshot = derive_snapshot(
+        old_snapshot=old_snapshot,
+        set_fields=plan.set_fields,
+        clear_fields=plan.clear_fields,
+        is_reset=plan.is_reset,
+    )
+    target_constraints = snapshot_to_constraints(target_snapshot)
+    target_hash = target_snapshot.get_hash()
+    history = list(agent_state.snapshot_history or [])
+    hit_idx = next((i for i, x in enumerate(history) if x.get_hash() == target_hash), -1)
+
+    if hit_idx >= 0:
+        matched = history.pop(hit_idx)
+        history.insert(0, matched)
+        agent_state.snapshot_history = history[:5]
+
+        agent_state.constraints = snapshot_to_constraints(matched)
+        cached_results = list(matched.results or [])
+        if cached_results:
+            agent_state.last_results = cached_results
+            _auto_focus_first(agent_state)
+            state["last_search_status"] = "cache_hit"
+            bot_text = f"Reused cached results ({len(cached_results)} listings)."
+        else:
+            # Keep prior context if a historical snapshot has no cached rows.
+            agent_state.last_results = prev_results
+            agent_state.current_focus_listing_id = prev_focus_id
+            agent_state.current_focus_listing_payload = prev_focus_payload
+            agent_state.focus_source = prev_focus_source
+            state["last_search_status"] = "cache_hit_empty"
+            bot_text = "Matched a previous query snapshot, but it has no cached listings."
+        agent_state.last_qa_scope = None
+        if agent_state.last_results and agent_state.current_focus_listing_payload:
+            focus_title = str(
+                agent_state.current_focus_listing_payload.get("title")
+                or agent_state.current_focus_listing_id
+                or "listing #1"
+            )
+            bot_text += (
+                f"\n\nNote: default focus is set to listing #1 ({focus_title}). "
+                "Use /focus N to switch target, or ask 'which one has ...' to compare all current listings."
+            )
+        state["reply_text"] = bot_text
+        return state
+
+    try:
+        out = run_search_skill(
+            user_text=str(state.get("user_input") or ""),
+            state_constraints=agent_state.constraints,
+            runtime=runtime,
+            refinement_type=state.get("refinement_type"),
+            override_constraints=target_constraints,
+            precomputed_semantic_terms=plan.semantic_terms or {},
+        )
+    except Exception:
+        state["last_search_status"] = "error"
+        state["reply_text"] = (
+            "Search failed this turn. I kept your previous results intact. "
+            "Please retry or adjust your query."
+        )
+        return state
+
     agent_state.constraints = out.get("constraints")
     agent_state.user_profile.update(out.get("profile_patch") or {})
-    agent_state.last_results = list(out.get("listings") or [])
-    _auto_focus_first(agent_state)
+    new_results = list(out.get("listings") or [])
+    bot_text = out.get("reply_text") or "No result."
+
+    committed_snapshot = snapshot_from_constraints(
+        agent_state.constraints,
+        results=new_results,
+    )
+    new_history, _ = push_history(agent_state.snapshot_history or [], committed_snapshot, max_size=5)
+    agent_state.snapshot_history = new_history
+
+    if new_results:
+        agent_state.last_results = new_results
+        _auto_focus_first(agent_state)
+        state["last_search_status"] = "success"
+    else:
+        # Preserve prior context to avoid QA hard break after an empty/failed search result.
+        agent_state.last_results = prev_results
+        agent_state.current_focus_listing_id = prev_focus_id
+        agent_state.current_focus_listing_payload = prev_focus_payload
+        agent_state.focus_source = prev_focus_source
+        state["last_search_status"] = "empty"
+        if prev_results:
+            bot_text += (
+                "\n\nI kept your previous results. "
+                "You can still ask follow-up questions about them."
+            )
     agent_state.last_qa_scope = None
 
-    bot_text = out.get("reply_text") or "No result."
     if agent_state.last_results and agent_state.current_focus_listing_payload:
         focus_title = str(
             agent_state.current_focus_listing_payload.get("title")
@@ -138,13 +235,14 @@ def qa_node(state: GraphState) -> GraphState:
     user_in = str(state.get("user_input") or "")
 
     if state.get("target_index") is not None:
-        if not agent_state.current_focus_listing_payload:
+        focus_listing = get_focus_listing(agent_state)
+        if not focus_listing:
             state["reply_text"] = "Which listing do you mean? Use /focus 1 to select one first."
             return state
         agent_state.last_qa_scope = "single"
         state["reply_text"] = answer_single_listing_question(
             question=user_in,
-            listing_payload=agent_state.current_focus_listing_payload,
+            listing_payload=focus_listing,
             embedder=runtime.embedder,
         )
         return state
@@ -161,19 +259,27 @@ def qa_node(state: GraphState) -> GraphState:
         state["reply_text"] = "Please specify which listing you mean (for example: listing 2), or ask 'which one has ...'."
     elif target_scope == "list":
         agent_state.last_qa_scope = "list"
+        listings = get_current_context_houses(agent_state, "list")
+        if not listings:
+            state["reply_text"] = (
+                "I don't have active listings yet. "
+                "Tell me your budget/location/layout first, and I'll search."
+            )
+            return state
         state["reply_text"] = answer_multi_listing_question(
             question=user_in,
-            listings=agent_state.last_results,
+            listings=listings,
             embedder=runtime.embedder,
         )
-    elif not agent_state.current_focus_listing_payload:
+    elif not get_focus_listing(agent_state):
         agent_state.last_qa_scope = "clarify"
         state["reply_text"] = "Which listing do you mean? Use /focus 1 to select one first."
     else:
         agent_state.last_qa_scope = "single"
+        focus_listing = get_focus_listing(agent_state)
         bot_text = answer_single_listing_question(
             question=user_in,
-            listing_payload=agent_state.current_focus_listing_payload,
+            listing_payload=focus_listing,
             embedder=runtime.embedder,
         )
         if agent_state.focus_source == "auto":

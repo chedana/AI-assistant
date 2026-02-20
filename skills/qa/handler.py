@@ -4,11 +4,11 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
-from core.llm_client import llm_extract, llm_extract_all_signals, qwen_chat
-from core.settings import STRUCTURED_POLICY
+from core.llm_client import qwen_chat
+from skills.common.parse_signals import parse_signals
 from skills.qa.lookup import semantic_lookup, semantic_vector_lookup, structured_lookup
-from skills.search.extractors import _norm_furnish_value, repair_extracted_constraints
-from skills.search.handler import apply_hard_filters_with_audit, apply_structured_policy, split_query_signals
+from skills.search.extractors import _norm_furnish_value
+from skills.search.handler import apply_hard_filters_with_audit
 
 
 SEMANTIC_HIGH_THRESHOLD = 0.75
@@ -116,31 +116,14 @@ def _build_qa_signals(question: str) -> Dict[str, Any]:
     sanitized_question = _sanitize_question_for_qa(question_text)
     extraction_input = sanitized_question or question_text
 
-    semantic_parse_source = "llm_combined"
-    combined = {"constraints": {}, "semantic_terms": {}}
-    llm_constraints: Dict[str, Any] = {}
-    semantic_terms: Dict[str, Any] = {}
-    try:
-        combined = llm_extract_all_signals(extraction_input, existing_constraints=None)
-        llm_constraints = combined.get("constraints") or {}
-        semantic_terms = combined.get("semantic_terms") or {}
-    except Exception:
-        semantic_parse_source = "fallback_split_calls"
-        llm_constraints = llm_extract(extraction_input, existing_constraints=None)
-        semantic_terms = {}
-    rule_constraints = repair_extracted_constraints(llm_constraints, extraction_input)
-    final_constraints, _ = apply_structured_policy(
-        user_text=extraction_input,
-        llm_constraints=llm_constraints,
-        rule_constraints=rule_constraints,
-        policy=STRUCTURED_POLICY,
-    )
-    signals = split_query_signals(
+    parsed = parse_signals(
         extraction_input,
-        final_constraints or {},
-        precomputed_semantic_terms=semantic_terms,
-        semantic_parse_source=semantic_parse_source,
+        existing_constraints=None,
+        emit_audit=True,
+        audit_context="qa",
     )
+    final_constraints = parsed.get("final_constraints") or {}
+    signals = parsed.get("signals") or {}
     return {
         "question_text": question_text,
         "extraction_input": extraction_input,
