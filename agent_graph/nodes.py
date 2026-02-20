@@ -295,6 +295,7 @@ def qa_plan_node(state: GraphState) -> GraphState:
             "intent": "Specific_QA",
             "qa_scope": target_scope,
             "plan_source": (qa_ctx or {}).get("plan_source"),
+            "llm_extract_all_error": (qa_ctx or {}).get("llm_extract_all_error") or {},
             "hard_constraints": signals.get("hard_constraints") or {},
             "soft_terms": {
                 "topic_preferences": signals.get("topic_preferences") or {},

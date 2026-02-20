@@ -14,6 +14,7 @@ class SemanticTerms(TypedDict, total=False):
 
 class ParseSignalsOutput(TypedDict):
     semantic_parse_source: SemanticParseSource | str
+    llm_extract_all_error: Dict[str, Any]
     llm_constraints: Dict[str, Any]
     semantic_terms: SemanticTerms
     rule_constraints: Dict[str, Any]
