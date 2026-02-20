@@ -13,14 +13,35 @@ if [[ ! -d "${FRONTEND_DIR}" ]]; then
 fi
 
 export NVM_DIR="${HOME}/.nvm"
-if [[ -s "${NVM_DIR}/nvm.sh" ]]; then
-  # shellcheck source=/dev/null
-  source "${NVM_DIR}/nvm.sh"
-else
-  echo "[frontend][error] nvm not found at ${NVM_DIR}/nvm.sh"
-  echo "[frontend][hint] install nvm first, then run this script again."
+NVM_CANDIDATES=(
+  "${NVM_DIR}"
+  "${HOME}/.nvm"
+  "/root/.nvm"
+)
+
+for d in /home/*/.nvm; do
+  if [[ -d "${d}" ]]; then
+    NVM_CANDIDATES+=("${d}")
+  fi
+done
+
+NVM_FOUND=""
+for d in "${NVM_CANDIDATES[@]}"; do
+  if [[ -s "${d}/nvm.sh" ]]; then
+    NVM_FOUND="${d}"
+    break
+  fi
+done
+
+if [[ -z "${NVM_FOUND}" ]]; then
+  echo "[frontend][error] nvm not found."
+  echo "[frontend][hint] install nvm for current user, or set NVM_DIR before running."
   exit 1
 fi
+
+export NVM_DIR="${NVM_FOUND}"
+# shellcheck source=/dev/null
+source "${NVM_DIR}/nvm.sh"
 
 nvm use 20 >/dev/null 2>&1 || nvm install 20 >/dev/null
 nvm use 20 >/dev/null
