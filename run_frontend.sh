@@ -34,9 +34,35 @@ for d in "${NVM_CANDIDATES[@]}"; do
 done
 
 if [[ -z "${NVM_FOUND}" ]]; then
-  echo "[frontend][error] nvm not found."
-  echo "[frontend][hint] install nvm for current user, or set NVM_DIR before running."
-  exit 1
+  echo "[frontend] nvm not found, installing nvm..."
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+  else
+    echo "[frontend][error] neither curl nor wget is available, cannot install nvm automatically."
+    exit 1
+  fi
+
+  NVM_CANDIDATES=(
+    "${HOME}/.nvm"
+    "/root/.nvm"
+  )
+  for d in /home/*/.nvm; do
+    if [[ -d "${d}" ]]; then
+      NVM_CANDIDATES+=("${d}")
+    fi
+  done
+  for d in "${NVM_CANDIDATES[@]}"; do
+    if [[ -s "${d}/nvm.sh" ]]; then
+      NVM_FOUND="${d}"
+      break
+    fi
+  done
+  if [[ -z "${NVM_FOUND}" ]]; then
+    echo "[frontend][error] nvm install finished but nvm.sh was not found."
+    exit 1
+  fi
 fi
 
 export NVM_DIR="${NVM_FOUND}"
