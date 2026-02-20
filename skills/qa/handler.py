@@ -127,7 +127,8 @@ def build_qa_context(question: str) -> Dict[str, Any]:
     return {
         "question_text": question_text,
         "extraction_input": extraction_input,
-        "plan_source": str(parsed.get("plan_source") or "fallback_split_calls"),
+        "plan_source": str(parsed.get("semantic_parse_source") or "fallback_split_calls"),
+        "llm_extract_all_error": parsed.get("llm_extract_all_error") or {},
         "signals": signals,
         "final_constraints": final_constraints or {},
     }

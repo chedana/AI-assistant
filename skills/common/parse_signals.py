@@ -23,6 +23,7 @@ def parse_signals(
     text = str(user_text or "").strip()
     semantic_parse_source = "llm_combined"
     debug_enabled = str(os.environ.get("ROUTER_DEBUG", "0")).strip().lower() in {"1", "true", "yes", "on"}
+    llm_extract_all_error: Dict[str, Any] = {}
     llm_constraints: Dict[str, Any] = {}
     semantic_terms: Dict[str, Any] = {}
 
@@ -31,6 +32,10 @@ def parse_signals(
         llm_constraints = combined.get("constraints") or {}
         semantic_terms = combined.get("semantic_terms") or {}
     except Exception as exc:
+        llm_extract_all_error = {
+            "error_type": type(exc).__name__,
+            "error": str(exc),
+        }
         if debug_enabled:
             try:
                 print(
@@ -38,8 +43,7 @@ def parse_signals(
                     + json.dumps(
                         {
                             "phase": "parse_signals_llm_extract_all_error",
-                            "error_type": type(exc).__name__,
-                            "error": str(exc),
+                            **llm_extract_all_error,
                         },
                         ensure_ascii=False,
                     )
@@ -73,6 +77,7 @@ def parse_signals(
         )
     out: ParseSignalsOutput = {
         "semantic_parse_source": semantic_parse_source,
+        "llm_extract_all_error": llm_extract_all_error,
         "llm_constraints": llm_constraints,
         "semantic_terms": semantic_terms,
         "rule_constraints": rule_constraints,
