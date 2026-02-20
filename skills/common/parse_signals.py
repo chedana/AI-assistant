@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from typing import Any, Dict, Optional
 
@@ -34,12 +35,13 @@ def parse_signals(
             try:
                 print(
                     "Bot> [debug] "
-                    + str(
+                    + json.dumps(
                         {
                             "phase": "parse_signals_llm_extract_all_error",
                             "error_type": type(exc).__name__,
                             "error": str(exc),
-                        }
+                        },
+                        ensure_ascii=False,
                     )
                 )
             except Exception:
