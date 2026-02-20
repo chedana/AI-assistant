@@ -2,13 +2,16 @@ import json
 import os
 from typing import Optional
 
+from agent_graph import build_graph, make_graph_state
 from agent.router import route_turn
 from agent.state import AgentState
 from skills.qa.handler import answer_multi_listing_question, answer_single_listing_question, classify_qa_scope
 from skills.search.agentic import build_search_runtime, run_search_skill
 
+_GRAPH_RUNNER = None
 
-def process_turn(user_in: str, state: AgentState, runtime, router_debug: bool = False) -> str:
+
+def _legacy_process_turn(user_in: str, state: AgentState, runtime, router_debug: bool = False) -> str:
     history_hint = _make_history_hint(state)
     decision = route_turn(
         user_in,
@@ -125,6 +128,28 @@ def process_turn(user_in: str, state: AgentState, runtime, router_debug: bool = 
 
     state.history.append((user_in, bot_text))
     return bot_text
+
+
+def process_turn(user_in: str, state: AgentState, runtime, router_debug: bool = False) -> str:
+    global _GRAPH_RUNNER
+
+    if _GRAPH_RUNNER is None:
+        try:
+            _GRAPH_RUNNER = build_graph()
+        except Exception:
+            _GRAPH_RUNNER = False
+
+    if not _GRAPH_RUNNER:
+        return _legacy_process_turn(user_in, state, runtime, router_debug=router_debug)
+
+    graph_state = make_graph_state(
+        user_in,
+        agent_state=state,
+        runtime=runtime,
+        router_debug=router_debug,
+    )
+    out = _GRAPH_RUNNER.invoke(graph_state)
+    return str((out or {}).get("reply_text") or "")
 
 
 def run() -> None:

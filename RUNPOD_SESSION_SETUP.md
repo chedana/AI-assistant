@@ -34,6 +34,10 @@ bash /workspace/bootstrap.sh
 
 ```bash
 pip install -U pip setuptools wheel
+pip install -r /workspace/AI-assistant/requirements.txt
+pip install -r /workspace/AI-assistant/backend/requirements.txt
+
+# Optional extras (only if your workload needs them)
 pip install faiss-cpu playwright
 playwright install chromium
 
@@ -47,21 +51,28 @@ pip install vllm huggingface_hub
 pip install pandas
 ```
 
-## 6) Install system package(s)
+## 6) Install frontend dependencies
+
+```bash
+cd /workspace/AI-assistant/frontend
+npm install
+```
+
+## 7) Install system package(s)
 
 ```bash
 apt update
 apt install -y vim
 ```
 
-## 7) Download model
+## 8) Download model
 
 ```bash
 huggingface-cli download Qwen/Qwen3-14B \
   --local-dir Qwen3-14B
 ```
 
-## 8) Start vLLM server
+## 9) Start vLLM server (OpenAI-compatible)
 
 ```bash
 python3 -m vllm.entrypoints.openai.api_server \
@@ -70,10 +81,42 @@ python3 -m vllm.entrypoints.openai.api_server \
   --max-model-len 8192 \
   --trust-remote-code \
   --host 0.0.0.0 \
-  --port 8000
+  --port 8002
 ```
 
-## 9) Data Artifacts (What to rebuild, when)
+## 10) Start backend (FastAPI on 8000)
+
+```bash
+cd /workspace/AI-assistant
+source /workspace/AI-assistant/.venv/bin/activate
+
+export QWEN_BASE_URL=http://127.0.0.1:8002/v1
+export ROUTER_BASE_URL=${QWEN_BASE_URL}
+export OPENAI_API_KEY=dummy
+export ROUTER_API_KEY=${OPENAI_API_KEY}
+
+cd /workspace/AI-assistant/backend
+uvicorn api_server:app --host 0.0.0.0 --port 8000
+```
+
+## 11) Start frontend (Vite on 5173)
+
+```bash
+cd /workspace/AI-assistant/frontend
+npm run dev -- --host 0.0.0.0 --port 5173
+```
+
+## 12) Quick health checks
+
+```bash
+curl -s http://127.0.0.1:8000/healthz
+
+curl -N -X POST http://127.0.0.1:8000/api/chat/stream \
+  -H "Content-Type: application/json" \
+  -d '{"session_id":"smoke","user_text":"find 1 bed near waterloo under 2500"}'
+```
+
+## 13) Data Artifacts (What to rebuild, when)
 
 ### A. Qdrant storage: `storage.sqlite`
 
