@@ -21,6 +21,10 @@ artifacts/skills/search/tmp/
 .ipynb_checkpoints/
 **/.ipynb_checkpoints/
 
+# frontend artifacts
+frontend/node_modules/
+frontend/dist/
+
 # python cache
 **/__pycache__/
 *.py[cod]
