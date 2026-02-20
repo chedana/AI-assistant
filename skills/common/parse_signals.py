@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any, Dict, Optional
 
 from skills.common.audit_log import emit_structured_audit_logs
@@ -20,6 +21,7 @@ def parse_signals(
 ) -> ParseSignalsOutput:
     text = str(user_text or "").strip()
     semantic_parse_source = "llm_combined"
+    debug_enabled = str(os.environ.get("ROUTER_DEBUG", "0")).strip().lower() in {"1", "true", "yes", "on"}
     llm_constraints: Dict[str, Any] = {}
     semantic_terms: Dict[str, Any] = {}
 
@@ -27,7 +29,21 @@ def parse_signals(
         combined = llm_extract_all_signals(text, existing_constraints)
         llm_constraints = combined.get("constraints") or {}
         semantic_terms = combined.get("semantic_terms") or {}
-    except Exception:
+    except Exception as exc:
+        if debug_enabled:
+            try:
+                print(
+                    "Bot> [debug] "
+                    + str(
+                        {
+                            "phase": "parse_signals_llm_extract_all_error",
+                            "error_type": type(exc).__name__,
+                            "error": str(exc),
+                        }
+                    )
+                )
+            except Exception:
+                pass
         semantic_parse_source = "fallback_split_calls"
         llm_constraints = llm_extract(text, existing_constraints)
         semantic_terms = {}
