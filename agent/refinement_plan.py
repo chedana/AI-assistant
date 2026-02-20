@@ -105,12 +105,7 @@ def _try_build_plan_via_llm(
         "- is_reset=true only for explicit reset/start-over/new-search-from-scratch/ignore-previous intent (equivalent to update_scope=replace_all).\n"
         "- Otherwise is_reset=false (equivalent to update_scope=patch).\n"
     )
-    user_payload = (
-        "Existing constraints:\n"
-        + json.dumps(existing_constraints or {}, ensure_ascii=False)
-        + "\n\nUser input:\n"
-        + str(user_text or "")
-    )
+    user_payload = "User input:\n" + str(user_text or "")
     try:
         raw = qwen_chat(
             [
