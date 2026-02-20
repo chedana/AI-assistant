@@ -9,6 +9,7 @@ from agent.router import route_turn
 from skills.common.context_provider import get_current_context_houses, get_focus_listing
 from skills.qa.handler import answer_multi_listing_question, answer_single_listing_question, classify_qa_scope
 from skills.search.agentic import run_search_skill
+from skills.search.handler import format_listing_row
 
 from agent_graph.state import GraphState
 
@@ -175,7 +176,11 @@ def search_node(state: GraphState) -> GraphState:
             agent_state.last_results = cached_results
             _auto_focus_first(agent_state)
             state["last_search_status"] = "cache_hit"
-            bot_text = f"Reused cached results ({len(cached_results)} listings)."
+            k = int((agent_state.constraints or {}).get("k") or 5)
+            lines = [f"Reused cached results ({len(cached_results)} listings).", "", f"Top {min(k, len(cached_results))} results:"]
+            for i, row in enumerate(cached_results[:k], start=1):
+                lines.append(format_listing_row(row, i, view_mode="summary"))
+            bot_text = "\n".join(lines)
         else:
             # Keep prior context if a historical snapshot has no cached rows.
             agent_state.last_results = prev_results
