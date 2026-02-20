@@ -56,6 +56,10 @@ from skills.search.pipeline_service import (
     SearchDeps,
     run_normal_query,
 )
+from skills.common.audit_log import (
+    append_structured_conflict_log as append_structured_conflict_log_common,
+    append_structured_training_samples as append_structured_training_samples_common,
+)
 from skills.search.state_ops import (
     init_runtime_state,
     parse_command as parse_command_v2,
@@ -1052,23 +1056,12 @@ def append_structured_conflict_log(
     semantic_parse_source: str,
     audit: Dict[str, Any],
 ) -> None:
-    if not ENABLE_STRUCTURED_CONFLICT_LOG:
-        return
-    if not audit or int(audit.get("conflict_count", 0)) <= 0:
-        return
-    rec = {
-        "timestamp": datetime.utcnow().isoformat() + "Z",
-        "policy": audit.get("policy"),
-        "semantic_parse_source": semantic_parse_source,
-        "user_text": user_text,
-        "agreement_rate": audit.get("agreement_rate"),
-        "conflict_count": audit.get("conflict_count"),
-        "conflicts": audit.get("conflicts", []),
-        "llm_constraints": audit.get("llm_constraints", {}),
-        "rule_constraints": audit.get("rule_constraints", {}),
-        "final_constraints": audit.get("final_constraints", {}),
-    }
-    append_jsonl(STRUCTURED_CONFLICT_LOG_PATH, rec, "structured conflict log")
+    append_structured_conflict_log_common(
+        user_text=user_text,
+        semantic_parse_source=semantic_parse_source,
+        audit=audit,
+        context="search",
+    )
 
 
 def append_structured_training_samples(
@@ -1076,31 +1069,12 @@ def append_structured_training_samples(
     semantic_parse_source: str,
     audit: Dict[str, Any],
 ) -> None:
-    if not ENABLE_STRUCTURED_TRAINING_LOG:
-        return
-    if not audit:
-        return
-    conflicts = audit.get("conflicts", [])
-    if not conflicts:
-        return
-
-    ts = datetime.utcnow().isoformat() + "Z"
-    for item in conflicts:
-        rec = {
-            "timestamp": ts,
-            "sample_type": "rule_disagreement_supervision",
-            "policy": audit.get("policy"),
-            "semantic_parse_source": semantic_parse_source,
-            "user_text": user_text,
-            "field": item.get("field"),
-            "risk": item.get("risk"),
-            "action": item.get("action"),
-            "llm_value": item.get("llm_value"),
-            "rule_value": item.get("rule_value"),
-            "target_value": item.get("final_value"),
-            "target_constraints": audit.get("final_constraints", {}),
-        }
-        append_jsonl(STRUCTURED_TRAINING_LOG_PATH, rec, "structured training samples")
+    append_structured_training_samples_common(
+        user_text=user_text,
+        semantic_parse_source=semantic_parse_source,
+        audit=audit,
+        context="search",
+    )
 
 def format_listing_row_debug(r: Dict[str, Any], i: int) -> str:
     title = str(r.get("title", "") or "").strip()

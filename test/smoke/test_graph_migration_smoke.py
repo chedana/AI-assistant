@@ -100,6 +100,39 @@ def run() -> int:
     _assert(multi_out == "MULTI_ANSWER", "multi QA should use multi-listing answer tool")
     _assert(len(state.history) == 3, "history should append for each turn")
 
+    # Search returns empty: previous results should be preserved.
+    with patch("agent.workflow._GRAPH_RUNNER", None):
+        with patch(
+            "agent_graph.nodes.route_turn",
+            return_value=RouteDecision(intent="Search", reason="test_search_empty"),
+        ), patch(
+            "agent_graph.nodes.run_search_skill",
+            return_value={
+                "reply_text": "I couldn't find any matching listings.",
+                "constraints": {"k": 5},
+                "profile_patch": {},
+                "listings": [],
+            },
+        ):
+            empty_out = process_turn("show me something impossible", state, runtime, router_debug=False)
+    _assert("kept your previous results" in empty_out.lower(), "empty search should preserve previous context")
+    _assert(len(state.last_results) == 2, "empty search should not wipe previous results")
+
+    # QA list-scope with empty context should guide user instead of crashing.
+    state.last_results = []
+    state.current_focus_listing_payload = None
+    state.current_focus_listing_id = None
+    with patch("agent.workflow._GRAPH_RUNNER", None):
+        with patch(
+            "agent_graph.nodes.route_turn",
+            return_value=RouteDecision(intent="Specific_QA", reason="test_qa_no_context"),
+        ), patch(
+            "agent_graph.nodes.classify_qa_scope",
+            return_value={"target_scope": "list"},
+        ):
+            no_ctx_out = process_turn("which one has balcony?", state, runtime, router_debug=False)
+    _assert("don't have active listings" in no_ctx_out.lower(), "qa should return graceful guidance on empty context")
+
     print("PASS: graph migration smoke checks")
     return 0
 

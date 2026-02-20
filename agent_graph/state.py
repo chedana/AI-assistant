@@ -20,6 +20,7 @@ class GraphState(TypedDict, total=False):
     error: Optional[str]
     attempt_count: int
     router_debug: bool
+    last_search_status: str
 
     # Shared conversational state mirrors existing agent state model.
     agent_state: Any
@@ -47,6 +48,7 @@ def make_graph_state(user_input: str, *, agent_state: Any, runtime: Any, router_
         error=None,
         attempt_count=0,
         router_debug=bool(router_debug),
+        last_search_status="unknown",
         agent_state=agent_state,
         runtime=runtime,
     )
