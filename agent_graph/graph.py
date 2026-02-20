@@ -7,7 +7,8 @@ from agent_graph.nodes import (
     direct_reply_node,
     fallback_node,
     finalize_node,
-    qa_node,
+    qa_execute_node,
+    qa_plan_node,
     route_branch,
     route_node,
     search_node,
@@ -29,7 +30,8 @@ def build_graph() -> Any:
     graph = StateGraph(GraphState)
     graph.add_node("route", route_node)
     graph.add_node("search", search_node)
-    graph.add_node("qa", qa_node)
+    graph.add_node("qa_plan", qa_plan_node)
+    graph.add_node("qa_execute", qa_execute_node)
     graph.add_node("chitchat", chitchat_node)
     graph.add_node("direct_reply", direct_reply_node)
     graph.add_node("fallback", fallback_node)
@@ -41,14 +43,15 @@ def build_graph() -> Any:
         route_branch,
         {
             "Search": "search",
-            "Specific_QA": "qa",
+            "Specific_QA": "qa_plan",
             "Chitchat": "chitchat",
             "DirectReply": "direct_reply",
             "Fallback": "fallback",
         },
     )
     graph.add_edge("search", "finalize")
-    graph.add_edge("qa", "finalize")
+    graph.add_edge("qa_plan", "qa_execute")
+    graph.add_edge("qa_execute", "finalize")
     graph.add_edge("chitchat", "finalize")
     graph.add_edge("direct_reply", "finalize")
     graph.add_edge("fallback", "finalize")

@@ -111,7 +111,7 @@ def _distill_listing_payload(listing_payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _build_qa_signals(question: str) -> Dict[str, Any]:
+def build_qa_context(question: str) -> Dict[str, Any]:
     question_text = str(question or "").strip()
     sanitized_question = _sanitize_question_for_qa(question_text)
     extraction_input = sanitized_question or question_text
@@ -127,9 +127,15 @@ def _build_qa_signals(question: str) -> Dict[str, Any]:
     return {
         "question_text": question_text,
         "extraction_input": extraction_input,
+        "plan_source": str(parsed.get("plan_source") or "fallback_split_calls"),
         "signals": signals,
         "final_constraints": final_constraints or {},
     }
+
+
+def _build_qa_signals(question: str) -> Dict[str, Any]:
+    # Backward-compatible alias.
+    return build_qa_context(question)
 
 
 def _semantic_allowed_fields(signals: Dict[str, Any]) -> set:
@@ -347,13 +353,18 @@ def classify_qa_scope(
     return {"target_scope": "clarify", "confidence": 0.0, "reason": "fallback:llm_unavailable"}
 
 
-def answer_single_listing_question(question: str, listing_payload: Dict[str, Any], embedder=None) -> str:
+def answer_single_listing_question(
+    question: str,
+    listing_payload: Dict[str, Any],
+    embedder=None,
+    qa_ctx: Optional[Dict[str, Any]] = None,
+) -> str:
     if not listing_payload:
         return "I don't have the selected listing details yet."
-    qa_ctx = _build_qa_signals(question)
-    extraction_input = qa_ctx["extraction_input"]
-    signals = qa_ctx["signals"]
-    final_constraints = qa_ctx.get("final_constraints") or {}
+    ctx = qa_ctx or build_qa_context(question)
+    extraction_input = ctx["extraction_input"]
+    signals = ctx["signals"]
+    final_constraints = ctx.get("final_constraints") or {}
     allowed_fields = _semantic_allowed_fields(signals)
     distilled = _distill_listing_payload(listing_payload)
     structured_eval = _structured_match_eval(distilled, final_constraints)
@@ -465,15 +476,20 @@ def answer_single_listing_question(question: str, listing_payload: Dict[str, Any
         return "From listing details: " + "; ".join(bits) + ". Please confirm with the agent."
 
 
-def answer_multi_listing_question(question: str, listings: List[Dict[str, Any]], embedder=None) -> str:
+def answer_multi_listing_question(
+    question: str,
+    listings: List[Dict[str, Any]],
+    embedder=None,
+    qa_ctx: Optional[Dict[str, Any]] = None,
+) -> str:
     rows = list(listings or [])
     if not rows:
         return "There are no listings to compare yet. Please run a search first."
 
-    qa_ctx = _build_qa_signals(question)
-    extraction_input = qa_ctx["extraction_input"]
-    signals = qa_ctx["signals"]
-    final_constraints = qa_ctx.get("final_constraints") or {}
+    ctx = qa_ctx or build_qa_context(question)
+    extraction_input = ctx["extraction_input"]
+    signals = ctx["signals"]
+    final_constraints = ctx.get("final_constraints") or {}
     requested_fields = _mentioned_structured_fields(extraction_input, final_constraints)
     allowed_fields = _semantic_allowed_fields(signals)
     rows_eval: List[Dict[str, Any]] = []
