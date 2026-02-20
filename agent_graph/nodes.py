@@ -44,6 +44,15 @@ def _make_history_hint(agent_state, limit: int = 4) -> str | None:
     return "\n".join([f"U: {u}\nA: {a}" for u, a in rows])
 
 
+def _debug_print(enabled: bool, payload: dict) -> None:
+    if not enabled:
+        return
+    try:
+        print("Bot> [debug] " + json.dumps(payload, ensure_ascii=False))
+    except Exception:
+        print(f"Bot> [debug] {payload}")
+
+
 def route_node(state: GraphState) -> GraphState:
     text = str(state.get("user_input") or "").strip()
     agent_state = state["agent_state"]
@@ -84,6 +93,14 @@ def route_node(state: GraphState) -> GraphState:
                 },
                 ensure_ascii=False,
             )
+        )
+        _debug_print(
+            True,
+            {
+                "phase": "turn_start",
+                "intent": state["intent"],
+                "constraints_current": agent_state.constraints or {},
+            },
         )
 
     if state["intent"] == "Specific_QA" and state.get("target_index") is not None:
@@ -130,6 +147,19 @@ def search_node(state: GraphState) -> GraphState:
         is_reset=plan.is_reset,
     )
     target_constraints = snapshot_to_constraints(target_snapshot)
+    _debug_print(
+        bool(state.get("router_debug")),
+        {
+            "phase": "search_plan",
+            "intent": "Search",
+            "constraints_old": agent_state.constraints or {},
+            "constraints_new": target_constraints or {},
+            "set_fields": plan.set_fields or {},
+            "clear_fields": plan.clear_fields or [],
+            "is_reset": bool(plan.is_reset),
+            "plan_source": plan.source,
+        },
+    )
     target_hash = target_snapshot.get_hash()
     history = list(agent_state.snapshot_history or [])
     hit_idx = next((i for i, x in enumerate(history) if x.get_hash() == target_hash), -1)
@@ -173,7 +203,7 @@ def search_node(state: GraphState) -> GraphState:
             user_text=str(state.get("user_input") or ""),
             state_constraints=agent_state.constraints,
             runtime=runtime,
-            refinement_type=state.get("refinement_type"),
+            refinement_type=None,
             override_constraints=target_constraints,
             precomputed_semantic_terms=plan.semantic_terms or {},
         )
@@ -233,6 +263,14 @@ def qa_node(state: GraphState) -> GraphState:
     agent_state = state["agent_state"]
     runtime = state["runtime"]
     user_in = str(state.get("user_input") or "")
+    _debug_print(
+        bool(state.get("router_debug")),
+        {
+            "phase": "qa",
+            "intent": "Specific_QA",
+            "constraints_current": agent_state.constraints or {},
+        },
+    )
 
     if state.get("target_index") is not None:
         focus_listing = get_focus_listing(agent_state)
