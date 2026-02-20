@@ -8,6 +8,125 @@ from skills.qa.handler import answer_multi_listing_question, answer_single_listi
 from skills.search.agentic import build_search_runtime, run_search_skill
 
 
+def process_turn(user_in: str, state: AgentState, runtime, router_debug: bool = False) -> str:
+    history_hint = _make_history_hint(state)
+    decision = route_turn(
+        user_in,
+        mode=state.mode,
+        history_hint=history_hint,
+        has_listings=bool(state.last_results),
+        has_focus=bool(state.current_focus_listing_payload),
+        listings_count=len(state.last_results),
+    )
+
+    if router_debug:
+        print(
+            "Bot> [router] "
+            + json.dumps(
+                {
+                    "intent": decision.intent,
+                    "target_index": decision.target_index,
+                    "refinement_type": decision.refinement_type,
+                    "confidence": decision.confidence,
+                    "reason": decision.reason,
+                    "need_clarify": decision.need_clarify,
+                    "clarify_question": decision.clarify_question,
+                    "has_listings": bool(state.last_results),
+                    "has_focus": bool(state.current_focus_listing_payload),
+                },
+                ensure_ascii=False,
+            )
+        )
+
+    if decision.intent == "Specific_QA" and decision.target_index is not None:
+        focus_err = _focus_by_index(state, decision.target_index, source="user_query")
+        if focus_err:
+            state.history.append((user_in, focus_err))
+            return focus_err
+        # Target index resolved explicitly, no need to ask follow-up clarification.
+        decision.need_clarify = False
+        decision.clarify_question = None
+    elif decision.intent == "Specific_QA" and state.current_focus_listing_payload:
+        # Keep QA continuity on current focus when user does not re-specify index.
+        decision.need_clarify = False
+        decision.clarify_question = None
+
+    if decision.need_clarify and decision.clarify_question:
+        bot_text = decision.clarify_question
+    elif decision.intent == "Search":
+        out = run_search_skill(
+            user_text=user_in,
+            state_constraints=state.constraints,
+            runtime=runtime,
+            refinement_type=None,
+        )
+        state.constraints = out.get("constraints")
+        state.user_profile.update(out.get("profile_patch") or {})
+        state.last_results = list(out.get("listings") or [])
+        _auto_focus_first(state)
+        state.last_qa_scope = None
+        bot_text = out.get("reply_text") or "No result."
+        if state.last_results and state.current_focus_listing_payload:
+            focus_title = str(
+                state.current_focus_listing_payload.get("title")
+                or state.current_focus_listing_id
+                or "listing #1"
+            )
+            bot_text += (
+                f"\n\nNote: default focus is set to listing #1 ({focus_title}). "
+                "Use /focus N to switch target, or ask 'which one has ...' to compare all current listings."
+            )
+    elif decision.intent == "Specific_QA":
+        # Explicit target index from router always means single-listing QA.
+        if decision.target_index is not None:
+            if not state.current_focus_listing_payload:
+                bot_text = "Which listing do you mean? Use /focus 1 to select one first."
+            else:
+                state.last_qa_scope = "single"
+                bot_text = answer_single_listing_question(
+                    question=user_in,
+                    listing_payload=state.current_focus_listing_payload,
+                    embedder=runtime.embedder,
+                )
+        else:
+            scope = classify_qa_scope(
+                question=user_in,
+                has_focus=bool(state.current_focus_listing_payload),
+                has_listings=bool(state.last_results),
+                last_qa_scope=state.last_qa_scope,
+            )
+            target_scope = str(scope.get("target_scope") or "").strip().lower()
+            if target_scope == "clarify":
+                state.last_qa_scope = "clarify"
+                bot_text = "Please specify which listing you mean (for example: listing 2), or ask 'which one has ...'."
+            elif target_scope == "list":
+                state.last_qa_scope = "list"
+                bot_text = answer_multi_listing_question(
+                    question=user_in,
+                    listings=state.last_results,
+                    embedder=runtime.embedder,
+                )
+            elif not state.current_focus_listing_payload:
+                state.last_qa_scope = "clarify"
+                bot_text = "Which listing do you mean? Use /focus 1 to select one first."
+            else:
+                state.last_qa_scope = "single"
+                bot_text = answer_single_listing_question(
+                    question=user_in,
+                    listing_payload=state.current_focus_listing_payload,
+                    embedder=runtime.embedder,
+                )
+                if state.focus_source == "auto":
+                    bot_text += "\n\nNote: this answer is based on default focus listing #1."
+    elif decision.intent == "Chitchat":
+        bot_text = "Hi, how can I help?"
+    else:
+        bot_text = "I could not classify that request. You can provide budget/location/layout, or ask something like 'How far is this listing from the station?'"
+
+    state.history.append((user_in, bot_text))
+    return bot_text
+
+
 def run() -> None:
     runtime = build_search_runtime()
     state = AgentState()
@@ -55,123 +174,8 @@ def run() -> None:
             print(f"Bot> {msg}")
             continue
 
-        history_hint = _make_history_hint(state)
-        decision = route_turn(
-            user_in,
-            mode=state.mode,
-            history_hint=history_hint,
-            has_listings=bool(state.last_results),
-            has_focus=bool(state.current_focus_listing_payload),
-            listings_count=len(state.last_results),
-        )
-        if router_debug:
-            print(
-                "Bot> [router] "
-                + json.dumps(
-                    {
-                        "intent": decision.intent,
-                        "target_index": decision.target_index,
-                        "refinement_type": decision.refinement_type,
-                        "confidence": decision.confidence,
-                        "reason": decision.reason,
-                        "need_clarify": decision.need_clarify,
-                        "clarify_question": decision.clarify_question,
-                        "has_listings": bool(state.last_results),
-                        "has_focus": bool(state.current_focus_listing_payload),
-                    },
-                    ensure_ascii=False,
-                )
-            )
-
-        if decision.intent == "Specific_QA" and decision.target_index is not None:
-            focus_err = _focus_by_index(state, decision.target_index, source="user_query")
-            if focus_err:
-                bot_text = focus_err
-                print("\nBot> " + bot_text)
-                state.history.append((user_in, bot_text))
-                continue
-            # Target index resolved explicitly, no need to ask follow-up clarification.
-            decision.need_clarify = False
-            decision.clarify_question = None
-        elif decision.intent == "Specific_QA" and state.current_focus_listing_payload:
-            # Keep QA continuity on current focus when user does not re-specify index.
-            decision.need_clarify = False
-            decision.clarify_question = None
-
-        if decision.need_clarify and decision.clarify_question:
-            bot_text = decision.clarify_question
-        elif decision.intent == "Search":
-            out = run_search_skill(
-                user_text=user_in,
-                state_constraints=state.constraints,
-                runtime=runtime,
-                refinement_type=None,
-            )
-            state.constraints = out.get("constraints")
-            state.user_profile.update(out.get("profile_patch") or {})
-            state.last_results = list(out.get("listings") or [])
-            _auto_focus_first(state)
-            state.last_qa_scope = None
-            bot_text = out.get("reply_text") or "No result."
-            if state.last_results and state.current_focus_listing_payload:
-                focus_title = str(
-                    state.current_focus_listing_payload.get("title")
-                    or state.current_focus_listing_id
-                    or "listing #1"
-                )
-                bot_text += (
-                    f"\n\nNote: default focus is set to listing #1 ({focus_title}). "
-                    "Use /focus N to switch target, or ask 'which one has ...' to compare all current listings."
-                )
-        elif decision.intent == "Specific_QA":
-            # Explicit target index from router always means single-listing QA.
-            if decision.target_index is not None:
-                if not state.current_focus_listing_payload:
-                    bot_text = "Which listing do you mean? Use /focus 1 to select one first."
-                else:
-                    state.last_qa_scope = "single"
-                    bot_text = answer_single_listing_question(
-                        question=user_in,
-                        listing_payload=state.current_focus_listing_payload,
-                        embedder=runtime.embedder,
-                    )
-            else:
-                scope = classify_qa_scope(
-                    question=user_in,
-                    has_focus=bool(state.current_focus_listing_payload),
-                    has_listings=bool(state.last_results),
-                    last_qa_scope=state.last_qa_scope,
-                )
-                target_scope = str(scope.get("target_scope") or "").strip().lower()
-                if target_scope == "clarify":
-                    state.last_qa_scope = "clarify"
-                    bot_text = "Please specify which listing you mean (for example: listing 2), or ask 'which one has ...'."
-                elif target_scope == "list":
-                    state.last_qa_scope = "list"
-                    bot_text = answer_multi_listing_question(
-                        question=user_in,
-                        listings=state.last_results,
-                        embedder=runtime.embedder,
-                    )
-                elif not state.current_focus_listing_payload:
-                    state.last_qa_scope = "clarify"
-                    bot_text = "Which listing do you mean? Use /focus 1 to select one first."
-                else:
-                    state.last_qa_scope = "single"
-                    bot_text = answer_single_listing_question(
-                        question=user_in,
-                        listing_payload=state.current_focus_listing_payload,
-                        embedder=runtime.embedder,
-                    )
-                    if state.focus_source == "auto":
-                        bot_text += "\n\nNote: this answer is based on default focus listing #1."
-        elif decision.intent == "Chitchat":
-            bot_text = "Hi, how can I help?"
-        else:
-            bot_text = "I could not classify that request. You can provide budget/location/layout, or ask something like 'How far is this listing from the station?'"
-
+        bot_text = process_turn(user_in, state, runtime, router_debug=router_debug)
         print("\nBot> " + bot_text)
-        state.history.append((user_in, bot_text))
 
 
 def _auto_focus_first(state: AgentState) -> None:
