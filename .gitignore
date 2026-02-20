@@ -16,6 +16,7 @@ artifacts/skills/search/tmp/
 # python cache
 **/__pycache__/
 *.py[cod]
+.pycache/
 
 # jupyter
 .ipynb_checkpoints/
