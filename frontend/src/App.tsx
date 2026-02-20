@@ -121,7 +121,7 @@ export default function App() {
     }));
 
     try {
-      await streamMockReply([...activeSession.messages, userMessage], {
+      await streamMockReply(activeSession.id, prompt, {
         signal: controller.signal,
         onChunk: (chunk) => {
           updateSession(activeSession.id, (session) => {

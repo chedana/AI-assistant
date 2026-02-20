@@ -1,6 +1,6 @@
 # Backend Proxy (FastAPI)
 
-This service proxies frontend chat requests to local vLLM and converts stream chunks into SSE events.
+This service runs the existing assistant workflow (`agent/workflow.py`) and converts full replies into pseudo-streamed SSE chunks.
 
 ## Run (RunPod/Linux)
 ```bash
@@ -11,7 +11,7 @@ uvicorn api_server:app --host 0.0.0.0 --port 8000
 
 ## Endpoint
 - `POST /api/chat/stream`
-  - request: `session_id`, `messages`, `temperature`, `max_tokens`
+  - request: `session_id`, `user_text` (or `messages` with a latest user turn)
   - SSE events:
     - `event: delta` with `{"text":"..."}`
     - `event: done` with `{"ok":true}`

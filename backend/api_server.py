@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import os
+from threading import Lock
 from typing import AsyncGenerator, Literal
 
-import httpx
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-VLLM_BASE_URL = "http://127.0.0.1:8002"
-DEFAULT_MODEL = "./Qwen3-8B"
+from agent.state import AgentState
+from agent.workflow import process_turn
+from skills.search.agentic import build_search_runtime
 
 
 class ChatMessage(BaseModel):
@@ -19,10 +22,9 @@ class ChatMessage(BaseModel):
 
 
 class ChatStreamRequest(BaseModel):
-    session_id: str = Field(default="")
-    messages: list[ChatMessage] = Field(default_factory=list, min_length=1)
-    temperature: float = 0.7
-    max_tokens: int = 1024
+    session_id: str = Field(min_length=1)
+    user_text: str | None = None
+    messages: list[ChatMessage] = Field(default_factory=list)
 
 
 app = FastAPI(title="AI Assistant Backend Proxy", version="0.1.0")
@@ -35,71 +37,71 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+RUNTIME = build_search_runtime()
+ROUTER_DEBUG = str(os.environ.get("ROUTER_DEBUG", "0")).strip().lower() in {"1", "true", "yes", "on"}
+SESSIONS: dict[str, AgentState] = {}
+SESSIONS_LOCK = Lock()
+
 
 def sse_event(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
+def split_chunks(text: str, size: int = 8) -> list[str]:
+    if not text:
+        return []
+    return [text[i : i + size] for i in range(0, len(text), size)]
+
+
+def resolve_user_text(req: ChatStreamRequest) -> str:
+    if req.user_text and req.user_text.strip():
+        return req.user_text.strip()
+
+    for msg in reversed(req.messages):
+        if msg.role == "user" and msg.content.strip():
+            return msg.content.strip()
+    return ""
+
+
+def get_or_create_state(session_id: str) -> AgentState:
+    with SESSIONS_LOCK:
+        state = SESSIONS.get(session_id)
+        if state is None:
+            state = AgentState()
+            SESSIONS[session_id] = state
+        return state
+
+
 @app.get("/healthz")
 async def healthz() -> JSONResponse:
-    return JSONResponse({"ok": True, "service": "backend-proxy"})
+    return JSONResponse({"ok": True, "service": "backend-proxy", "sessions": len(SESSIONS)})
 
 
 @app.post("/api/chat/stream")
 async def chat_stream(req: ChatStreamRequest, request: Request) -> StreamingResponse:
     async def event_gen() -> AsyncGenerator[str, None]:
-        payload = {
-            "model": DEFAULT_MODEL,
-            "messages": [m.model_dump() for m in req.messages],
-            "temperature": req.temperature,
-            "max_tokens": req.max_tokens,
-            "stream": True,
-        }
-        timeout = httpx.Timeout(timeout=120.0, connect=10.0)
+        user_text = resolve_user_text(req)
+        if not user_text:
+            yield sse_event("error", {"message": "Empty user message"})
+            return
 
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                async with client.stream(
-                    "POST",
-                    f"{VLLM_BASE_URL}/v1/chat/completions",
-                    json=payload,
-                ) as upstream:
-                    if upstream.status_code != 200:
-                        detail = await upstream.aread()
-                        yield sse_event(
-                            "error",
-                            {
-                                "message": "Upstream vLLM request failed",
-                                "status_code": upstream.status_code,
-                                "detail": detail.decode("utf-8", errors="ignore"),
-                            },
-                        )
-                        return
+            state = get_or_create_state(req.session_id)
+            reply = await asyncio.to_thread(
+                process_turn,
+                user_text,
+                state,
+                RUNTIME,
+                ROUTER_DEBUG,
+            )
 
-                    async for raw_line in upstream.aiter_lines():
-                        if await request.is_disconnected():
-                            return
-                        line = raw_line.strip()
-                        if not line or not line.startswith("data:"):
-                            continue
+            for chunk in split_chunks(reply, size=8):
+                if await request.is_disconnected():
+                    return
+                yield sse_event("delta", {"text": chunk})
+                await asyncio.sleep(0.01)
 
-                        data_str = line[5:].strip()
-                        if data_str == "[DONE]":
-                            yield sse_event("done", {"ok": True})
-                            return
-
-                        try:
-                            packet = json.loads(data_str)
-                        except json.JSONDecodeError:
-                            continue
-
-                        choices = packet.get("choices", [])
-                        if not choices:
-                            continue
-                        delta = choices[0].get("delta", {})
-                        token = delta.get("content")
-                        if token:
-                            yield sse_event("delta", {"text": token})
+            yield sse_event("done", {"ok": True})
         except Exception as exc:  # noqa: BLE001
             yield sse_event("error", {"message": str(exc)})
 

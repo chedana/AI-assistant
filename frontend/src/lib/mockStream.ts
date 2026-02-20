@@ -1,5 +1,3 @@
-import type { Message } from "../types/chat";
-
 type StreamOptions = {
   signal: AbortSignal;
   onChunk: (chunk: string) => void;
@@ -8,7 +6,8 @@ type StreamOptions = {
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "";
 
 export async function streamMockReply(
-  messages: Message[],
+  sessionId: string,
+  userText: string,
   options: StreamOptions
 ): Promise<void> {
   const response = await fetch(`${API_BASE}/api/chat/stream`, {
@@ -18,10 +17,8 @@ export async function streamMockReply(
     },
     signal: options.signal,
     body: JSON.stringify({
-      session_id: "frontend-session",
-      messages: messages.map((m) => ({ role: m.role, content: m.content })),
-      temperature: 0.7,
-      max_tokens: 1024,
+      session_id: sessionId,
+      user_text: userText,
     }),
   });
 
