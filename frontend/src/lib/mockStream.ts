@@ -1,36 +1,64 @@
+import type { Message } from "../types/chat";
+
 type StreamOptions = {
   signal: AbortSignal;
   onChunk: (chunk: string) => void;
 };
 
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "";
 
 export async function streamMockReply(
-  prompt: string,
+  messages: Message[],
   options: StreamOptions
 ): Promise<void> {
-  const text = buildReply(prompt);
-  const chunks = text.match(/.{1,8}/g) ?? [];
+  const response = await fetch(`${API_BASE}/api/chat/stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    signal: options.signal,
+    body: JSON.stringify({
+      session_id: "frontend-session",
+      messages: messages.map((m) => ({ role: m.role, content: m.content })),
+      temperature: 0.7,
+      max_tokens: 1024,
+    }),
+  });
 
-  for (const chunk of chunks) {
-    if (options.signal.aborted) {
-      throw new DOMException("Aborted", "AbortError");
-    }
-    await wait(40 + Math.floor(Math.random() * 40));
-    options.onChunk(chunk);
+  if (!response.ok || !response.body) {
+    throw new Error(`Request failed: ${response.status}`);
   }
-}
 
-function buildReply(prompt: string): string {
-  const clean = prompt.trim();
-  if (!clean) return "请先输入你的问题。";
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
 
-  return [
-    `我收到了：${clean}`,
-    "",
-    "这是一个 mock 流式回复。你后续接入真实接口时，只需要替换 streamMockReply。",
-    "如果你愿意，我下一步可以把它改成调用你的后端 `/api/chat/stream` 并保留同样的 UI 逻辑。",
-  ].join("\n");
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const events = buffer.split("\n\n");
+    buffer = events.pop() ?? "";
+
+    for (const eventText of events) {
+      let eventName = "message";
+      let dataLine = "";
+      for (const line of eventText.split("\n")) {
+        if (line.startsWith("event:")) {
+          eventName = line.slice(6).trim();
+        } else if (line.startsWith("data:")) {
+          dataLine = line.slice(5).trim();
+        }
+      }
+      if (!dataLine) continue;
+      const data = JSON.parse(dataLine) as { text?: string; message?: string };
+      if (eventName === "delta" && data.text) {
+        options.onChunk(data.text);
+      } else if (eventName === "error") {
+        throw new Error(data.message ?? "Stream error");
+      } else if (eventName === "done") {
+        return;
+      }
+    }
+  }
 }
