@@ -3,6 +3,9 @@ import { streamMockReply } from "./lib/mockStream";
 import { loadSessions, saveSessions } from "./lib/storage";
 import type { ChatSession, Message } from "./types/chat";
 
+const URL_REGEX = /(https?:\/\/[^\s]+)/g;
+const URL_MATCH_REGEX = /^https?:\/\/[^\s]+$/;
+
 function createId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
@@ -24,6 +27,34 @@ function makeSession(title = "New Chat"): ChatSession {
 function firstLine(content: string): string {
   const line = content.trim().split("\n")[0];
   return line || "New Chat";
+}
+
+function renderMessageContent(content: string) {
+  const lines = content.split("\n");
+  return lines.map((line, lineIndex) => {
+    const parts = line.split(URL_REGEX);
+    return (
+      <span key={`line-${lineIndex}`}>
+        {parts.map((part, partIndex) => {
+          if (URL_MATCH_REGEX.test(part)) {
+            return (
+              <a
+                key={`part-${lineIndex}-${partIndex}`}
+                href={part}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline text-[#7dd3fc]"
+              >
+                {part}
+              </a>
+            );
+          }
+          return <span key={`part-${lineIndex}-${partIndex}`}>{part}</span>;
+        })}
+        {lineIndex < lines.length - 1 ? <br /> : null}
+      </span>
+    );
+  });
 }
 
 export default function App() {
@@ -213,7 +244,11 @@ export default function App() {
                         : "max-w-full bg-[#262626]"
                     }`}
                   >
-                    {message.content || (isGenerating ? "..." : "")}
+                    {message.content
+                      ? renderMessageContent(message.content)
+                      : isGenerating
+                        ? "..."
+                        : ""}
                   </div>
                 </article>
               ))
