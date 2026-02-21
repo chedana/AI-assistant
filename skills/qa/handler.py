@@ -390,7 +390,7 @@ def answer_single_listing_question(
     semantic_fallback = semantic_lookup(
         signals,
         distilled,
-        raw_question=extraction_input,
+        raw_question="",
         allowed_fields=allowed_fields,
     )
     vector_eval = (
@@ -398,7 +398,7 @@ def answer_single_listing_question(
             signals,
             distilled,
             embedder=embedder,
-            raw_question=extraction_input,
+            raw_question="",
             high_threshold=SEMANTIC_HIGH_THRESHOLD,
             low_threshold=SEMANTIC_LOW_THRESHOLD,
             allowed_fields=allowed_fields,
@@ -502,7 +502,7 @@ def answer_multi_listing_question(
                 signals,
                 distilled,
                 embedder=embedder,
-                raw_question=extraction_input,
+                raw_question="",
                 high_threshold=SEMANTIC_HIGH_THRESHOLD,
                 low_threshold=SEMANTIC_LOW_THRESHOLD,
                 allowed_fields=allowed_fields,
@@ -517,7 +517,7 @@ def answer_multi_listing_question(
             sem = semantic_lookup(
                 signals,
                 distilled,
-                raw_question=extraction_input,
+                raw_question="",
                 allowed_fields=allowed_fields,
             )
             label = "confirmed" if sem.found else "not_found"
