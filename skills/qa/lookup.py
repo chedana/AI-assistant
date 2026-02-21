@@ -112,12 +112,8 @@ def _terms_from_signals(signals: Dict[str, Any], raw_question: str = "") -> List
         v = hard.get(k)
         if v:
             terms.append(str(v).strip().lower())
-    if raw_question:
-        for x in re.findall(r"[a-zA-Z0-9\-\+']{3,}", str(raw_question)):
-            xl = x.lower()
-            if xl in _GENERIC_QUERY_TERMS:
-                continue
-            terms.append(xl)
+    # Disabled: do not inject terms directly from raw question text.
+    # QA terms should come from structured signals only.
     dedup = []
     seen = set()
     for t in terms:
