@@ -32,8 +32,13 @@ class GraphState(TypedDict, total=False):
     current_focus_listing_payload: Optional[Dict[str, Any]]
     focus_source: Optional[str]
     last_qa_scope: Optional[str]
-    qa_ctx: Optional[Dict[str, Any]]
     qa_target_scope: Optional[str]
+    qa_extraction_input: Optional[str]
+    qa_plan_source: Optional[str]
+    qa_llm_extract_all_error: Dict[str, Any]
+    qa_target_constraints: Dict[str, Any]
+    qa_semantic_terms: Dict[str, Any]
+    qa_signals: Dict[str, Any]
     history: List[tuple[str, str]]
 
 

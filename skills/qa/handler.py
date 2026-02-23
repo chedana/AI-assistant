@@ -5,7 +5,8 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 from core.llm_client import qwen_chat
-from skills.common.parse_signals import parse_signals
+from skills.common.signal_ops import split_query_signals
+from skills.qa.plan import build_qa_plan
 from skills.qa.lookup import semantic_lookup, semantic_vector_lookup, structured_lookup
 from skills.search.extractors import _norm_furnish_value
 from skills.search.handler import apply_hard_filters_with_audit
@@ -116,19 +117,21 @@ def build_qa_context(question: str) -> Dict[str, Any]:
     sanitized_question = _sanitize_question_for_qa(question_text)
     extraction_input = sanitized_question or question_text
 
-    parsed = parse_signals(
+    plan = build_qa_plan(extraction_input)
+    final_constraints = dict(plan.hard_constraints or {})
+    semantic_terms = dict(plan.semantic_terms or {})
+    signals = split_query_signals(
         extraction_input,
-        existing_constraints=None,
-        emit_audit=True,
-        audit_context="qa",
+        final_constraints,
+        precomputed_semantic_terms=semantic_terms,
+        semantic_parse_source=str(plan.plan_source or "qa_rule_fallback"),
     )
-    final_constraints = parsed.get("final_constraints") or {}
-    signals = parsed.get("signals") or {}
     return {
         "question_text": question_text,
         "extraction_input": extraction_input,
-        "plan_source": str(parsed.get("semantic_parse_source") or "fallback_split_calls"),
-        "llm_extract_all_error": parsed.get("llm_extract_all_error") or {},
+        "plan_source": str(plan.plan_source or "qa_rule_fallback"),
+        "llm_extract_all_error": dict(plan.llm_error or {}),
+        "semantic_terms": semantic_terms,
         "signals": signals,
         "final_constraints": final_constraints or {},
     }
