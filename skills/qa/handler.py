@@ -5,11 +5,10 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 from core.llm_client import qwen_chat
-from skills.common.signal_ops import split_query_signals
 from skills.qa.plan import build_qa_plan
 from skills.qa.lookup import semantic_lookup, semantic_vector_lookup, structured_lookup
 from skills.search.extractors import _norm_furnish_value
-from skills.search.handler import apply_hard_filters_with_audit
+from skills.search.handler import apply_hard_filters_with_audit, split_query_signals
 
 
 SEMANTIC_HIGH_THRESHOLD = 0.75
