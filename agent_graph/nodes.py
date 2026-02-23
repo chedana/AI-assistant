@@ -273,7 +273,12 @@ def qa_plan_node(state: GraphState) -> GraphState:
     agent_state = state["agent_state"]
     user_in = str(state.get("user_input") or "")
     qa_ctx = build_qa_context(user_in)
-    state["qa_ctx"] = qa_ctx
+    state["qa_extraction_input"] = str((qa_ctx or {}).get("extraction_input") or user_in)
+    state["qa_plan_source"] = str((qa_ctx or {}).get("plan_source") or "fallback_split_calls")
+    state["qa_llm_extract_all_error"] = dict((qa_ctx or {}).get("llm_extract_all_error") or {})
+    state["qa_target_constraints"] = dict((qa_ctx or {}).get("final_constraints") or {})
+    state["qa_semantic_terms"] = dict((qa_ctx or {}).get("semantic_terms") or {})
+    state["qa_signals"] = dict((qa_ctx or {}).get("signals") or {})
 
     if state.get("target_index") is not None:
         target_scope = "single"
@@ -287,15 +292,17 @@ def qa_plan_node(state: GraphState) -> GraphState:
         target_scope = str(scope.get("target_scope") or "").strip().lower() or "clarify"
     state["qa_target_scope"] = target_scope
 
-    signals = (qa_ctx or {}).get("signals") or {}
+    signals = state.get("qa_signals") or {}
     _debug_print(
         bool(state.get("router_debug")),
         {
             "phase": "qa_plan",
             "intent": "Specific_QA",
             "qa_scope": target_scope,
-            "plan_source": (qa_ctx or {}).get("plan_source"),
-            "llm_extract_all_error": (qa_ctx or {}).get("llm_extract_all_error") or {},
+            "plan_source": state.get("qa_plan_source"),
+            "llm_extract_all_error": state.get("qa_llm_extract_all_error") or {},
+            "qa_target_constraints": state.get("qa_target_constraints") or {},
+            "qa_semantic_terms": state.get("qa_semantic_terms") or {},
             "hard_constraints": signals.get("hard_constraints") or {},
             "soft_terms": {
                 "topic_preferences": signals.get("topic_preferences") or {},
@@ -311,7 +318,15 @@ def qa_execute_node(state: GraphState) -> GraphState:
     agent_state = state["agent_state"]
     runtime = state["runtime"]
     user_in = str(state.get("user_input") or "")
-    qa_ctx = state.get("qa_ctx") or {}
+    qa_ctx = {
+        "question_text": user_in,
+        "extraction_input": str(state.get("qa_extraction_input") or user_in),
+        "plan_source": str(state.get("qa_plan_source") or "fallback_split_calls"),
+        "llm_extract_all_error": dict(state.get("qa_llm_extract_all_error") or {}),
+        "final_constraints": dict(state.get("qa_target_constraints") or {}),
+        "semantic_terms": dict(state.get("qa_semantic_terms") or {}),
+        "signals": dict(state.get("qa_signals") or {}),
+    }
     target_scope = str(state.get("qa_target_scope") or "").strip().lower()
 
     if state.get("target_index") is not None:
