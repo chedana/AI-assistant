@@ -13,43 +13,46 @@ from skills.search.extractors import (
 
 
 QA_EXTRACT_ALL_SYSTEM = """You output STRICT JSON only (no markdown, no explanation).
-Schema:
+
+### ROLE
+You are a specialist in parsing Real Estate search queries. Your task is to transform natural language into a structured schema for property filtering and Q&A.
+
+### SCHEMA SPECIFICATION
 {
   "constraints": {
     "max_rent_pcm": number|null,
-    "available_from": string|null,
+    "available_from": string|null, 
     "furnish_type": string|null,
     "let_type": string|null,
-    "layout_options": [{"bedrooms": int|null, "bathrooms": number|null, "property_type": string|null, "layout_tag": string|null, "max_rent_pcm": number|null}],
+    "layout_options": [{"bedrooms": int|null, "bathrooms": number|null, "property_type": string|null, "layout_tag": string|null}],
     "min_tenancy_months": number|null,
     "min_size_sqm": number|null,
     "min_size_sqft": number|null,
     "location_keywords": string[],
     "k": int|null,
-    "update_scope": string|null,
-    "location_update_mode": string|null,
-    "layout_update_mode": string|null
+    "update_scope": "all"|"specific_index"|null,
+    "location_update_mode": string|null
   },
   "semantic_terms": {
     "transit_terms": string[],
     "school_terms": string[],
+    "amenities_and_services": string[], 
     "general_semantic_phrases": string[]
   }
 }
-Rules:
-- This extraction is for QA over existing listings context.
-- constraints: extract hard constraints only.
-- semantic_terms: extract phrase-level semantic intents.
-- For constraints.location_keywords, do verbatim extraction from user text spans only.
-- Do NOT correct spelling, expand abbreviations, canonicalize, or rewrite location text.
-- For any explicit layout request (single or multiple), put them into constraints.layout_options.
-- Keep named entities as full phrases (e.g., "Seven Mills Primary School", "Heron Quays Station").
-- Do NOT put hard constraints into semantic_terms (budget, bedroom count, property type, strict location filters).
-- Do NOT split one entity into component words.
-- Keep entity phrases intact (e.g., station/school full names).
-- Return [] or null when absent.
-"""
 
+### EXTRACTION RULES (STRICT)
+1. **Layout vs. Semantic Separation**: 
+   - `layout_options` MUST ONLY contain physical room counts (bedrooms, bathrooms) and property types (Flat, House, Studio).
+   - `amenities_and_services` MUST contain building features: e.g., "Gym", "Concierge", "Porter", "Lift", "Parking", "Balcony", "Garden". 
+   - NEVER put amenities (like Gym) into layout_options.
+
+2. **Semantic Categorization**:
+   - `transit_terms`: Only transport-related entities (Stations, Lines, DLR, Underground).
+   - `school_terms`: Only education-related entities (Schools, Universities, Academies).
+   - `amenities_and_services`: Physical building/flat features not related to room count.
+   - `general_semantic_phrases`: Subjective or lifestyle descriptors (e.g., "modern", "quiet", "near parks").
+"""
 
 @dataclass
 class QAPlan:
@@ -82,16 +85,32 @@ def _qa_rule_fallback_hard_constraints(question_text: str) -> Dict[str, Any]:
 def _qa_rule_fallback_semantic_terms(question_text: str) -> Dict[str, Any]:
     text = str(question_text or "").strip().lower()
     if not text:
-        return {"transit_terms": [], "school_terms": [], "general_semantic_phrases": []}
+        return {"transit_terms": [], "school_terms": [], "amenities_and_services": [], "general_semantic_phrases": []}
     tokens = [t for t in re.findall(r"[a-z0-9][a-z0-9'_-]*", text) if len(t) >= 3]
     transit_terms = []
     school_terms = []
+    amenities = []
     general = []
     for t in tokens:
         if any(k in t for k in ("station", "tube", "metro", "train", "commute", "transport")):
             transit_terms.append(t)
         elif any(k in t for k in ("school", "college", "university", "catchment", "nursery")):
             school_terms.append(t)
+        elif any(
+            k in t
+            for k in (
+                "gym",
+                "concierge",
+                "porter",
+                "lift",
+                "elevator",
+                "parking",
+                "balcony",
+                "garden",
+                "pool",
+            )
+        ):
+            amenities.append(t)
         else:
             general.append(t)
 
@@ -108,7 +127,9 @@ def _qa_rule_fallback_semantic_terms(question_text: str) -> Dict[str, Any]:
     return {
         "transit_terms": _dedup(transit_terms)[:8],
         "school_terms": _dedup(school_terms)[:8],
-        "general_semantic_phrases": _dedup(general)[:12],
+        "amenities_and_services": _dedup(amenities)[:12],
+        # Keep downstream compatibility: QA semantic pipeline consumes general_semantic_phrases.
+        "general_semantic_phrases": _dedup(amenities + general)[:20],
     }
 
 
@@ -129,7 +150,23 @@ def _try_build_qa_plan_via_llm(question_text: str) -> Optional[QAPlan]:
     if not isinstance(obj, dict):
         return None
     constraints = _normalize_constraint_extract((obj or {}).get("constraints") or {})
-    semantic_terms = _normalize_semantic_extract((obj or {}).get("semantic_terms") or {})
+    semantic_terms_raw = (obj or {}).get("semantic_terms") or {}
+    semantic_terms = _normalize_semantic_extract(semantic_terms_raw)
+    amenities = [
+        str(x).strip().lower()
+        for x in (semantic_terms_raw.get("amenities_and_services") or [])
+        if str(x).strip()
+    ]
+    if amenities:
+        merged = list(semantic_terms.get("general_semantic_phrases") or [])
+        seen = {str(x).strip().lower() for x in merged if str(x).strip()}
+        for x in amenities:
+            if x in seen:
+                continue
+            seen.add(x)
+            merged.append(x)
+        semantic_terms["general_semantic_phrases"] = merged
+    semantic_terms["amenities_and_services"] = amenities
     return QAPlan(
         hard_constraints=constraints,
         semantic_terms=semantic_terms,

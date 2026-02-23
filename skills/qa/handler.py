@@ -7,7 +7,7 @@ import pandas as pd
 from core.llm_client import qwen_chat
 from skills.qa.plan import build_qa_plan
 from skills.qa.lookup import semantic_lookup, semantic_vector_lookup, structured_lookup
-from skills.search.extractors import _norm_furnish_value
+from skills.search.extractors import _norm_furnish_value, parse_jsonish_items
 from skills.search.handler import apply_hard_filters_with_audit, split_query_signals
 
 
@@ -306,9 +306,9 @@ def classify_qa_scope(
         '{"target_scope":"single|list|clarify","confidence":0.0,"reason":"..."}\n'
         "Policy:\n"
         "- Default behavior with has_focus=true is single-listing QA continuity.\n"
-        "- Use list ONLY when user explicitly asks cross-candidate comparison/selection (e.g., 'which one', '哪一个', '哪个房源').\n"
-        "- If user asks about current listing with explicit deixis (it/this/this listing/这个/这套), target_scope=single.\n"
-        "- If has_focus=false and user uses unresolved deixis (it/this/这个), target_scope=clarify.\n"
+        "- Use list ONLY when user explicitly asks cross-candidate comparison/selection (e.g., 'which one', 'which listing', 'which property').\n"
+        "- If user asks about current listing with explicit deixis (it/this/this listing/this property), target_scope=single.\n"
+        "- If has_focus=false and user uses unresolved deixis (it/this/that one), target_scope=clarify.\n"
         "- If previous QA scope was single and current question has no explicit cross-candidate wording, keep target_scope=single.\n"
         "- When unsure and has_focus=true, prefer single.\n"
         "Few-shot:\n"
@@ -316,13 +316,13 @@ def classify_qa_scope(
         'Output: {"target_scope":"single","confidence":0.90,"reason":"qa_continuity_single"}\n'
         "State: has_focus=true, has_listings=true, last_qa_scope=single; Q: How about schools\n"
         'Output: {"target_scope":"single","confidence":0.90,"reason":"qa_continuity_single"}\n'
-        "State: has_focus=true, has_listings=true; Q: 有没有gym\n"
+        "State: has_focus=true, has_listings=true; Q: Does it have a gym?\n"
         'Output: {"target_scope":"single","confidence":0.78,"reason":"default_focus_continuity"}\n'
-        "State: has_focus=true, has_listings=true; Q: 这个有gym吗\n"
+        "State: has_focus=true, has_listings=true; Q: Does this listing have a gym?\n"
         'Output: {"target_scope":"single","confidence":0.90,"reason":"explicit_deixis_current_listing"}\n'
-        "State: has_focus=false, has_listings=true; Q: 这个有gym吗\n"
+        "State: has_focus=false, has_listings=true; Q: Does this one have a gym?\n"
         'Output: {"target_scope":"clarify","confidence":0.92,"reason":"deixis_without_target"}\n'
-        "State: has_focus=true, has_listings=true; Q: 哪一个有gym\n"
+        "State: has_focus=true, has_listings=true; Q: Which one has a gym?\n"
         'Output: {"target_scope":"list","confidence":0.94,"reason":"which_one_over_candidates"}\n'
     )
     user_payload = (
@@ -413,52 +413,214 @@ def answer_single_listing_question(
     if decision["label"] == "not_found" and decision["source"] == "none":
         return "Not found in listing data. Please ask the agent to confirm."
 
-    system_prompt = (
-        "You are a rental property QA assistant.\n"
-        "You must answer using only the provided evidence and facts.\n"
-        "Do not guess or add information that is not in evidence.\n"
-        "If evidence is insufficient, say not provided and ask user to check with agent.\n"
-        "Always remind user to confirm key details with the listing agent.\n"
-        "Keep answer concise and concrete."
-    )
-    qa_payload = {
-        "question": extraction_input,
-        "signals": signals,
-        "final_constraints": final_constraints,
-        "decision": decision,
-        "structured_match_eval": structured_eval,
-        "structured": {
-            "found": structured.found,
-            "facts": structured.facts,
-            "evidence": structured.evidence,
-        },
-        "semantic_keyword_fallback": {
-            "found": semantic_fallback.found,
-            "facts": semantic_fallback.facts,
-            "evidence": semantic_fallback.evidence,
-        },
-        "semantic_vector": vector_eval,
-        "listing": {
-            "title": distilled.get("title"),
+    topic_pref = (signals or {}).get("topic_preferences") or {}
+    school_terms = [str(x).strip() for x in (topic_pref.get("school_terms") or []) if str(x).strip()]
+    transit_terms = [str(x).strip() for x in (topic_pref.get("transit_terms") or []) if str(x).strip()]
+    general_terms = [str(x).strip() for x in ((signals or {}).get("general_semantic") or []) if str(x).strip()]
+
+    active_channels: List[str] = []
+    if school_terms:
+        active_channels.append("school")
+    if transit_terms:
+        active_channels.append("transit")
+    if general_terms:
+        active_channels.append("amenity_general")
+
+    vector_term_matches = (vector_eval or {}).get("term_matches") or []
+    semantic_keyword_evidence = semantic_fallback.evidence or []
+
+    def _pick_top_match_by_field(target_field: str) -> Dict[str, Any]:
+        best = None
+        for x in vector_term_matches:
+            field = str(x.get("field") or "")
+            if field != target_field:
+                continue
+            try:
+                score = float(x.get("score") or 0.0)
+            except Exception:
+                score = 0.0
+            if best is None or score > float(best.get("score") or 0.0):
+                best = {
+                    "field": field,
+                    "text": str(x.get("text") or ""),
+                    "term": str(x.get("term") or ""),
+                    "score": score,
+                    "label": str(x.get("label") or ""),
+                }
+        if best is not None:
+            return best
+        # fallback to keyword evidence for the same field
+        for x in semantic_keyword_evidence:
+            field = str(x.get("field") or "")
+            if field == target_field and str(x.get("text") or "").strip():
+                return {
+                    "field": field,
+                    "text": str(x.get("text") or ""),
+                    "term": "",
+                    "score": None,
+                    "label": "keyword_hit",
+                }
+        return {}
+
+    evidence_payload: Dict[str, Any] = {}
+    if school_terms:
+        evidence_payload["school"] = {
+            "query_school_terms": school_terms,
+            "listing_schools": parse_jsonish_items(distilled.get("schools")),
+        }
+    if transit_terms:
+        evidence_payload["transit"] = {
+            "query_transit_terms": transit_terms,
+            "listing_stations": parse_jsonish_items(distilled.get("stations")),
+            "nearest_station": str(distilled.get("nearest_station") or ""),
+            "distance_to_station_m": distilled.get("distance_to_station_m"),
+        }
+    if general_terms:
+        keyword_hits = [
+            {
+                "field": str(x.get("field") or ""),
+                "text": str(x.get("text") or ""),
+            }
+            for x in semantic_keyword_evidence
+            if str(x.get("field") or "") in {"features", "description"} and str(x.get("text") or "").strip()
+        ]
+        feature_top = _pick_top_match_by_field("features")
+        description_top = _pick_top_match_by_field("description")
+
+        evidence_payload["amenity_general"] = {
+            "query_general_terms": general_terms,
+            "feature_top_match": feature_top,
+            "description_top_match": description_top,
+        }
+        if keyword_hits:
+            evidence_payload["amenity_general"]["keyword_hits"] = keyword_hits
+
+    query_structured: Dict[str, Any] = {}
+    for k, v in (final_constraints or {}).items():
+        if k.startswith("_"):
+            continue
+        if k in {"k", "update_scope", "location_update_mode", "layout_update_mode", "available_from_op"}:
+            continue
+        if v is None:
+            continue
+        if isinstance(v, list) and len(v) == 0:
+            continue
+        query_structured[k] = v
+
+    listing_structured: Dict[str, Any] = {}
+    if "max_rent_pcm" in query_structured:
+        listing_structured["max_rent_pcm"] = distilled.get("price_pcm")
+    if "available_from" in query_structured:
+        listing_structured["available_from"] = distilled.get("available_from")
+    if "furnish_type" in query_structured:
+        listing_structured["furnish_type"] = distilled.get("furnish_type")
+    if "let_type" in query_structured:
+        listing_structured["let_type"] = distilled.get("let_type")
+    if "min_tenancy_months" in query_structured:
+        listing_structured["min_tenancy_months"] = (
+            distilled.get("min_tenancy_months")
+            if distilled.get("min_tenancy_months") is not None
+            else distilled.get("min_tenancy")
+        )
+    if "min_size_sqm" in query_structured:
+        listing_structured["min_size_sqm"] = distilled.get("size_sqm")
+    if "layout_options" in query_structured:
+        listing_structured["layout_options"] = [
+            {
+                "bedrooms": distilled.get("bedrooms"),
+                "bathrooms": distilled.get("bathrooms"),
+                "property_type": distilled.get("property_type"),
+                "layout_tag": distilled.get("layout_tag"),
+            }
+        ]
+    if "location_keywords" in query_structured:
+        listing_structured["location_keywords"] = {
             "address": distilled.get("address"),
-            "price_pcm": distilled.get("price_pcm"),
-            "url": distilled.get("url"),
+            "postcode": distilled.get("postcode"),
+        }
+
+    system_prompt = """You are a helpful Real Estate Assistant. Answer the user's question using ONLY the provided channels.
+
+Return STRICT JSON only (no markdown, no extra text):
+{
+  "label": "confirmed|contradicted|uncertain|not_found",
+  "answer": "string",
+  "evidence_quote": "string",
+  "reason": "string"
+}
+
+RULES
+1. Use ONLY fields provided in user message channels. Do NOT use priors, common sense, or external knowledge.
+2. constraints_compare: compare query_structured vs listing_structured as hard evidence.
+3. school/transit/amenity_general channels are semantic evidence channels.
+4. You may use semantic scoring metadata as relevance hints, but final judgment must be grounded in quoted evidence text from channels.
+5. Explicit Match:
+   - If evidence clearly confirms the asked item, use label="confirmed".
+6. Negative Match:
+   - If evidence clearly denies the asked item (e.g., "no gym", "without concierge"), use label="contradicted".
+7. Conflict Resolution:
+   - If evidence conflicts, prefer the most specific statement.
+   - If still conflicting, use label="uncertain".
+8. Missing Evidence:
+   - If no relevant evidence is found, use label="not_found".
+9. Evidence Quote:
+   - Must be an exact short quote from provided evidence.
+   - If label is "not_found", set evidence_quote to "".
+"""
+    qa_payload = {
+        "user_query": extraction_input,
+        "property_address_or_index": str(
+            distilled.get("address")
+            or distilled.get("title")
+            or distilled.get("listing_id")
+            or "current_focused_listing"
+        ),
+        "constraints_compare": {
+            "query_structured": query_structured,
+            "listing_structured": listing_structured,
+        },
+        "active_channels": active_channels,
+        "evidence_by_channel": evidence_payload,
+        "semantic_scoring": {
+            "vector_summary_label": (vector_eval or {}).get("summary_label"),
+            "vector_term_matches": vector_term_matches,
+            "vector_evidence": (vector_eval or {}).get("evidence") or [],
+            "keyword_found": bool(semantic_fallback.found),
+            "keyword_facts": semantic_fallback.facts or {},
+            "keyword_evidence": semantic_keyword_evidence,
         },
     }
     try:
-        out = qwen_chat(
+        raw = qwen_chat(
             [
                 {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
-                    "content": "Answer based on this grounded QA JSON only:\n"
+                    "content": "Use this context and evidence:\n"
                     + json.dumps(qa_payload, ensure_ascii=False),
                 },
             ],
             temperature=0.0,
         )
-        cleaned = _strip_think_blocks(out)
-        return cleaned or "Not provided in listing data. Please ask the agent to confirm."
+        cleaned = _strip_think_blocks(raw)
+        obj = _extract_first_json_obj(cleaned)
+        if isinstance(obj, dict):
+            answer = str(obj.get("answer") or "").strip()
+            quote = str(obj.get("evidence_quote") or "").strip()
+            if not answer:
+                label = str(obj.get("label") or "not_found").strip().lower()
+                if label == "confirmed":
+                    answer = "Yes. Confirmed by listing evidence. Please confirm with the listing agent."
+                elif label == "contradicted":
+                    answer = "No. Listing evidence indicates it is not available. Please confirm with the listing agent."
+                elif label == "uncertain":
+                    answer = "Uncertain based on listing evidence. Please confirm with the listing agent."
+                else:
+                    answer = "Not provided in listing data. Please ask the listing agent to confirm."
+            if quote:
+                return answer + f'\nEvidence Quote: "{quote}"'
+            return answer
+        return "Not provided in listing data. Please ask the listing agent to confirm."
     except Exception:
         if decision["label"] == "confirmed":
             return "Confirmed by listing data. Please confirm with the listing agent."
