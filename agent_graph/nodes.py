@@ -296,19 +296,14 @@ def qa_plan_node(state: GraphState) -> GraphState:
     _debug_print(
         bool(state.get("router_debug")),
         {
-            "phase": "qa_plan",
-            "intent": "Specific_QA",
-            "qa_scope": target_scope,
+            "phase": "qa_extract",
+            "query": str(state.get("qa_extraction_input") or user_in),
             "plan_source": state.get("qa_plan_source"),
-            "llm_extract_all_error": state.get("qa_llm_extract_all_error") or {},
-            "qa_target_constraints": state.get("qa_target_constraints") or {},
-            "qa_semantic_terms": state.get("qa_semantic_terms") or {},
-            "hard_constraints": signals.get("hard_constraints") or {},
-            "soft_terms": {
-                "topic_preferences": signals.get("topic_preferences") or {},
-                "general_semantic": signals.get("general_semantic") or [],
+            "extracted": {
+                "constraints": state.get("qa_target_constraints") or {},
+                "semantic_terms": state.get("qa_semantic_terms") or {},
             },
-            "constraints_current": agent_state.constraints or {},
+            "llm_error": state.get("qa_llm_extract_all_error") or {},
         },
     )
     return state
