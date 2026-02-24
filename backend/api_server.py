@@ -44,7 +44,7 @@ app.add_middleware(
 )
 
 RUNTIME = build_search_runtime()
-ROUTER_DEBUG = str(os.environ.get("ROUTER_DEBUG", "0")).strip().lower() in {"1", "true", "yes", "on"}
+ROUTER_DEBUG = str(os.environ.get("ROUTER_DEBUG", "1")).strip().lower() in {"1", "true", "yes", "on"}
 SESSIONS: dict[str, AgentState] = {}
 SESSIONS_LOCK = Lock()
 
