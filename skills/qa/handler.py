@@ -118,6 +118,13 @@ def build_qa_context(question: str) -> Dict[str, Any]:
 
     plan = build_qa_plan(extraction_input)
     final_constraints = dict(plan.hard_constraints or {})
+    # Safety net: ensure deposit intent is carried into structured constraints.
+    if final_constraints.get("has_deposit") is None:
+        ql = extraction_input.lower()
+        if re.search(r"\bno\s+deposit\b|\bwithout\s+deposit\b", ql):
+            final_constraints["has_deposit"] = False
+        elif re.search(r"\bdeposit\b", ql):
+            final_constraints["has_deposit"] = True
     semantic_terms = dict(plan.semantic_terms or {})
     signals = split_query_signals(
         extraction_input,
@@ -388,6 +395,24 @@ def answer_single_listing_question(
             if actual == req:
                 return f"Yes. Listing let type is {actual}. Please confirm with the listing agent."
             return f"No. Listing let type is {actual}, not {req}. Please confirm with the listing agent."
+    if structured_eval.get("active") and structured_eval.get("decisive"):
+        checks = (structured_eval.get("checks") or {})
+        first_msg = ""
+        if isinstance(checks, dict):
+            for k, v in checks.items():
+                if not isinstance(v, dict):
+                    continue
+                if v.get("required") is None:
+                    continue
+                first_msg = f"{k}: required={v.get('required')}, actual={v.get('actual')}"
+                break
+        if structured_eval.get("hard_pass"):
+            if first_msg:
+                return f"Yes. Structured check matched ({first_msg}). Please confirm with the listing agent."
+            return "Yes. Structured check matched. Please confirm with the listing agent."
+        if first_msg:
+            return f"No. Structured check did not match ({first_msg}). Please confirm with the listing agent."
+        return "No. Structured check did not match. Please confirm with the listing agent."
 
     structured = structured_lookup(signals, distilled, raw_question=extraction_input)
     semantic_fallback = semantic_lookup(
@@ -662,35 +687,43 @@ def answer_multi_listing_question(
     for idx, payload in enumerate(rows, start=1):
         distilled = _distill_listing_payload(payload)
         structured_eval = _structured_match_eval(distilled, final_constraints)
-        if embedder is not None:
-            vec = semantic_vector_lookup(
-                signals,
-                distilled,
-                embedder=embedder,
-                raw_question="",
-                high_threshold=SEMANTIC_HIGH_THRESHOLD,
-                low_threshold=SEMANTIC_LOW_THRESHOLD,
-                allowed_fields=allowed_fields,
-            )
-            label = str(vec.get("summary_label") or "not_found")
-            evidence = (vec.get("evidence") or [{}])[0]
-            score = None
-            term_matches = vec.get("term_matches") or []
-            if term_matches:
-                score = term_matches[0].get("score")
+        vec = None
+        sem = None
+        score = None
+        evidence = {}
+        if structured_eval.get("active") and structured_eval.get("decisive"):
+            decision = {
+                "source": "structured_hard",
+                "label": "confirmed" if structured_eval.get("hard_pass") else "not_found",
+            }
+            label = str(decision.get("label") or "not_found")
         else:
-            sem = semantic_lookup(
-                signals,
-                distilled,
-                raw_question="",
-                allowed_fields=allowed_fields,
-            )
-            label = "confirmed" if sem.found else "not_found"
-            evidence = (sem.evidence or [{}])[0]
-            score = None
-
-        decision = _pick_decision_label(structured_eval, vec if embedder is not None else None, sem if embedder is None else None)
-        label = str(decision.get("label") or label)
+            if embedder is not None:
+                vec = semantic_vector_lookup(
+                    signals,
+                    distilled,
+                    embedder=embedder,
+                    raw_question="",
+                    high_threshold=SEMANTIC_HIGH_THRESHOLD,
+                    low_threshold=SEMANTIC_LOW_THRESHOLD,
+                    allowed_fields=allowed_fields,
+                )
+                label = str(vec.get("summary_label") or "not_found")
+                evidence = (vec.get("evidence") or [{}])[0]
+                term_matches = vec.get("term_matches") or []
+                if term_matches:
+                    score = term_matches[0].get("score")
+            else:
+                sem = semantic_lookup(
+                    signals,
+                    distilled,
+                    raw_question="",
+                    allowed_fields=allowed_fields,
+                )
+                label = "confirmed" if sem.found else "not_found"
+                evidence = (sem.evidence or [{}])[0]
+            decision = _pick_decision_label(structured_eval, vec, sem)
+            label = str(decision.get("label") or label)
         field_values = {k: distilled.get(k) for k in requested_fields}
         unknown_fields = [k for k, v in field_values.items() if _is_unknown_value(v)]
         missing_structured = bool(requested_fields) and len(unknown_fields) > 0
@@ -766,6 +799,19 @@ def answer_multi_listing_question(
         "If all groups are empty, state that explicitly.\n"
         "Always remind user to confirm with listing agent."
     )
+    def _primary_evidence(row: Dict[str, Any]) -> str:
+        checks = ((row.get("structured") or {}).get("checks") or [])
+        if checks:
+            for c in checks:
+                if not isinstance(c, dict):
+                    continue
+                field = str(c.get("field") or "").strip()
+                req = c.get("required")
+                actual = c.get("actual")
+                if field and (req is not None or actual is not None):
+                    return f"{field}: required={req}, actual={actual}"
+        return str(((row.get("semantic") or {}).get("top_evidence") or "")).strip()
+
     qa_payload = {
         "user_question": extraction_input,
         "question": extraction_input,
@@ -774,7 +820,7 @@ def answer_multi_listing_question(
                 {
                     "index": x.get("index"),
                     "title": x.get("title"),
-                    "evidence": (x.get("semantic") or {}).get("top_evidence"),
+                    "evidence": _primary_evidence(x),
                     "structured_checks": (x.get("structured") or {}).get("checks") or [],
                 }
                 for x in matched_rows
@@ -783,7 +829,7 @@ def answer_multi_listing_question(
                 {
                     "index": x.get("index"),
                     "title": x.get("title"),
-                    "evidence": (x.get("semantic") or {}).get("top_evidence"),
+                    "evidence": _primary_evidence(x),
                     "structured_checks": (x.get("structured") or {}).get("checks") or [],
                 }
                 for x in not_matched_rows
@@ -792,7 +838,7 @@ def answer_multi_listing_question(
                 {
                     "index": x.get("index"),
                     "title": x.get("title"),
-                    "evidence": (x.get("semantic") or {}).get("top_evidence"),
+                    "evidence": _primary_evidence(x),
                     "structured_checks": (x.get("structured") or {}).get("checks") or [],
                 }
                 for x in unknown_rows
