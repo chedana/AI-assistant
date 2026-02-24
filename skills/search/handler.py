@@ -413,20 +413,6 @@ def apply_hard_filters_with_audit(df: pd.DataFrame, c: Dict[str, Any]) -> Tuple[
             if let_val and let_val != let_req:
                 reasons.append(f"let_type '{let_val}' != '{let_req}'")
 
-        has_deposit_req = c.get("has_deposit")
-        if has_deposit_req is not None:
-            dep_raw = _safe_text(r.get("deposit")).strip().lower()
-            has_deposit_actual = bool(dep_raw) and dep_raw not in {"unknown", "not provided", "n/a", "na", "none"}
-            checks["has_deposit"] = {
-                "actual": has_deposit_actual,
-                "required": bool(has_deposit_req),
-                "op": "eq",
-            }
-            if has_deposit_actual != bool(has_deposit_req):
-                reasons.append(
-                    f"has_deposit {has_deposit_actual} != {bool(has_deposit_req)}"
-                )
-
         tenancy_req = c.get("min_tenancy_months")
         if tenancy_req is not None:
             tenancy_val = _parse_months(r.get("min_tenancy"))
