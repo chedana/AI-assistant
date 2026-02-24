@@ -59,6 +59,19 @@ def _debug_print(enabled: bool, payload: dict) -> None:
         print(f"Bot> [debug] {payload}")
 
 
+def _is_cross_candidate_query(text: str) -> bool:
+    q = str(text or "").strip().lower()
+    if not q:
+        return False
+    patterns = [
+        r"\bwhich\s+one\b",
+        r"\bwhich\s+listing\b",
+        r"\bwhich\s+property\b",
+        r"\bwhich\s+of\b",
+    ]
+    return any(re.search(p, q) for p in patterns)
+
+
 def route_node(state: GraphState) -> GraphState:
     text = str(state.get("user_input") or "").strip()
     agent_state = state["agent_state"]
@@ -110,6 +123,10 @@ def route_node(state: GraphState) -> GraphState:
                 "constraints_current": agent_state.constraints or {},
             },
         )
+
+    if state["intent"] == "Specific_QA" and _is_cross_candidate_query(text):
+        # Guardrail: comparative "which one..." should not be coerced into single-target QA.
+        state["target_index"] = None
 
     if state["intent"] == "Specific_QA" and state.get("target_index") is not None:
         focus_err = _focus_by_index(agent_state, int(state["target_index"]), source="user_query")
