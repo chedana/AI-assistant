@@ -219,6 +219,7 @@ def _has_active_structured_constraints(constraints: Dict[str, Any]) -> bool:
     c = constraints or {}
     return any(
         [
+            c.get("has_deposit") is not None,
             c.get("max_rent_pcm") is not None,
             c.get("available_from") is not None,
             bool(c.get("furnish_type")),
