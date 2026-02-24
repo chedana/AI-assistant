@@ -54,4 +54,7 @@ class AgentState:
     focus_source: Optional[str] = None  # auto | user_command | user_query
     last_qa_scope: Optional[str] = None  # single | list | clarify
     last_results: List[Dict[str, Any]] = field(default_factory=list)
+    search_full_results: List[Dict[str, Any]] = field(default_factory=list)
+    page_index: int = 0
+    has_more: bool = False
     snapshot_history: List[QuerySnapshot] = field(default_factory=list)

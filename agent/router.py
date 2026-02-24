@@ -15,9 +15,10 @@ class RouteDecision:
     confidence: float = 0.0
     need_clarify: bool = False
     clarify_question: Optional[str] = None
+    page_action: Optional[str] = None
 
 
-_INTENTS = {"Search", "Specific_QA", "Chitchat"}
+_INTENTS = {"Search", "Specific_QA", "Chitchat", "Page_Nav"}
 
 
 def _extract_first_json_obj(raw_text: str) -> Optional[Dict[str, Any]]:
@@ -55,10 +56,11 @@ def _classify_with_llm_no_listings(text: str, history_hint: Optional[str]) -> Op
         "You are a router for a rental assistant.\n"
         "Current state always has_listings=false and has_focus=false.\n"
         "Return STRICT JSON only with schema:\n"
-        '{"intent":"Search|Specific_QA|Chitchat","target_index":null,"confidence":0.0,"reason":"...",'
-        '"need_clarify":false,"clarify_question":null,"refinement_type":null}\n'
+        '{"intent":"Search|Specific_QA|Chitchat|Page_Nav","target_index":null,"confidence":0.0,"reason":"...",'
+        '"need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Policy:\n"
         "- Without listings, Specific_QA is invalid and should generally map to Search.\n"
+        "- If user asks to navigate pages, intent=Page_Nav with page_action='next' or 'prev'.\n"
         "- Use Chitchat for greetings/small talk.\n"
         "- Use Search for search requests or filter statements.\n"
         "\n"
@@ -68,7 +70,9 @@ def _classify_with_llm_no_listings(text: str, history_hint: Optional[str]) -> Op
         "Query: 'Find 1 bed near Waterloo under 2500'\n"
         'Output: {"intent":"Search","target_index":null,"confidence":0.96,"reason":"search_request","need_clarify":false,"clarify_question":null,"refinement_type":null}\n'
         "Query: 'Is it close to the station?'\n"
-        'Output: {"intent":"Search","target_index":null,"confidence":0.84,"reason":"no_listing_context_for_qa","need_clarify":false,"clarify_question":null,"refinement_type":null}'
+        'Output: {"intent":"Search","target_index":null,"confidence":0.84,"reason":"no_listing_context_for_qa","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        "Query: 'show more'\n"
+        'Output: {"intent":"Page_Nav","target_index":null,"confidence":0.95,"reason":"next_page_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":"next"}'
     )
     user_payload = f"Conversation summary:\n{history_hint or '(none)'}\n\nUser input:\n{text}"
     try:
@@ -107,11 +111,19 @@ def _classify_with_llm_no_listings(text: str, history_hint: Optional[str]) -> Op
     refinement_type = str(refinement_type).strip().lower() if refinement_type is not None else None
     if refinement_type in {"", "none", "null"}:
         refinement_type = None
+    page_action = obj.get("page_action")
+    page_action = str(page_action).strip().lower() if page_action is not None else None
+    if page_action in {"", "none", "null"}:
+        page_action = None
+    if page_action not in {"next", "prev"}:
+        page_action = None
 
     # No listings: target index is always irrelevant.
     target_index = None
     if intent != "Search":
         refinement_type = None
+    if intent != "Page_Nav":
+        page_action = None
     if not need_clarify:
         clarify_question = None
     return RouteDecision(
@@ -122,6 +134,7 @@ def _classify_with_llm_no_listings(text: str, history_hint: Optional[str]) -> Op
         confidence=conf,
         need_clarify=need_clarify,
         clarify_question=clarify_question,
+        page_action=page_action,
     )
 
 
@@ -134,11 +147,14 @@ def _classify_with_llm_for_listings(
         "You are a router for a rental assistant.\n"
         f"Current state: has_listings=true, has_focus={'true' if has_focus else 'false'}.\n"
         "Return STRICT JSON only with schema:\n"
-        '{"intent":"Search|Specific_QA|Chitchat","target_index":null,"confidence":0.0,"reason":"...",'
-        '"need_clarify":false,"clarify_question":null,"refinement_type":null}\n'
+        '{"intent":"Search|Specific_QA|Chitchat|Page_Nav","target_index":null,"confidence":0.0,"reason":"...",'
+        '"need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Interpretation policy:\n"
         "- Search includes both new-search and refinement/reset actions.\n"
         "- Specific_QA is for detail questions about current results/listings.\n"
+        "- Page_Nav is for paging requests.\n"
+        "- Use page_action='next' for: 'next page', 'show more', 'more results', 'next batch'.\n"
+        "- Use page_action='prev' for: 'previous page', 'prev page', 'go back', 'last page'.\n"
         "- target_index is 1-based when user references a specific result number.\n"
         "- If has_focus=true and user asks a listing detail question without index, keep intent=Specific_QA and need_clarify=false.\n"
         "- If has_focus=false and QA target is ambiguous, set need_clarify=true.\n"
@@ -147,15 +163,19 @@ def _classify_with_llm_for_listings(
         "\n"
         "Few-shot:\n"
         "Query: 'too expensive, cheaper please'\n"
-        'Output: {"intent":"Search","target_index":null,"confidence":0.97,"reason":"refinement_request","need_clarify":false,"clarify_question":null,"refinement_type":"price_down"}\n'
+        'Output: {"intent":"Search","target_index":null,"confidence":0.97,"reason":"refinement_request","need_clarify":false,"clarify_question":null,"refinement_type":"price_down","page_action":null}\n'
         "Query: 'does it have a gym?'\n"
-        'Output: {"intent":"Specific_QA","target_index":null,"confidence":0.90,"reason":"detail_question_about_listing","need_clarify":false,"clarify_question":null,"refinement_type":null}\n'
+        'Output: {"intent":"Specific_QA","target_index":null,"confidence":0.90,"reason":"detail_question_about_listing","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Query: 'second one?'\n"
-        'Output: {"intent":"Specific_QA","target_index":2,"confidence":0.96,"reason":"explicit_result_reference","need_clarify":false,"clarify_question":null,"refinement_type":null}\n'
+        'Output: {"intent":"Specific_QA","target_index":2,"confidence":0.96,"reason":"explicit_result_reference","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Query: 'start over'\n"
-        'Output: {"intent":"Search","target_index":null,"confidence":0.98,"reason":"reset_search","need_clarify":false,"clarify_question":null,"refinement_type":null}\n'
+        'Output: {"intent":"Search","target_index":null,"confidence":0.98,"reason":"reset_search","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Query: 'thanks'\n"
-        'Output: {"intent":"Chitchat","target_index":null,"confidence":0.95,"reason":"small_talk","need_clarify":false,"clarify_question":null,"refinement_type":null}'
+        'Output: {"intent":"Chitchat","target_index":null,"confidence":0.95,"reason":"small_talk","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        "Query: 'show me next page'\n"
+        'Output: {"intent":"Page_Nav","target_index":null,"confidence":0.96,"reason":"next_page_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":"next"}\n'
+        "Query: 'go to previous page'\n"
+        'Output: {"intent":"Page_Nav","target_index":null,"confidence":0.96,"reason":"prev_page_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":"prev"}'
     )
     user_payload = f"Conversation summary:\n{history_hint or '(none)'}\n\nUser input:\n{text}"
     try:
@@ -185,6 +205,12 @@ def _classify_with_llm_for_listings(
     refinement_type = str(refinement_type).strip().lower() if refinement_type is not None else None
     if refinement_type in {"", "none", "null"}:
         refinement_type = None
+    page_action = obj.get("page_action")
+    page_action = str(page_action).strip().lower() if page_action is not None else None
+    if page_action in {"", "none", "null"}:
+        page_action = None
+    if page_action not in {"next", "prev"}:
+        page_action = None
     need_clarify = bool(obj.get("need_clarify", False))
     clarify_question = obj.get("clarify_question")
     clarify_question = str(clarify_question).strip() if clarify_question is not None else None
@@ -201,6 +227,10 @@ def _classify_with_llm_for_listings(
         target_index = None
     if intent != "Search":
         refinement_type = None
+    if intent != "Page_Nav":
+        page_action = None
+    elif page_action is None:
+        page_action = "next"
     if intent == "Specific_QA" and has_focus and target_index is None:
         need_clarify = False
         clarify_question = None
@@ -214,6 +244,7 @@ def _classify_with_llm_for_listings(
         confidence=conf,
         need_clarify=need_clarify,
         clarify_question=clarify_question,
+        page_action=page_action,
     )
 
 
