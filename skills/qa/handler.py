@@ -747,28 +747,56 @@ def answer_multi_listing_question(
         }
         rows_eval.append(rec)
 
+    # Program-owned grouping result: LLM can only verbalize this, not re-classify.
+    matched_rows = [x for x in rows_eval if x.get("status") == "match"]
+    not_matched_rows = [x for x in rows_eval if x.get("status") == "not_match"]
+    unknown_rows = [x for x in rows_eval if x.get("status") == "unknown"]
+
     system_prompt = (
         "You are a rental property QA assistant.\n"
-        "Answer using ONLY the provided rows evaluation JSON.\n"
+        "Answer using ONLY the provided grouped JSON.\n"
         "Do not invent facts.\n"
         "Use plain bullet lists only (lines starting with '-').\n"
-        "Do not use markdown emphasis like **Index 5:**.\n"
-        "Use only query-relevant fields/evidence from each row.\n"
-        "Do NOT introduce unrelated attributes from other fields.\n"
-        "For each row, rely on requested_fields/field_values first.\n"
-        "If unknown_fields is non-empty for requested fields, use semantic evidence for fallback and then classify.\n"
-        "Summarize which listings match, which do not match (and why, including actual values), and which are unknown.\n"
-        "For not-match rows, include the conflicting structured value when available (e.g., unfurnished vs furnished).\n"
+        "The groups are FINAL and already decided by backend: matched_rows / not_matched_rows / unknown_rows.\n"
+        "Do NOT move listings across groups, do NOT duplicate listing index, do NOT create new index.\n"
+        "Only explain each listing briefly using its provided evidence.\n"
+        "For not_matched_rows, prefer structured conflict evidence when available.\n"
         "If a section has no items, omit that section entirely.\n"
-        "If none match, state that explicitly.\n"
+        "If all groups are empty, state that explicitly.\n"
         "Always remind user to confirm with listing agent."
     )
     qa_payload = {
         "user_question": extraction_input,
         "question": extraction_input,
-        "signals": signals,
-        "final_constraints": final_constraints,
-        "rows": rows_eval,
+        "grouped_rows": {
+            "matched_rows": [
+                {
+                    "index": x.get("index"),
+                    "title": x.get("title"),
+                    "evidence": (x.get("semantic") or {}).get("top_evidence"),
+                    "structured_checks": (x.get("structured") or {}).get("checks") or [],
+                }
+                for x in matched_rows
+            ],
+            "not_matched_rows": [
+                {
+                    "index": x.get("index"),
+                    "title": x.get("title"),
+                    "evidence": (x.get("semantic") or {}).get("top_evidence"),
+                    "structured_checks": (x.get("structured") or {}).get("checks") or [],
+                }
+                for x in not_matched_rows
+            ],
+            "unknown_rows": [
+                {
+                    "index": x.get("index"),
+                    "title": x.get("title"),
+                    "evidence": (x.get("semantic") or {}).get("top_evidence"),
+                    "structured_checks": (x.get("structured") or {}).get("checks") or [],
+                }
+                for x in unknown_rows
+            ],
+        },
     }
     try:
         out = qwen_chat(
@@ -784,9 +812,9 @@ def answer_multi_listing_question(
     except Exception:
         pass
 
-    matched = [f"#{x['index']}" for x in rows_eval if x.get("status") == "match"]
-    not_matched = [f"#{x['index']}" for x in rows_eval if x.get("status") == "not_match"]
-    unknown = [f"#{x['index']}" for x in rows_eval if x.get("status") == "unknown"]
+    matched = [f"#{x['index']}" for x in matched_rows]
+    not_matched = [f"#{x['index']}" for x in not_matched_rows]
+    unknown = [f"#{x['index']}" for x in unknown_rows]
     lines: List[str] = []
     if matched:
         lines.append("Matched:")
