@@ -20,7 +20,7 @@ You are a specialist in parsing Real Estate search queries. Your task is to tran
 ### SCHEMA SPECIFICATION
 {
   "constraints": {
-    "has_deposit": boolean|null,
+    "deposit": string|number|null,
     "max_rent_pcm": number|null,
     "available_from": string|null, 
     "furnish_type": string|null,
@@ -52,8 +52,8 @@ You are a specialist in parsing Real Estate search queries. Your task is to tran
    - `school_terms`: Only education-related entities (Schools, Universities, Academies).
    - `general_semantic_phrases`: Subjective/lifestyle descriptors and amenities/services not covered by transit/school (e.g., "modern", "quiet", "near parks", "gym", "concierge").
 3. **Deposit Rule**:
-   - If the question asks whether a listing has deposit information, set `constraints.has_deposit=true`.
-   - If the question explicitly asks for no deposit, set `constraints.has_deposit=false`.
+   - If the question is about deposit (e.g., "has deposit", "how much deposit"), set `constraints.deposit="__ASKED__"`.
+   - If the question explicitly asks for no deposit, set `constraints.deposit=0`.
 """
 
 @dataclass
@@ -71,9 +71,9 @@ def _qa_rule_fallback_hard_constraints(question_text: str) -> Dict[str, Any]:
         return {}
     out: Dict[str, Any] = {}
     if re.search(r"\bno\s+deposit\b|\bwithout\s+deposit\b", text):
-        out["has_deposit"] = False
+        out["deposit"] = 0
     elif re.search(r"\bdeposit\b", text):
-        out["has_deposit"] = True
+        out["deposit"] = "__ASKED__"
 
     if re.search(r"\bfurnished\b", text):
         out["furnish_type"] = "furnished"
@@ -94,11 +94,11 @@ def _enrich_constraints_from_question(question_text: str, constraints: Dict[str,
     text = str(question_text or "").strip().lower()
     if not text:
         return out
-    if out.get("has_deposit") is None:
+    if out.get("deposit") is None:
         if re.search(r"\bno\s+deposit\b|\bwithout\s+deposit\b", text):
-            out["has_deposit"] = False
+            out["deposit"] = 0
         elif re.search(r"\bdeposit\b", text):
-            out["has_deposit"] = True
+            out["deposit"] = "__ASKED__"
     return out
 
 

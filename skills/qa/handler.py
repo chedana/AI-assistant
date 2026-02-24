@@ -118,13 +118,6 @@ def build_qa_context(question: str) -> Dict[str, Any]:
 
     plan = build_qa_plan(extraction_input)
     final_constraints = dict(plan.hard_constraints or {})
-    # Safety net: ensure deposit intent is carried into structured constraints.
-    if final_constraints.get("has_deposit") is None:
-        ql = extraction_input.lower()
-        if re.search(r"\bno\s+deposit\b|\bwithout\s+deposit\b", ql):
-            final_constraints["has_deposit"] = False
-        elif re.search(r"\bdeposit\b", ql):
-            final_constraints["has_deposit"] = True
     semantic_terms = dict(plan.semantic_terms or {})
     signals = split_query_signals(
         extraction_input,
@@ -170,6 +163,22 @@ def _is_unknown_value(v: Any) -> bool:
     return False
 
 
+def _parse_deposit_amount(v: Any) -> Dict[str, Any]:
+    raw = str(v or "").strip()
+    low = raw.lower()
+    if not raw or low in {"unknown", "not provided", "ask agent", "n/a", "na", "none", "null"}:
+        return {"state": "unknown", "amount": None, "raw": raw}
+    if re.search(r"\b(zero|no)\s+deposit\b", low):
+        return {"state": "known", "amount": 0.0, "raw": raw}
+    m = re.search(r"(\d+(?:\.\d+)?)", raw.replace(",", ""))
+    if not m:
+        return {"state": "unknown", "amount": None, "raw": raw}
+    try:
+        return {"state": "known", "amount": float(m.group(1)), "raw": raw}
+    except Exception:
+        return {"state": "unknown", "amount": None, "raw": raw}
+
+
 def _mentioned_structured_fields(question: str, final_constraints: Dict[str, Any]) -> List[str]:
     q = str(question or "").lower()
     c = final_constraints or {}
@@ -184,6 +193,8 @@ def _mentioned_structured_fields(question: str, final_constraints: Dict[str, Any
         out.append("furnish_type")
     if c.get("let_type"):
         out.append("let_type")
+    if c.get("deposit") is not None:
+        out.append("deposit")
     if c.get("min_tenancy_months") is not None:
         out.append("min_tenancy")
     if c.get("min_size_sqm") is not None:
@@ -226,7 +237,7 @@ def _has_active_structured_constraints(constraints: Dict[str, Any]) -> bool:
     c = constraints or {}
     return any(
         [
-            c.get("has_deposit") is not None,
+            c.get("deposit") is not None,
             c.get("max_rent_pcm") is not None,
             c.get("available_from") is not None,
             bool(c.get("furnish_type")),
@@ -253,7 +264,24 @@ def _structured_match_eval(listing_payload: Dict[str, Any], constraints: Dict[st
     audit = (audits or [{}])[0]
     checks: Dict[str, Any] = (audit or {}).get("hard_checks") or {}
     fail_reasons: List[str] = list(audit.get("hard_fail_reasons") or [])
-    hard_pass = bool(audit.get("hard_pass"))
+    dep_req = (constraints or {}).get("deposit")
+    if dep_req is not None:
+        dep = _parse_deposit_amount(listing_payload.get("deposit"))
+        dep_state = dep.get("state")
+        dep_amount = dep.get("amount")
+        checks["deposit"] = {
+            "actual": dep_amount,
+            "required": dep_req,
+            "op": "deposit_rule",
+        }
+        if dep_state == "known":
+            # For deposit-related questions, "has deposit" means amount > 0.
+            if isinstance(dep_req, (int, float)) and float(dep_req) == 0.0:
+                if float(dep_amount or 0.0) != 0.0:
+                    fail_reasons.append(f"deposit {float(dep_amount):g} != 0")
+            else:
+                if float(dep_amount or 0.0) <= 0.0:
+                    fail_reasons.append(f"deposit {float(dep_amount):g} <= 0")
 
     unknown_fields: List[str] = []
     for k, v in checks.items():
@@ -265,6 +293,7 @@ def _structured_match_eval(listing_payload: Dict[str, Any], constraints: Dict[st
             continue
         if actual is None or (isinstance(actual, str) and not actual.strip()):
             unknown_fields.append(str(k))
+    hard_pass = len(fail_reasons) == 0
     return {
         "active": True,
         "decisive": len(unknown_fields) == 0,
@@ -379,6 +408,21 @@ def answer_single_listing_question(
     allowed_fields = _semantic_allowed_fields(signals)
     distilled = _distill_listing_payload(listing_payload)
     structured_eval = _structured_match_eval(distilled, final_constraints)
+
+    dep_req = final_constraints.get("deposit")
+    if dep_req is not None:
+        dep = _parse_deposit_amount(distilled.get("deposit"))
+        if dep.get("state") != "known":
+            return "Deposit is not provided in listing data (ask agent)."
+        amount = float(dep.get("amount") or 0.0)
+        amount_txt = str(int(amount)) if float(amount).is_integer() else f"{amount:g}"
+        if isinstance(dep_req, (int, float)) and float(dep_req) == 0.0:
+            if amount == 0.0:
+                return "Yes. This listing has no deposit (0)."
+            return f"No. This listing has a deposit of {amount_txt}."
+        if amount > 0.0:
+            return f"The deposit is {amount_txt}."
+        return "No. This listing has no deposit (0)."
 
     # Structured-first short path for explicit categorical constraints.
     if final_constraints.get("furnish_type"):
@@ -542,6 +586,8 @@ def answer_single_listing_question(
         listing_structured["furnish_type"] = distilled.get("furnish_type")
     if "let_type" in query_structured:
         listing_structured["let_type"] = distilled.get("let_type")
+    if "deposit" in query_structured:
+        listing_structured["deposit"] = distilled.get("deposit")
     if "min_tenancy_months" in query_structured:
         listing_structured["min_tenancy_months"] = (
             distilled.get("min_tenancy_months")
@@ -687,6 +733,7 @@ def answer_multi_listing_question(
     for idx, payload in enumerate(rows, start=1):
         distilled = _distill_listing_payload(payload)
         structured_eval = _structured_match_eval(distilled, final_constraints)
+        deposit_mode = final_constraints.get("deposit") is not None
         vec = None
         sem = None
         score = None
@@ -697,6 +744,20 @@ def answer_multi_listing_question(
                 "label": "confirmed" if structured_eval.get("hard_pass") else "not_found",
             }
             label = str(decision.get("label") or "not_found")
+        elif deposit_mode:
+            # Deposit list-QA uses structured listing field only.
+            dep = _parse_deposit_amount(distilled.get("deposit"))
+            if dep.get("state") == "known":
+                amount = float(dep.get("amount") or 0.0)
+                if amount > 0.0:
+                    decision = {"source": "structured_deposit", "label": "confirmed"}
+                    label = "confirmed"
+                else:
+                    decision = {"source": "structured_deposit", "label": "not_found"}
+                    label = "not_found"
+            else:
+                decision = {"source": "structured_deposit_unknown", "label": "not_found"}
+                label = "not_found"
         else:
             if embedder is not None:
                 vec = semantic_vector_lookup(
@@ -730,6 +791,14 @@ def answer_multi_listing_question(
         if structured_eval.get("active") and structured_eval.get("decisive"):
             status = "match" if structured_eval.get("hard_pass") else "not_match"
             source = "structured"
+        elif deposit_mode:
+            dep = _parse_deposit_amount(distilled.get("deposit"))
+            if dep.get("state") != "known":
+                status = "unknown"
+            else:
+                amt = float(dep.get("amount") or 0.0)
+                status = "match" if amt > 0.0 else "not_match"
+            source = "structured_deposit"
         elif missing_structured:
             # For fields missing in structured payload, defer decision to semantic/LLM.
             status = "unknown"
