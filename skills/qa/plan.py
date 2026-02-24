@@ -20,6 +20,7 @@ You are a specialist in parsing Real Estate search queries. Your task is to tran
 ### SCHEMA SPECIFICATION
 {
   "constraints": {
+    "has_deposit": boolean|null,
     "max_rent_pcm": number|null,
     "available_from": string|null, 
     "furnish_type": string|null,
@@ -50,6 +51,9 @@ You are a specialist in parsing Real Estate search queries. Your task is to tran
    - `transit_terms`: Only transport-related entities (Stations, Lines, DLR, Underground).
    - `school_terms`: Only education-related entities (Schools, Universities, Academies).
    - `general_semantic_phrases`: Subjective/lifestyle descriptors and amenities/services not covered by transit/school (e.g., "modern", "quiet", "near parks", "gym", "concierge").
+3. **Deposit Rule**:
+   - If the question asks whether a listing has deposit information, set `constraints.has_deposit=true`.
+   - If the question explicitly asks for no deposit, set `constraints.has_deposit=false`.
 """
 
 @dataclass
@@ -66,6 +70,11 @@ def _qa_rule_fallback_hard_constraints(question_text: str) -> Dict[str, Any]:
     if not text:
         return {}
     out: Dict[str, Any] = {}
+    if re.search(r"\bno\s+deposit\b|\bwithout\s+deposit\b", text):
+        out["has_deposit"] = False
+    elif re.search(r"\bdeposit\b", text):
+        out["has_deposit"] = True
+
     if re.search(r"\bfurnished\b", text):
         out["furnish_type"] = "furnished"
     elif re.search(r"\bunfurnished\b", text):
@@ -77,6 +86,19 @@ def _qa_rule_fallback_hard_constraints(question_text: str) -> Dict[str, Any]:
         out["let_type"] = "short term"
     elif re.search(r"\blong[\s-]?term|\blong[\s-]?let\b", text):
         out["let_type"] = "long term"
+    return out
+
+
+def _enrich_constraints_from_question(question_text: str, constraints: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(constraints or {})
+    text = str(question_text or "").strip().lower()
+    if not text:
+        return out
+    if out.get("has_deposit") is None:
+        if re.search(r"\bno\s+deposit\b|\bwithout\s+deposit\b", text):
+            out["has_deposit"] = False
+        elif re.search(r"\bdeposit\b", text):
+            out["has_deposit"] = True
     return out
 
 
@@ -130,6 +152,7 @@ def _try_build_qa_plan_via_llm(question_text: str) -> Optional[QAPlan]:
     if not isinstance(obj, dict):
         return None
     constraints = _normalize_constraint_extract((obj or {}).get("constraints") or {})
+    constraints = _enrich_constraints_from_question(text, constraints)
     semantic_terms = _normalize_semantic_extract((obj or {}).get("semantic_terms") or {})
     return QAPlan(
         hard_constraints=constraints,
