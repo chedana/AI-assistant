@@ -18,7 +18,7 @@ from skills.search.handler import format_listing_row
 
 from agent_graph.state import GraphState
 
-IntentName = Literal["Search", "Specific_QA", "Chitchat", "DirectReply", "Fallback"]
+IntentName = Literal["Search", "Specific_QA", "Chitchat", "DirectReply", "Page_Nav", "Fallback"]
 
 
 def _auto_focus_first(agent_state) -> None:
@@ -81,6 +81,7 @@ def route_node(state: GraphState) -> GraphState:
     state["clarify_question"] = decision.clarify_question
     state["target_index"] = decision.target_index
     state["refinement_type"] = decision.refinement_type
+    state["page_action"] = getattr(decision, "page_action", None)
 
     if state.get("router_debug"):
         print(
@@ -90,6 +91,7 @@ def route_node(state: GraphState) -> GraphState:
                     "intent": decision.intent,
                     "target_index": decision.target_index,
                     "refinement_type": decision.refinement_type,
+                    "page_action": getattr(decision, "page_action", None),
                     "confidence": decision.confidence,
                     "reason": decision.reason,
                     "need_clarify": decision.need_clarify,
@@ -132,6 +134,9 @@ def search_node(state: GraphState) -> GraphState:
     agent_state = state["agent_state"]
     runtime = state["runtime"]
     prev_results = list(agent_state.last_results or [])
+    prev_full_results = list(agent_state.search_full_results or prev_results)
+    prev_page_index = int(agent_state.page_index or 0)
+    prev_has_more = bool(agent_state.has_more)
     prev_focus_id = agent_state.current_focus_listing_id
     prev_focus_payload = agent_state.current_focus_listing_payload
     prev_focus_source = agent_state.focus_source
@@ -178,17 +183,23 @@ def search_node(state: GraphState) -> GraphState:
         agent_state.constraints = snapshot_to_constraints(matched)
         cached_results = list(matched.results or [])
         if cached_results:
-            agent_state.last_results = cached_results
+            agent_state.search_full_results = cached_results
+            agent_state.page_index = 0
+            k = int((agent_state.constraints or {}).get("k") or 5)
+            agent_state.last_results = list(cached_results[:k])
+            agent_state.has_more = len(cached_results) > len(agent_state.last_results)
             _auto_focus_first(agent_state)
             state["last_search_status"] = "cache_hit"
-            k = int((agent_state.constraints or {}).get("k") or 5)
-            lines = [f"Reused cached results ({len(cached_results)} listings).", "", f"Top {min(k, len(cached_results))} results:"]
-            for i, row in enumerate(cached_results[:k], start=1):
+            lines = [f"Reused cached results ({len(cached_results)} listings).", "", f"Top {len(agent_state.last_results)} results:"]
+            for i, row in enumerate(agent_state.last_results, start=1):
                 lines.append(format_listing_row(row, i, view_mode="summary"))
             bot_text = "\n".join(lines)
         else:
             # Keep prior context if a historical snapshot has no cached rows.
             agent_state.last_results = prev_results
+            agent_state.search_full_results = prev_full_results
+            agent_state.page_index = prev_page_index
+            agent_state.has_more = prev_has_more
             agent_state.current_focus_listing_id = prev_focus_id
             agent_state.current_focus_listing_payload = prev_focus_payload
             agent_state.focus_source = prev_focus_source
@@ -219,6 +230,9 @@ def search_node(state: GraphState) -> GraphState:
         )
     except Exception:
         state["last_search_status"] = "error"
+        agent_state.search_full_results = prev_full_results
+        agent_state.page_index = prev_page_index
+        agent_state.has_more = prev_has_more
         state["reply_text"] = (
             "Search failed this turn. I kept your previous results intact. "
             "Please retry or adjust your query."
@@ -227,23 +241,33 @@ def search_node(state: GraphState) -> GraphState:
 
     agent_state.constraints = out.get("constraints")
     agent_state.user_profile.update(out.get("profile_patch") or {})
-    new_results = list(out.get("listings") or [])
+    full_results = list(out.get("all_ranked_listings") or [])
+    if not full_results:
+        full_results = list(out.get("listings") or [])
+    k = int(((out.get("constraints") or {}).get("k") or 5))
+    new_results = list(full_results[:k])
     bot_text = out.get("reply_text") or "No result."
 
     committed_snapshot = snapshot_from_constraints(
         agent_state.constraints,
-        results=new_results,
+        results=full_results,
     )
     new_history, _ = push_history(agent_state.snapshot_history or [], committed_snapshot, max_size=5)
     agent_state.snapshot_history = new_history
 
     if new_results:
+        agent_state.search_full_results = full_results
+        agent_state.page_index = 0
         agent_state.last_results = new_results
+        agent_state.has_more = len(full_results) > len(new_results)
         _auto_focus_first(agent_state)
         state["last_search_status"] = "success"
     else:
         # Preserve prior context to avoid QA hard break after an empty/failed search result.
         agent_state.last_results = prev_results
+        agent_state.search_full_results = prev_full_results
+        agent_state.page_index = prev_page_index
+        agent_state.has_more = prev_has_more
         agent_state.current_focus_listing_id = prev_focus_id
         agent_state.current_focus_listing_payload = prev_focus_payload
         agent_state.focus_source = prev_focus_source
@@ -266,6 +290,72 @@ def search_node(state: GraphState) -> GraphState:
             "Use /focus N to switch target, or ask 'which one has ...' to compare all current listings."
         )
     state["reply_text"] = bot_text
+    return state
+
+
+def paginate_node(state: GraphState) -> GraphState:
+    agent_state = state["agent_state"]
+    action = str(state.get("page_action") or "next").strip().lower()
+    if action not in {"next", "prev"}:
+        action = "next"
+    full = list(agent_state.search_full_results or [])
+    if not full:
+        full = list(agent_state.last_results or [])
+        agent_state.search_full_results = list(full)
+
+    if not full:
+        state["reply_text"] = "I don't have active listings yet. Tell me your budget/location/layout first, and I'll search."
+        return state
+
+    k = int(((agent_state.constraints or {}).get("k") or 5))
+    cur_page = int(agent_state.page_index or 0)
+    target_page = cur_page + 1 if action == "next" else cur_page - 1
+    start = target_page * k
+    end = start + k
+    if action == "next" and start >= len(full):
+        agent_state.has_more = False
+        state["reply_text"] = "This is already the last page."
+        return state
+    if action == "prev" and target_page < 0:
+        state["reply_text"] = "This is already the first page."
+        return state
+
+    page_rows = list(full[start:end])
+    agent_state.page_index = target_page
+    agent_state.last_results = page_rows
+    agent_state.has_more = end < len(full)
+    _auto_focus_first(agent_state)
+
+    lines = [f"Page {target_page + 1} results ({start + 1}-{min(end, len(full))} of {len(full)}):"]
+    for i, row in enumerate(page_rows, start=1):
+        lines.append(format_listing_row(row, i, view_mode="summary"))
+    if agent_state.current_focus_listing_payload:
+        focus_title = str(
+            agent_state.current_focus_listing_payload.get("title")
+            or agent_state.current_focus_listing_id
+            or "listing #1"
+        )
+        lines.append("")
+        lines.append(
+            f"Note: default focus is set to listing #1 ({focus_title}). "
+            "Use /focus N to switch target, or ask 'which one has ...' to compare all current listings."
+        )
+
+    _debug_print(
+        bool(state.get("router_debug")),
+        {
+            "phase": "paginate",
+            "action": action,
+            "page_index_old": cur_page,
+            "page_index_new": target_page,
+            "slice_start": start,
+            "slice_end": min(end, len(full)),
+            "total": len(full),
+            "k": k,
+            "has_more": agent_state.has_more,
+        },
+    )
+    state["reply_text"] = "\n".join(lines)
     return state
 
 
@@ -416,4 +506,6 @@ def route_branch(state: GraphState) -> IntentName:
         return "Chitchat"
     if intent == "DirectReply":
         return "DirectReply"
+    if intent == "Page_Nav":
+        return "Page_Nav"
     return "Fallback"

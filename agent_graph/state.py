@@ -14,6 +14,7 @@ class GraphState(TypedDict, total=False):
     clarify_question: Optional[str]
     target_index: Optional[int]
     refinement_type: Optional[str]
+    page_action: Optional[str]
 
     # Runtime payload
     reply_text: str
@@ -28,6 +29,9 @@ class GraphState(TypedDict, total=False):
     constraints: Optional[Dict[str, Any]]
     user_profile: Dict[str, Any]
     last_results: List[Dict[str, Any]]
+    search_full_results: List[Dict[str, Any]]
+    page_index: int
+    has_more: bool
     current_focus_listing_id: Optional[str]
     current_focus_listing_payload: Optional[Dict[str, Any]]
     focus_source: Optional[str]
@@ -51,11 +55,14 @@ def make_graph_state(user_input: str, *, agent_state: Any, runtime: Any, router_
         clarify_question=None,
         target_index=None,
         refinement_type=None,
+        page_action=None,
         reply_text="",
         error=None,
         attempt_count=0,
         router_debug=bool(router_debug),
         last_search_status="unknown",
+        page_index=0,
+        has_more=False,
         agent_state=agent_state,
         runtime=runtime,
     )

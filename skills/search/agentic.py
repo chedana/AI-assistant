@@ -125,6 +125,7 @@ def run_search_skill(
     )
     filtered, _ = apply_hard_filters_with_audit(stage_a_df, merged)
     ranked, _ = rank_stage_c(filtered, signals, embedder=runtime.embedder)
+    ranked_full = ranked.reset_index(drop=True) if ranked is not None else ranked
 
     if len(filtered) < int(k):
         df = ranked.reset_index(drop=True)
@@ -135,6 +136,10 @@ def run_search_skill(
     if df is not None and len(df) > 0:
         for _, row in df.iterrows():
             listings.append(row.to_dict())
+    all_ranked_listings: List[Dict[str, Any]] = []
+    if ranked_full is not None and len(ranked_full) > 0:
+        for _, row in ranked_full.iterrows():
+            all_ranked_listings.append(row.to_dict())
 
     lines: List[str] = []
     if not listings:
@@ -156,5 +161,6 @@ def run_search_skill(
         "changes": summarize_constraint_changes(prev_constraints, merged),
         "active_constraints": compact_constraints_view(merged),
         "listings": listings,
+        "all_ranked_listings": all_ranked_listings,
         "structured_audit": structured_audit,
     }

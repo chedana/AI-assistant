@@ -30,6 +30,7 @@ def _legacy_process_turn(user_in: str, state: AgentState, runtime, router_debug:
                     "intent": decision.intent,
                     "target_index": decision.target_index,
                     "refinement_type": decision.refinement_type,
+                    "page_action": getattr(decision, "page_action", None),
                     "confidence": decision.confidence,
                     "reason": decision.reason,
                     "need_clarify": decision.need_clarify,
@@ -79,6 +80,47 @@ def _legacy_process_turn(user_in: str, state: AgentState, runtime, router_debug:
                 f"\n\nNote: default focus is set to listing #1 ({focus_title}). "
                 "Use /focus N to switch target, or ask 'which one has ...' to compare all current listings."
             )
+    elif decision.intent == "Page_Nav":
+        action = str(getattr(decision, "page_action", None) or "next").strip().lower()
+        if action not in {"next", "prev"}:
+            action = "next"
+        full = list(state.search_full_results or state.last_results or [])
+        if not full:
+            bot_text = "I don't have active listings yet. Tell me your budget/location/layout first, and I'll search."
+        else:
+            k = int(((state.constraints or {}).get("k") or 5))
+            cur_page = int(state.page_index or 0)
+            target_page = cur_page + 1 if action == "next" else cur_page - 1
+            start = target_page * k
+            end = start + k
+            if action == "next" and start >= len(full):
+                state.has_more = False
+                bot_text = "This is already the last page."
+            elif action == "prev" and target_page < 0:
+                bot_text = "This is already the first page."
+            else:
+                page_rows = list(full[start:end])
+                state.page_index = target_page
+                state.last_results = page_rows
+                state.search_full_results = full
+                state.has_more = end < len(full)
+                _auto_focus_first(state)
+                lines = [f"Page {target_page + 1} results ({start + 1}-{min(end, len(full))} of {len(full)}):"]
+                from skills.search.handler import format_listing_row  # local import to avoid cycle on startup
+                for i, row in enumerate(page_rows, start=1):
+                    lines.append(format_listing_row(row, i, view_mode="summary"))
+                if state.current_focus_listing_payload:
+                    focus_title = str(
+                        state.current_focus_listing_payload.get("title")
+                        or state.current_focus_listing_id
+                        or "listing #1"
+                    )
+                    lines.append("")
+                    lines.append(
+                        f"Note: default focus is set to listing #1 ({focus_title}). "
+                        "Use /focus N to switch target, or ask 'which one has ...' to compare all current listings."
+                    )
+                bot_text = "\n".join(lines)
     elif decision.intent == "Specific_QA":
         # Explicit target index from router always means single-listing QA.
         if decision.target_index is not None:
