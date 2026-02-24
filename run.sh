@@ -25,15 +25,15 @@ export RENT_STRUCTURED_CONFLICT_LOG="${RENT_STRUCTURED_CONFLICT_LOG:-1}"
 export RENT_STRUCTURED_CONFLICT_LOG_PATH="${RENT_STRUCTURED_CONFLICT_LOG_PATH:-/workspace/AI-assistant/artifacts/skills/search/logs/structured_conflicts.jsonl}"
 export RENT_STRUCTURED_TRAINING_LOG_PATH="${RENT_STRUCTURED_TRAINING_LOG_PATH:-/workspace/AI-assistant/artifacts/skills/search/logs/structured_training_samples.jsonl}"
 export RENT_ENABLE_STAGE_D_EXPLAIN="${RENT_ENABLE_STAGE_D_EXPLAIN:-1}"
-export ROUTER_DEBUG="${ROUTER_DEBUG:-0}"
+export ROUTER_DEBUG="${ROUTER_DEBUG:-1}"
 
 # LLM endpoints/models
 # Reasoning model (search extraction / QA / explanation)
 export QWEN_BASE_URL="${QWEN_BASE_URL:-http://127.0.0.1:8002/v1}"
-export QWEN_MODEL="${QWEN_MODEL:-./Qwen3-8B}"
-# Router model (intent classification) defaults to same as reasoning model.
+export QWEN_MODEL="${QWEN_MODEL:-./Qwen3-14B}"
+# Router model (intent classification) defaults to 14B.
 export ROUTER_BASE_URL="${ROUTER_BASE_URL:-${QWEN_BASE_URL}}"
-export ROUTER_MODEL="${ROUTER_MODEL:-${QWEN_MODEL}}"
+export ROUTER_MODEL="${ROUTER_MODEL:-./Qwen3-14B}"
 # API keys (Router falls back to OPENAI_API_KEY if ROUTER_API_KEY is unset)
 export OPENAI_API_KEY="${OPENAI_API_KEY:-dummy}"
 export ROUTER_API_KEY="${ROUTER_API_KEY:-${OPENAI_API_KEY}}"

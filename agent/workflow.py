@@ -155,7 +155,7 @@ def process_turn(user_in: str, state: AgentState, runtime, router_debug: bool = 
 def run() -> None:
     runtime = build_search_runtime()
     state = AgentState()
-    router_debug = str(os.environ.get("ROUTER_DEBUG", "0")).strip().lower() in {"1", "true", "yes", "on"}
+    router_debug = str(os.environ.get("ROUTER_DEBUG", "1")).strip().lower() in {"1", "true", "yes", "on"}
 
     print("Rent Assistant (agentic MVP)")
     print("Intents: Search / Specific_QA / Chitchat")
