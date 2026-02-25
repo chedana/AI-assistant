@@ -8,7 +8,8 @@ from core.llm_client import qwen_chat
 from skills.qa.plan import build_qa_plan
 from skills.qa.lookup import semantic_lookup, semantic_vector_lookup, structured_lookup
 from skills.search.extractors import _norm_furnish_value, parse_jsonish_items
-from skills.search.handler import apply_hard_filters_with_audit, split_query_signals
+from skills.search.hard_filter import apply_hard_filters_with_audit
+from skills.search.signals import split_query_signals
 
 
 SEMANTIC_HIGH_THRESHOLD = 0.75
