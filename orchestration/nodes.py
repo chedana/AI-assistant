@@ -218,16 +218,17 @@ def search_node(state: GraphState) -> GraphState:
                 lines.append(format_listing_row(row, i, view_mode="summary"))
             bot_text = "\n".join(lines)
         else:
-            # Keep prior context if a historical snapshot has no cached rows.
-            agent_state.last_results = prev_results
-            agent_state.search_full_results = prev_full_results
-            agent_state.page_index = prev_page_index
-            agent_state.has_more = prev_has_more
-            agent_state.current_focus_listing_id = prev_focus_id
-            agent_state.current_focus_listing_payload = prev_focus_payload
-            agent_state.focus_source = prev_focus_source
+            # Snapshot matched but had no results — clear state so user sees 0 results,
+            # not the previous search's listings.
+            agent_state.last_results = []
+            agent_state.search_full_results = []
+            agent_state.page_index = 0
+            agent_state.has_more = False
+            agent_state.current_focus_listing_id = None
+            agent_state.current_focus_listing_payload = None
+            agent_state.focus_source = None
             state["last_search_status"] = "cache_hit_empty"
-            bot_text = "Matched a previous query snapshot, but it has no cached listings."
+            bot_text = "No listings found for this search. Try adjusting your requirements."
         agent_state.last_qa_scope = None
         if agent_state.last_results and agent_state.current_focus_listing_payload:
             focus_title = str(

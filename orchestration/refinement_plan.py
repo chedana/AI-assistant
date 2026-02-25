@@ -6,24 +6,13 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from core.llm_client import qwen_chat
+from orchestration.merger import SNAPSHOT_FIELDS
 from skills.common.parse_signals import parse_signals
 from skills.search.extractors import (
     _extract_json_obj,
     _normalize_constraint_extract,
     _normalize_semantic_extract,
 )
-
-
-SNAPSHOT_FIELDS = {
-    "location_keywords",
-    "layout_options",
-    "max_rent_pcm",
-    "available_from",
-    "furnish_type",
-    "let_type",
-    "min_tenancy_months",
-    "min_size_sqm",
-}
 
 
 @dataclass

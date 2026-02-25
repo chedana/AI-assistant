@@ -49,6 +49,11 @@ ROUTER_DEBUG = str(os.environ.get("ROUTER_DEBUG", "1")).strip().lower() in {"1",
 SESSIONS: TTLCache = TTLCache(maxsize=500, ttl=3600)  # max 500 sessions, 1-hour TTL
 SESSIONS_LOCK = Lock()
 
+SESSION_LOCKS: dict[str, Lock] = {}
+SESSION_LOCKS_META = Lock()  # protects SESSION_LOCKS dict itself
+
+MAX_USER_INPUT = 2000
+
 
 def sse_event(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
@@ -79,6 +84,18 @@ def get_or_create_state(session_id: str) -> AgentState:
         return state
 
 
+def get_session_lock(session_id: str) -> Lock:
+    with SESSION_LOCKS_META:
+        if session_id not in SESSION_LOCKS:
+            SESSION_LOCKS[session_id] = Lock()
+        return SESSION_LOCKS[session_id]
+
+
+def _run_locked(lock: Lock, user_in: str, state: AgentState, runtime, router_debug: bool) -> str:
+    with lock:
+        return process_turn(user_in, state, runtime, router_debug)
+
+
 @app.get("/healthz")
 async def healthz() -> JSONResponse:
     return JSONResponse({"ok": True, "service": "backend-proxy", "sessions": len(SESSIONS)})
@@ -91,11 +108,16 @@ async def chat_stream(req: ChatStreamRequest, request: Request) -> StreamingResp
         if not user_text:
             yield sse_event("error", {"message": "Empty user message"})
             return
+        if len(user_text) > MAX_USER_INPUT:
+            yield sse_event("error", {"message": f"Message too long ({len(user_text)} chars). Please keep under {MAX_USER_INPUT}."})
+            return
 
         try:
             state = get_or_create_state(req.session_id)
+            session_lock = get_session_lock(req.session_id)
             reply = await asyncio.to_thread(
-                process_turn,
+                _run_locked,
+                session_lock,
                 user_text,
                 state,
                 RUNTIME,
