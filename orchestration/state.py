@@ -16,6 +16,9 @@ class QuerySnapshot:
     min_tenancy_months: Optional[float] = None
     min_size_sqm: Optional[float] = None
 
+    # Display setting — not a search constraint; excluded from hash.
+    k: Optional[int] = None
+
     # Cached search output for this snapshot.
     results: List[Dict[str, Any]] = field(default_factory=list)
 
@@ -71,10 +74,10 @@ class AgentState:
 
 
 class GraphState(TypedDict, total=False):
-    # Input
+    # ── Input ────────────────────────────────────────────────────────────────
     user_input: str
 
-    # Routing
+    # ── Routing (per-turn, set by route_node) ────────────────────────────────
     intent: str
     route_reason: str
     need_clarify: bool
@@ -83,26 +86,19 @@ class GraphState(TypedDict, total=False):
     refinement_type: Optional[str]
     page_action: Optional[str]
 
-    # Runtime payload
+    # ── Turn output ──────────────────────────────────────────────────────────
     reply_text: str
     error: Optional[str]
     attempt_count: int
     router_debug: bool
     last_search_status: str
 
-    # Shared conversational state mirrors existing agent state model.
+    # ── Persistent state handles (do NOT duplicate AgentState fields here) ───
+    # All cross-turn data lives in AgentState; access via state["agent_state"].
     agent_state: Any
     runtime: Any
-    constraints: Optional[Dict[str, Any]]
-    user_profile: Dict[str, Any]
-    last_results: List[Dict[str, Any]]
-    search_full_results: List[Dict[str, Any]]
-    page_index: int
-    has_more: bool
-    current_focus_listing_id: Optional[str]
-    current_focus_listing_payload: Optional[Dict[str, Any]]
-    focus_source: Optional[str]
-    last_qa_scope: Optional[str]
+
+    # ── QA pipeline scratch-pad (per-turn, set by qa_plan_node) ─────────────
     qa_target_scope: Optional[str]
     qa_extraction_input: Optional[str]
     qa_plan_source: Optional[str]
@@ -110,12 +106,13 @@ class GraphState(TypedDict, total=False):
     qa_target_constraints: Dict[str, Any]
     qa_semantic_terms: Dict[str, Any]
     qa_signals: Dict[str, Any]
-    history: List[tuple[str, str]]
 
 
 def make_graph_state(user_input: str, *, agent_state: Any, runtime: Any, router_debug: bool = False) -> GraphState:
     return GraphState(
+        # Input
         user_input=str(user_input or "").strip(),
+        # Routing defaults — overwritten by route_node
         intent="Search",
         route_reason="",
         need_clarify=False,
@@ -123,13 +120,21 @@ def make_graph_state(user_input: str, *, agent_state: Any, runtime: Any, router_
         target_index=None,
         refinement_type=None,
         page_action=None,
+        # Turn output defaults
         reply_text="",
         error=None,
         attempt_count=0,
         router_debug=bool(router_debug),
         last_search_status="unknown",
-        page_index=0,
-        has_more=False,
+        # Persistent state handles
         agent_state=agent_state,
         runtime=runtime,
+        # QA scratch-pad defaults — overwritten by qa_plan_node
+        qa_target_scope="",
+        qa_extraction_input="",
+        qa_plan_source="",
+        qa_llm_extract_all_error={},
+        qa_target_constraints={},
+        qa_semantic_terms={},
+        qa_signals={},
     )
