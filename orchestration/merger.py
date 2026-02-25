@@ -4,6 +4,7 @@ from copy import deepcopy
 from typing import Any, Dict, List, Optional, Tuple
 
 from orchestration.state import QuerySnapshot
+from skills.search.constraint_extraction import _normalize_layout_options
 
 
 SNAPSHOT_FIELDS: Tuple[str, ...] = (
@@ -101,7 +102,9 @@ def derive_snapshot(
         value = set_fields.get(field)
         if not _is_effective_set_value(field, value):
             continue
-        if field in {"location_keywords", "layout_options"}:
+        if field == "layout_options":
+            setattr(base, field, _normalize_layout_options(value))
+        elif field == "location_keywords":
             setattr(base, field, list(value))
         else:
             setattr(base, field, value)
