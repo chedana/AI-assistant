@@ -1,6 +1,6 @@
 import json
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from skills.search.extractors import _safe_text, _to_float
 
@@ -199,7 +199,11 @@ def format_listing_row_debug(r: Dict[str, Any], i: int) -> str:
     return "\n".join(bits)
 
 
-def format_listing_row_summary(r: Dict[str, Any], i: int) -> str:
+def format_listing_row_summary(
+    r: Dict[str, Any],
+    i: int,
+    original_budget: Optional[int] = None,
+) -> str:
     title = _safe_text(r.get("title")) or "(no title)"
     url = _safe_text(r.get("url"))
     address = _safe_text(r.get("address"))
@@ -218,11 +222,23 @@ def format_listing_row_summary(r: Dict[str, Any], i: int) -> str:
     hit_terms = (pref_hits + transit_hits + school_hits)[:2]
     penalty_reasons = [x.strip() for x in _safe_text(r.get("penalty_reasons")).split(",") if x.strip()]
 
+    # ★ over-budget marker
+    over_budget = (
+        original_budget is not None
+        and price is not None
+        and int(round(price)) > original_budget
+    )
+    star_prefix = "\u2605 " if over_budget else "  "
+
     parts: List[str] = []
-    parts.append(f"{i}. {title}")
+    parts.append(f"{star_prefix}{i}. {title}")
     line2: List[str] = []
     if price is not None:
-        line2.append(f"£{int(round(price))}/pcm")
+        price_str = f"\u00a3{int(round(price))}/pcm"
+        if over_budget:
+            diff = int(round(price)) - original_budget
+            price_str += f" (+\u00a3{diff})"
+        line2.append(price_str)
     if beds is not None:
         line2.append(f"{int(round(beds))} bed")
     if baths is not None:
@@ -249,7 +265,45 @@ def format_listing_row_summary(r: Dict[str, Any], i: int) -> str:
     return "\n".join(parts)
 
 
-def format_listing_row(r: Dict[str, Any], i: int, view_mode: str = "summary") -> str:
+def format_listing_row(
+    r: Dict[str, Any],
+    i: int,
+    view_mode: str = "summary",
+    original_budget: Optional[int] = None,
+) -> str:
     if str(view_mode).strip().lower() == "debug":
         return format_listing_row_debug(r, i)
-    return format_listing_row_summary(r, i)
+    return format_listing_row_summary(r, i, original_budget=original_budget)
+
+
+def format_relax_results_reply(
+    listings: List[Dict[str, Any]],
+    k: int,
+    relax_log: List[str],
+    sensitivity_message: str,
+    original_budget: Optional[int] = None,
+) -> str:
+    """Build a complete reply for post-relax search results.
+
+    Includes the relax header, ★-marked listing rows, and the sensitivity table.
+    """
+    lines: List[str] = []
+
+    # Header: what was widened
+    if relax_log:
+        relax_desc = "; ".join(relax_log)
+        lines.append(f"Found {len(listings)} listing{'s' if len(listings) != 1 else ''} ({relax_desc}):")
+    else:
+        lines.append(f"Found {len(listings)} listing{'s' if len(listings) != 1 else ''}:")
+
+    lines.append("")
+
+    # Listing rows with ★ markup
+    for idx, row in enumerate(listings[:k], start=1):
+        lines.append(format_listing_row_summary(row, idx, original_budget=original_budget))
+
+    # Sensitivity table (always shown so user knows what else they can tweak)
+    if sensitivity_message:
+        lines.append(sensitivity_message)
+
+    return "\n".join(lines)

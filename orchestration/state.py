@@ -107,6 +107,16 @@ class GraphState(TypedDict, total=False):
     qa_semantic_terms: Dict[str, Any]
     qa_signals: Dict[str, Any]
 
+    # ── Evaluate / Relax pipeline (per-turn) ─────────────────────────────────
+    eval_decision: str                      # "done" | "relax" | "ask_user"
+    relax_attempt: int                      # 0 = first run; max 2
+    relax_log: List[str]                    # human-readable relax actions taken
+    relax_bottleneck: Optional[str]         # constraint name that triggered relax
+    relax_override_constraints: Optional[Dict[str, Any]]   # relaxed constraints for next search
+    stage_b_audits: List[Dict[str, Any]]    # full Stage B audit trail
+    stage_a_prefilter_count: int            # 0 = location miss
+    relax_near_miss: List[Dict[str, Any]]   # listings that failed exactly 1 constraint
+
 
 def make_graph_state(user_input: str, *, agent_state: Any, runtime: Any, router_debug: bool = False) -> GraphState:
     return GraphState(
@@ -137,4 +147,13 @@ def make_graph_state(user_input: str, *, agent_state: Any, runtime: Any, router_
         qa_target_constraints={},
         qa_semantic_terms={},
         qa_signals={},
+        # Evaluate / Relax defaults
+        eval_decision="done",
+        relax_attempt=0,
+        relax_log=[],
+        relax_bottleneck=None,
+        relax_override_constraints=None,
+        stage_b_audits=[],
+        stage_a_prefilter_count=-1,
+        relax_near_miss=[],
     )

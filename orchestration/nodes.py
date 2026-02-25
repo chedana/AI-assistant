@@ -164,6 +164,75 @@ def search_node(state: GraphState) -> GraphState:
     prev_focus_source = agent_state.focus_source
     prev_constraints = copy.deepcopy(agent_state.constraints)
 
+    # If relax_node prepared override constraints, use them directly and skip
+    # the normal refinement-plan / cache-check cycle.
+    relax_override = state.get("relax_override_constraints")
+    if relax_override is not None:
+        state["relax_override_constraints"] = None  # consume
+        try:
+            out = run_search_skill(
+                user_text=str(state.get("user_input") or ""),
+                state_constraints=agent_state.constraints,
+                runtime=runtime,
+                override_constraints=relax_override,
+                precomputed_semantic_terms={},
+            )
+        except Exception:
+            _logger.exception("search_node (relax): run_search_skill failed — rolling back state")
+            state["last_search_status"] = "error"
+            agent_state.constraints = prev_constraints
+            agent_state.search_full_results = prev_full_results
+            agent_state.page_index = prev_page_index
+            agent_state.has_more = prev_has_more
+            state["reply_text"] = (
+                "Search failed this turn. I kept your previous results intact. "
+                "Please retry or adjust your query."
+            )
+            return state
+
+        # Write audit data to GraphState regardless of result count.
+        state["stage_b_audits"] = list(out.get("stage_b_audits") or [])
+        state["stage_a_prefilter_count"] = int(out.get("stage_a_prefilter_count") or 0)
+
+        agent_state.constraints = out.get("constraints")
+        agent_state.user_profile.update(out.get("profile_patch") or {})
+        full_results = list(out.get("all_ranked_listings") or out.get("listings") or [])
+        k = int(((out.get("constraints") or {}).get("k") or 5))
+        new_results = list(full_results[:k])
+
+        committed_snapshot = snapshot_from_constraints(agent_state.constraints, results=full_results)
+        new_history, _ = push_history(agent_state.snapshot_history or [], committed_snapshot, max_size=5)
+        agent_state.snapshot_history = new_history
+
+        if new_results:
+            agent_state.search_full_results = full_results
+            agent_state.page_index = 0
+            agent_state.last_results = new_results
+            agent_state.has_more = len(full_results) > len(new_results)
+            _auto_focus_first(agent_state)
+            state["last_search_status"] = "success"
+        else:
+            agent_state.last_results = prev_results
+            agent_state.search_full_results = prev_full_results
+            agent_state.page_index = prev_page_index
+            agent_state.has_more = prev_has_more
+            agent_state.current_focus_listing_id = prev_focus_id
+            agent_state.current_focus_listing_payload = prev_focus_payload
+            agent_state.focus_source = prev_focus_source
+            state["last_search_status"] = "empty"
+        agent_state.last_qa_scope = None
+        # Leave reply_text blank — evaluate_node / finalize_node will fill it.
+        state["reply_text"] = out.get("reply_text") or ""
+        return state
+
+    # ── Normal (non-relax) path ───────────────────────────────────────────────
+    # Reset relax counters at the start of every fresh user-initiated search.
+    state["relax_attempt"] = 0
+    state["relax_log"] = []
+    state["relax_near_miss"] = []
+    state["stage_b_audits"] = []
+    state["stage_a_prefilter_count"] = -1
+
     # Build merge plan from current user turn before running physical search.
     plan = build_refinement_plan(
         user_text=str(state.get("user_input") or ""),
@@ -264,6 +333,10 @@ def search_node(state: GraphState) -> GraphState:
             "Please retry or adjust your query."
         )
         return state
+
+    # Write audit data to GraphState for evaluate_node.
+    state["stage_b_audits"] = list(out.get("stage_b_audits") or [])
+    state["stage_a_prefilter_count"] = int(out.get("stage_a_prefilter_count") or 0)
 
     agent_state.constraints = out.get("constraints")
     agent_state.user_profile.update(out.get("profile_patch") or {})
