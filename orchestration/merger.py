@@ -28,6 +28,7 @@ def empty_snapshot() -> QuerySnapshot:
         let_type=None,
         min_tenancy_months=None,
         min_size_sqm=None,
+        k=None,
         results=[],
     )
 
@@ -47,12 +48,16 @@ def snapshot_from_constraints(
     snap.let_type = c.get("let_type")
     snap.min_tenancy_months = c.get("min_tenancy_months")
     snap.min_size_sqm = c.get("min_size_sqm")
+    # k is a display setting (page size), not a search constraint.
+    # Carry it through so a cache-hit restore doesn't silently reset page size.
+    raw_k = c.get("k")
+    snap.k = int(raw_k) if raw_k is not None else None
     snap.results = list(results or [])
     return snap
 
 
 def snapshot_to_constraints(snapshot: QuerySnapshot) -> Dict[str, Any]:
-    return {
+    out: Dict[str, Any] = {
         "location_keywords": list(snapshot.location_keywords or []),
         "layout_options": list(snapshot.layout_options or []),
         "max_rent_pcm": snapshot.max_rent_pcm,
@@ -62,6 +67,9 @@ def snapshot_to_constraints(snapshot: QuerySnapshot) -> Dict[str, Any]:
         "min_tenancy_months": snapshot.min_tenancy_months,
         "min_size_sqm": snapshot.min_size_sqm,
     }
+    if snapshot.k is not None:
+        out["k"] = snapshot.k
+    return out
 
 
 def _is_effective_set_value(field: str, value: Any) -> bool:
