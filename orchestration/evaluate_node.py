@@ -20,7 +20,10 @@ from orchestration.state import GraphState
 from skills.search.formatter import format_relax_results_reply
 
 # ── Tunables ──────────────────────────────────────────────────────────────────
-MIN_RESULTS = 1   # ≥ 1 result is "sufficient" (user can always ask for more)
+# Relax triggers when strictly-matching results (no unknown_hard penalty) < k * MIN_PAGES.
+# A result with unknown_hard means a required field (e.g. bedrooms) was missing in the
+# listing, so it only passed the hard filter by benefit of the doubt — not a true match.
+MIN_PAGES = 2
 MAX_RELAX_ATTEMPTS = 2
 
 # Constraints that can be relaxed automatically without changing user intent.
@@ -208,6 +211,15 @@ def evaluate_node(state: GraphState) -> GraphState:
     prefilter_count: int = int(state.get("stage_a_prefilter_count") or -1)
     attempt: int = int(state.get("relax_attempt") or 0)
     original_budget: Optional[int] = state.get("original_budget")
+    k: int = int(((agent_state.constraints or {}).get("k") or 5))
+
+    # Listings with unknown_hard in penalty_reasons only passed the hard filter
+    # by benefit of the doubt (the field was null), not a true constraint match.
+    strict_results = [
+        r for r in results
+        if "unknown_hard" not in str(r.get("penalty_reasons") or "")
+    ]
+    min_results = k * MIN_PAGES
 
     # 1. Cache hit with results — always sufficient, no relax-rebuild needed.
     if status == "cache_hit" and results:
@@ -215,7 +227,7 @@ def evaluate_node(state: GraphState) -> GraphState:
         return state
 
     # 2. Results are sufficient — done.
-    if status in ("cache_hit", "success") and len(results) >= MIN_RESULTS:
+    if status in ("cache_hit", "success") and len(strict_results) >= min_results:
         state["eval_decision"] = "done"
         # If we got here via a relax loop, rebuild reply with ★ markup + sensitivity table.
         if attempt > 0:
