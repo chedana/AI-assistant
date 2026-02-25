@@ -1,0 +1,173 @@
+{
+  "suite": "stageD_page_nav_router",
+  "description": "Router classification test cases for the Page_Nav intent and page_action field added in the page down/up commit.",
+  "notes": [
+    "Each case specifies the input context (has_listings, has_focus) and the expected RouteDecision fields.",
+    "page_action must be 'next' or 'prev' when intent=Page_Nav, null otherwise.",
+    "Cases marked with 'negative' verify that non-paging queries do NOT get classified as Page_Nav."
+  ],
+  "cases": [
+    {
+      "id": 1,
+      "group": "next_page_triggers",
+      "query": "show more",
+      "context": { "has_listings": true, "has_focus": false },
+      "expected": {
+        "intent": "Page_Nav",
+        "page_action": "next"
+      }
+    },
+    {
+      "id": 2,
+      "group": "next_page_triggers",
+      "query": "next page",
+      "context": { "has_listings": true, "has_focus": false },
+      "expected": {
+        "intent": "Page_Nav",
+        "page_action": "next"
+      }
+    },
+    {
+      "id": 3,
+      "group": "next_page_triggers",
+      "query": "more results",
+      "context": { "has_listings": true, "has_focus": false },
+      "expected": {
+        "intent": "Page_Nav",
+        "page_action": "next"
+      }
+    },
+    {
+      "id": 4,
+      "group": "next_page_triggers",
+      "query": "show me the next batch",
+      "context": { "has_listings": true, "has_focus": false },
+      "expected": {
+        "intent": "Page_Nav",
+        "page_action": "next"
+      }
+    },
+    {
+      "id": 5,
+      "group": "next_page_triggers",
+      "query": "show me next page",
+      "context": { "has_listings": true, "has_focus": true },
+      "expected": {
+        "intent": "Page_Nav",
+        "page_action": "next"
+      }
+    },
+    {
+      "id": 6,
+      "group": "next_page_triggers_no_listings",
+      "query": "show more",
+      "context": { "has_listings": false, "has_focus": false },
+      "expected": {
+        "intent": "Page_Nav",
+        "page_action": "next"
+      },
+      "note": "Even with no listings yet, the router should classify as Page_Nav; paginate_node handles the no-results case gracefully."
+    },
+    {
+      "id": 7,
+      "group": "prev_page_triggers",
+      "query": "previous page",
+      "context": { "has_listings": true, "has_focus": false },
+      "expected": {
+        "intent": "Page_Nav",
+        "page_action": "prev"
+      }
+    },
+    {
+      "id": 8,
+      "group": "prev_page_triggers",
+      "query": "go back",
+      "context": { "has_listings": true, "has_focus": false },
+      "expected": {
+        "intent": "Page_Nav",
+        "page_action": "prev"
+      }
+    },
+    {
+      "id": 9,
+      "group": "prev_page_triggers",
+      "query": "prev page",
+      "context": { "has_listings": true, "has_focus": false },
+      "expected": {
+        "intent": "Page_Nav",
+        "page_action": "prev"
+      }
+    },
+    {
+      "id": 10,
+      "group": "prev_page_triggers",
+      "query": "go to previous page",
+      "context": { "has_listings": true, "has_focus": false },
+      "expected": {
+        "intent": "Page_Nav",
+        "page_action": "prev"
+      }
+    },
+    {
+      "id": 11,
+      "group": "prev_page_triggers",
+      "query": "last page",
+      "context": { "has_listings": true, "has_focus": false },
+      "expected": {
+        "intent": "Page_Nav",
+        "page_action": "prev"
+      }
+    },
+    {
+      "id": 12,
+      "group": "negative_search",
+      "query": "find 1 bed near Shoreditch under 2000",
+      "context": { "has_listings": false, "has_focus": false },
+      "expected": {
+        "intent": "Search",
+        "page_action": null
+      }
+    },
+    {
+      "id": 13,
+      "group": "negative_search_with_listings",
+      "query": "cheaper options please",
+      "context": { "has_listings": true, "has_focus": false },
+      "expected": {
+        "intent": "Search",
+        "page_action": null
+      }
+    },
+    {
+      "id": 14,
+      "group": "negative_qa",
+      "query": "does it have parking?",
+      "context": { "has_listings": true, "has_focus": true },
+      "expected": {
+        "intent": "Specific_QA",
+        "page_action": null
+      }
+    },
+    {
+      "id": 15,
+      "group": "negative_chitchat",
+      "query": "thanks",
+      "context": { "has_listings": true, "has_focus": false },
+      "expected": {
+        "intent": "Chitchat",
+        "page_action": null
+      }
+    },
+    {
+      "id": 16,
+      "group": "page_action_null_for_non_page_nav",
+      "query": "start over",
+      "context": { "has_listings": true, "has_focus": false },
+      "expected": {
+        "intent": "Search",
+        "page_action": null
+      },
+      "note": "page_action must be null for Search/QA/Chitchat intents — the sanitisation logic enforces this."
+    }
+  ]
+}
