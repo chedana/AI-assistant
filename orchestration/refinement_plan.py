@@ -93,6 +93,20 @@ def _try_build_plan_via_llm(
         "- Avoid generic filler terms when concrete entities exist.\n"
         "- is_reset=true only for explicit reset/start-over/new-search-from-scratch/ignore-previous intent (equivalent to update_scope=replace_all).\n"
         "- Otherwise is_reset=false (equivalent to update_scope=patch).\n"
+        "\n"
+        "Few-shot:\n"
+        "Q: '2 bed in Canary Wharf under 2500'\n"
+        'A: {"set_fields":{"location_keywords":["Canary Wharf"],"max_rent_pcm":2500,'
+        '"layout_options":[{"bedrooms":2,"bathrooms":null,"property_type":null,"layout_tag":null,"max_rent_pcm":null}],'
+        '"available_from":null,"furnish_type":null,"let_type":null,"min_tenancy_months":null,"min_size_sqm":null},'
+        '"clear_fields":[],"is_reset":false,'
+        '"semantic_terms":{"transit_terms":[],"school_terms":[],"general_semantic_phrases":[]}}\n'
+        "\n"
+        "Q: 'start over, I want something different'\n"
+        'A: {"set_fields":{"location_keywords":null,"max_rent_pcm":null,"layout_options":null,'
+        '"available_from":null,"furnish_type":null,"let_type":null,"min_tenancy_months":null,"min_size_sqm":null},'
+        '"clear_fields":[],"is_reset":true,'
+        '"semantic_terms":{"transit_terms":[],"school_terms":[],"general_semantic_phrases":[]}}\n'
     )
     user_payload = "User input:\n" + str(user_text or "")
     try:

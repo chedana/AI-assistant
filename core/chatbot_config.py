@@ -59,25 +59,6 @@ Rules:
 - If no explicit update intent is present, set update_scope="patch", location_update_mode="replace", layout_update_mode="replace".
 """
 
-SEMANTIC_EXTRACT_SYSTEM = """You output STRICT JSON only (no markdown, no explanation).
-Schema:
-{
-  "transit_terms": string[],
-  "school_terms": string[],
-  "general_semantic_phrases": string[]
-}
-Rules:
-- Extract intent-bearing phrases from user request, not single random words.
-- Keep named entities as full phrases (e.g., "Seven Mills Primary School", "Heron Quays Station").
-- Put transport-specific preferences into transit_terms.
-- Put school/education-specific preferences into school_terms.
-- Put remaining soft preferences into general_semantic_phrases.
-- Do NOT copy hard constraints into semantic terms (budget, bedroom count, property type, strict location filters).
-- Do NOT split one entity into many words (bad: "seven", "mills", "primary", "school"; good: "Seven Mills Primary School").
-- Avoid generic filler terms like "school" when a concrete entity/phrase exists.
-- Return [] when not present.
-"""
-
 EXTRACT_ALL_SYSTEM = """You output STRICT JSON only (no markdown, no explanation).
 Schema:
 {
@@ -141,6 +122,7 @@ Constraints:
 - summary_reason:
   - 2-4 sentences, <= 90 words.
   - first sentence must align listing to user_query.
+  - ONLY reference facts present in the provided listing fields (features, description, deposit, monthly_rent). Do NOT invent distances, commute times, transport links, or amenities not explicitly mentioned.
 - highlights:
   - 1-3 items
   - category must be one of:

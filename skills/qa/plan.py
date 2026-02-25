@@ -29,10 +29,7 @@ You are a specialist in parsing Real Estate search queries. Your task is to tran
     "min_tenancy_months": number|null,
     "min_size_sqm": number|null,
     "min_size_sqft": number|null,
-    "location_keywords": string[],
-    "k": int|null,
-    "update_scope": "all"|"specific_index"|null,
-    "location_update_mode": string|null
+    "location_keywords": string[]
   },
   "semantic_terms": {
     "transit_terms": string[],
