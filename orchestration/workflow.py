@@ -1,6 +1,9 @@
 import json
+import logging
 import os
 from typing import Optional
+
+_logger = logging.getLogger(__name__)
 
 from orchestration.graph import build_graph
 from orchestration.state import make_graph_state
@@ -180,6 +183,7 @@ def process_turn(user_in: str, state: AgentState, runtime, router_debug: bool = 
         try:
             _GRAPH_RUNNER = build_graph()
         except Exception:
+            _logger.exception("LangGraph build_graph() failed — falling back to legacy pipeline")
             _GRAPH_RUNNER = False
 
     if not _GRAPH_RUNNER:

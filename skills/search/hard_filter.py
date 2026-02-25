@@ -202,10 +202,10 @@ def apply_hard_filters_with_audit(df: pd.DataFrame, c: Dict[str, Any]) -> Tuple[
             checks["min_tenancy_months"] = {
                 "actual": tenancy_val,
                 "required": float(tenancy_req),
-                "op": "eq",
+                "op": "ge",
             }
-            if tenancy_val is not None and tenancy_val != float(tenancy_req):
-                reasons.append(f"min_tenancy_months {tenancy_val:g} != {float(tenancy_req):g}")
+            if tenancy_val is not None and tenancy_val > float(tenancy_req):
+                reasons.append(f"min_tenancy_months {tenancy_val:g} > {float(tenancy_req):g}")
 
         size_req = c.get("min_size_sqm")
         if size_req is not None:
