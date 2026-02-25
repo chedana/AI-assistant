@@ -116,6 +116,7 @@ class GraphState(TypedDict, total=False):
     stage_b_audits: List[Dict[str, Any]]    # full Stage B audit trail
     stage_a_prefilter_count: int            # 0 = location miss
     relax_near_miss: List[Dict[str, Any]]   # listings that failed exactly 1 constraint
+    original_budget: Optional[int]          # user's original max_rent_pcm before any budget relax
 
 
 def make_graph_state(user_input: str, *, agent_state: Any, runtime: Any, router_debug: bool = False) -> GraphState:
@@ -156,4 +157,5 @@ def make_graph_state(user_input: str, *, agent_state: Any, runtime: Any, router_
         stage_b_audits=[],
         stage_a_prefilter_count=-1,
         relax_near_miss=[],
+        original_budget=None,
     )
