@@ -39,17 +39,20 @@ def relax_node(state: GraphState) -> GraphState:
     relax_log: List[str] = list(state.get("relax_log") or [])
 
     if bottleneck == "budget":
-        factor = 1.15 if attempt == 0 else 1.25
-        original = constraints.get("max_rent_pcm")
-        if original is not None:
-            original_val = float(original)
-            new_val = int(round(original_val * factor))
+        # Always apply the factor against the user's *original* budget so increments
+        # are additive from baseline (15% → 25%), not compounded (15% → 15%×125% = +44%).
+        stored_original = state.get("original_budget")
+        current = constraints.get("max_rent_pcm")
+        if current is not None:
+            base = float(stored_original) if stored_original is not None else float(current)
+            factor = 1.15 if attempt == 0 else 1.25
+            new_val = int(round(base * factor))
             constraints["max_rent_pcm"] = new_val
-            relax_log.append(f"budget widened from £{int(original_val):,} to £{new_val:,}")
+            relax_log.append(f"budget widened from £{int(base):,} to £{new_val:,}")
             # Record original budget for ★ over-budget markup in formatter.
             # Only store on the very first relax so we keep the user's original figure.
-            if state.get("original_budget") is None:
-                state["original_budget"] = int(original_val)
+            if stored_original is None:
+                state["original_budget"] = int(base)
 
     elif bottleneck == "furnish_type":
         old = constraints.get("furnish_type") or "any"

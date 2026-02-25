@@ -232,6 +232,7 @@ def search_node(state: GraphState) -> GraphState:
     state["relax_near_miss"] = []
     state["stage_b_audits"] = []
     state["stage_a_prefilter_count"] = -1
+    state["original_budget"] = None
 
     # Build merge plan from current user turn before running physical search.
     plan = build_refinement_plan(
