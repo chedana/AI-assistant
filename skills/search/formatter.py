@@ -230,8 +230,13 @@ def format_listing_row_summary(
     )
     star_prefix = "\u2605 " if over_budget else "  "
 
+    # ⚠️ marker: bedrooms confirmed but bathrooms field missing in listing data
+    has_unknown_bath = any("unknown_hard(bathrooms" in p for p in penalty_reasons)
+    has_unknown_bed = any("unknown_hard(bedrooms" in p for p in penalty_reasons)
+    warn_suffix = " ⚠️" if has_unknown_bath and not has_unknown_bed else ""
+
     parts: List[str] = []
-    parts.append(f"{star_prefix}{i}. {title}")
+    parts.append(f"{star_prefix}{i}. {title}{warn_suffix}")
     line2: List[str] = []
     if price is not None:
         price_str = f"\u00a3{int(round(price))}/pcm"
