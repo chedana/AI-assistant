@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from orchestration.evaluate_node import evaluate_node
 from orchestration.nodes import (
     chitchat_node,
     direct_reply_node,
@@ -14,6 +15,7 @@ from orchestration.nodes import (
     route_node,
     search_node,
 )
+from orchestration.relax_node import relax_node
 from orchestration.state import GraphState
 
 try:
@@ -31,6 +33,8 @@ def build_graph() -> Any:
     graph = StateGraph(GraphState)
     graph.add_node("route", route_node)
     graph.add_node("search", search_node)
+    graph.add_node("evaluate", evaluate_node)
+    graph.add_node("relax", relax_node)
     graph.add_node("qa_plan", qa_plan_node)
     graph.add_node("qa_execute", qa_execute_node)
     graph.add_node("paginate", paginate_node)
@@ -52,7 +56,18 @@ def build_graph() -> Any:
             "Fallback": "fallback",
         },
     )
-    graph.add_edge("search", "finalize")
+    # search → evaluate → (done|ask_user) → finalize, or relax → search loop
+    graph.add_edge("search", "evaluate")
+    graph.add_conditional_edges(
+        "evaluate",
+        lambda s: s.get("eval_decision") or "done",
+        {
+            "done": "finalize",
+            "ask_user": "finalize",
+            "relax": "relax",
+        },
+    )
+    graph.add_edge("relax", "search")
     graph.add_edge("qa_plan", "qa_execute")
     graph.add_edge("qa_execute", "finalize")
     graph.add_edge("paginate", "finalize")

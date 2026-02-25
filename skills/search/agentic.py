@@ -123,7 +123,10 @@ def run_search_skill(
         recall=int(recall),
         c=merged,
     )
-    filtered, _ = apply_hard_filters_with_audit(stage_a_df, merged)
+    stage_a_prefilter_count: int = int(
+        stage_a_df.attrs.get("prefilter_count") or 0
+    ) if hasattr(stage_a_df, "attrs") else 0
+    filtered, stage_b_audits = apply_hard_filters_with_audit(stage_a_df, merged)
     ranked, _ = rank_stage_c(filtered, signals, embedder=runtime.embedder)
     ranked_full = ranked.reset_index(drop=True) if ranked is not None else ranked
 
@@ -163,4 +166,6 @@ def run_search_skill(
         "listings": listings,
         "all_ranked_listings": all_ranked_listings,
         "structured_audit": structured_audit,
+        "stage_b_audits": stage_b_audits,
+        "stage_a_prefilter_count": stage_a_prefilter_count,
     }
