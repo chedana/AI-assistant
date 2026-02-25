@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Literal
 
 from agent.merger import derive_snapshot, push_history, snapshot_from_constraints, snapshot_to_constraints
