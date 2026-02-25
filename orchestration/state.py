@@ -19,10 +19,20 @@ class QuerySnapshot:
     # Cached search output for this snapshot.
     results: List[Dict[str, Any]] = field(default_factory=list)
 
+    @staticmethod
+    def _norm_num(v: Any) -> Any:
+        """Normalise float-valued integers to int so 2500.0 and 2500 hash identically."""
+        if isinstance(v, float) and v == int(v):
+            return int(v)
+        return v
+
     def to_hash_payload(self) -> Dict[str, Any]:
         loc = [str(x).strip() for x in (self.location_keywords or []) if str(x).strip()]
         loc = sorted(set(loc), key=lambda s: s.lower())
-        layout = list(self.layout_options or [])
+        layout = [
+            {k: self._norm_num(val) for k, val in item.items()}
+            for item in (self.layout_options or [])
+        ]
         layout = sorted(
             layout,
             key=lambda x: json.dumps(x, ensure_ascii=False, sort_keys=True),
@@ -30,12 +40,12 @@ class QuerySnapshot:
         return {
             "location_keywords": loc,
             "layout_options": layout,
-            "max_rent_pcm": self.max_rent_pcm,
+            "max_rent_pcm": self._norm_num(self.max_rent_pcm),
             "available_from": self.available_from,
             "furnish_type": self.furnish_type,
             "let_type": self.let_type,
-            "min_tenancy_months": self.min_tenancy_months,
-            "min_size_sqm": self.min_size_sqm,
+            "min_tenancy_months": self._norm_num(self.min_tenancy_months),
+            "min_size_sqm": self._norm_num(self.min_size_sqm),
         }
 
     def get_hash(self) -> str:
