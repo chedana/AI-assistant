@@ -9,7 +9,8 @@ from core.llm_client import llm_extract, llm_extract_all_signals
 from core.settings import STRUCTURED_POLICY
 from skills.common.types import ParseSignalsOutput
 from skills.search.extractors import repair_extracted_constraints
-from skills.search.handler import apply_structured_policy, split_query_signals
+from skills.search.structured_policy import apply_structured_policy
+from skills.search.signals import split_query_signals
 
 
 def parse_signals(

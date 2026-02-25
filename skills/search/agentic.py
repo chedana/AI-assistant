@@ -21,9 +21,9 @@ from skills.search.extractors import (
     normalize_constraints,
     summarize_constraint_changes,
 )
+from skills.search.hard_filter import apply_hard_filters_with_audit
+from skills.search.signals import build_stage_a_query
 from skills.search.handler import (
-    apply_hard_filters_with_audit,
-    build_stage_a_query,
     format_listing_row,
     rank_stage_c,
 )

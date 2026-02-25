@@ -17,8 +17,8 @@ os.environ.setdefault("ROUTER_BASE_URL", os.environ["QWEN_BASE_URL"])
 os.environ.setdefault("OPENAI_API_KEY", "dummy")
 os.environ.setdefault("ROUTER_API_KEY", os.environ["OPENAI_API_KEY"])
 
-from agent.state import AgentState
-from agent.workflow import process_turn
+from orchestration.state import AgentState
+from orchestration.workflow import process_turn
 from skills.search.agentic import build_search_runtime
 
 

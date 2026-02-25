@@ -4,9 +4,9 @@ import json
 import re
 from typing import Literal
 
-from agent.merger import derive_snapshot, push_history, snapshot_from_constraints, snapshot_to_constraints
-from agent.refinement_plan import build_refinement_plan
-from agent.router import route_turn
+from orchestration.merger import derive_snapshot, push_history, snapshot_from_constraints, snapshot_to_constraints
+from orchestration.refinement_plan import build_refinement_plan
+from orchestration.router import route_turn
 from skills.common.context_provider import get_current_context_houses, get_focus_listing
 from skills.qa.handler import (
     answer_multi_listing_question,
@@ -17,7 +17,7 @@ from skills.qa.handler import (
 from skills.search.agentic import run_search_skill
 from skills.search.handler import format_listing_row
 
-from agent_graph.state import GraphState
+from orchestration.state import GraphState
 
 IntentName = Literal["Search", "Specific_QA", "Chitchat", "DirectReply", "Page_Nav", "Fallback"]
 
