@@ -134,3 +134,4 @@ Vite proxies `/api/*` → `http://127.0.0.1:8000`. Chat sessions persist to loca
 ## Git Conventions
 
 - Do **not** add `Co-Authored-By` trailers to commit messages.
+- Always commit to the **`restructure`** branch (worktree at `.claude/worktrees/gracious-clarke`).
