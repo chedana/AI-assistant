@@ -219,7 +219,9 @@ def evaluate_node(state: GraphState) -> GraphState:
         r for r in results
         if "unknown_hard" not in str(r.get("penalty_reasons") or "")
     ]
-    min_results = k * MIN_PAGES
+    # Relax only when there are zero genuine matches.
+    # "Genuine" = no unknown_hard penalty (all required fields were known and matched).
+    min_relax_threshold = 1
 
     # 1. Cache hit with results — always sufficient, no relax-rebuild needed.
     if status == "cache_hit" and results:
@@ -227,7 +229,7 @@ def evaluate_node(state: GraphState) -> GraphState:
         return state
 
     # 2. Results are sufficient — done.
-    if status in ("cache_hit", "success") and len(strict_results) >= min_results:
+    if status in ("cache_hit", "success") and len(strict_results) >= min_relax_threshold:
         state["eval_decision"] = "done"
         # If we got here via a relax loop, rebuild reply with ★ markup + sensitivity table.
         if attempt > 0:
@@ -238,7 +240,6 @@ def evaluate_node(state: GraphState) -> GraphState:
                 relax_attempt=attempt,
                 original_budget=original_budget,
             )
-            k = int(((agent_state.constraints or {}).get("k") or 5))
             state["reply_text"] = format_relax_results_reply(
                 listings=results,
                 k=k,
@@ -246,6 +247,29 @@ def evaluate_node(state: GraphState) -> GraphState:
                 sensitivity_message=sensitivity_msg,
                 original_budget=original_budget,
             )
+        elif len(strict_results) < k * MIN_PAGES:
+            # Some genuine matches but fewer than ideal — append a soft hint.
+            sensitivity = compute_sensitivity(audits)
+            sensitivity_msg = _build_sensitivity_message(
+                sensitivity,
+                constraints=agent_state.constraints,
+                relax_attempt=attempt,
+                original_budget=original_budget,
+            )
+            near_miss = _find_near_miss(audits)
+            layout_hint = _build_layout_suggestion(near_miss, agent_state.constraints)
+            hint_parts = []
+            if sensitivity_msg:
+                hint_parts.append(sensitivity_msg)
+            if layout_hint:
+                hint_parts.append(layout_hint)
+            if hint_parts:
+                n = len(strict_results)
+                note = (
+                    f"\n\nOnly {n} listing{'s' if n != 1 else ''} fully matched your requirements. "
+                    "To find more:" + "".join(hint_parts)
+                )
+                state["reply_text"] = str(state.get("reply_text") or "") + note
         return state
 
     # 3. Location miss (Stage A found nothing matching the location filter).
