@@ -213,23 +213,26 @@ def evaluate_node(state: GraphState) -> GraphState:
     original_budget: Optional[int] = state.get("original_budget")
     k: int = int(((agent_state.constraints or {}).get("k") or 5))
 
-    # Listings with unknown_hard in penalty_reasons only passed the hard filter
-    # by benefit of the doubt (the field was null), not a true constraint match.
+    # display_results: bedrooms constraint is confirmed (bathrooms may be null/unknown).
+    # A listing with unknown_hard(bathrooms) only is still a valid 2-bed — show it with ⚠️.
+    # A listing with unknown_hard(bedrooms) could be anything (studio, parking) — exclude.
+    display_results = [
+        r for r in results
+        if "unknown_hard(bedrooms" not in str(r.get("penalty_reasons") or "")
+    ]
+    # strict_results: all required fields confirmed — used only for the hint threshold.
     strict_results = [
         r for r in results
         if "unknown_hard" not in str(r.get("penalty_reasons") or "")
     ]
-    # Relax only when there are zero genuine matches.
-    # "Genuine" = no unknown_hard penalty (all required fields were known and matched).
-    min_relax_threshold = 1
 
     # 1. Cache hit with results — always sufficient, no relax-rebuild needed.
     if status == "cache_hit" and results:
         state["eval_decision"] = "done"
         return state
 
-    # 2. Results are sufficient — done.
-    if status in ("cache_hit", "success") and len(strict_results) >= min_relax_threshold:
+    # 2. Results are sufficient — done if at least one result has confirmed bedrooms.
+    if status in ("cache_hit", "success") and len(display_results) >= 1:
         state["eval_decision"] = "done"
         # If we got here via a relax loop, rebuild reply with ★ markup + sensitivity table.
         if attempt > 0:
