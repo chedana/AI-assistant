@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import copy
 import json
+import logging
 import re
 from typing import Literal
+
+_logger = logging.getLogger(__name__)
 
 from orchestration.merger import derive_snapshot, push_history, snapshot_from_constraints, snapshot_to_constraints
 from orchestration.refinement_plan import build_refinement_plan
@@ -158,6 +162,7 @@ def search_node(state: GraphState) -> GraphState:
     prev_focus_id = agent_state.current_focus_listing_id
     prev_focus_payload = agent_state.current_focus_listing_payload
     prev_focus_source = agent_state.focus_source
+    prev_constraints = copy.deepcopy(agent_state.constraints)
 
     # Build merge plan from current user turn before running physical search.
     plan = build_refinement_plan(
@@ -247,7 +252,9 @@ def search_node(state: GraphState) -> GraphState:
             precomputed_semantic_terms=plan.semantic_terms or {},
         )
     except Exception:
+        _logger.exception("search_node: run_search_skill failed — rolling back state")
         state["last_search_status"] = "error"
+        agent_state.constraints = prev_constraints
         agent_state.search_full_results = prev_full_results
         agent_state.page_index = prev_page_index
         agent_state.has_more = prev_has_more

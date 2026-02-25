@@ -25,8 +25,8 @@ from skills.search.extractors import (
     _to_float,
 )
 
-qwen_client = OpenAI(base_url=QWEN_BASE_URL, api_key=QWEN_API_KEY)
-router_client = OpenAI(base_url=ROUTER_BASE_URL, api_key=ROUTER_API_KEY)
+qwen_client = OpenAI(base_url=QWEN_BASE_URL, api_key=QWEN_API_KEY, timeout=90.0)
+router_client = OpenAI(base_url=ROUTER_BASE_URL, api_key=ROUTER_API_KEY, timeout=30.0)
 
 
 def qwen_chat(messages, temperature=0.0) -> str:

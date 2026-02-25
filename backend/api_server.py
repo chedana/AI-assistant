@@ -6,6 +6,7 @@ import os
 from threading import Lock
 from typing import AsyncGenerator, Literal
 
+from cachetools import TTLCache
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -45,7 +46,7 @@ app.add_middleware(
 
 RUNTIME = build_search_runtime()
 ROUTER_DEBUG = str(os.environ.get("ROUTER_DEBUG", "1")).strip().lower() in {"1", "true", "yes", "on"}
-SESSIONS: dict[str, AgentState] = {}
+SESSIONS: TTLCache = TTLCache(maxsize=500, ttl=3600)  # max 500 sessions, 1-hour TTL
 SESSIONS_LOCK = Lock()
 
 
