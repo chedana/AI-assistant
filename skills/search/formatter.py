@@ -230,19 +230,8 @@ def format_listing_row_summary(
     )
     star_prefix = "\u2605 " if over_budget else "  "
 
-    # ⚠️ marker: bedrooms confirmed but bathrooms field missing in listing data.
-    # Parse unknown_hard() fields via regex to avoid false negatives from comma-split:
-    # e.g. "unknown_hard(price,bathrooms;+0.25)" would be split incorrectly by the
-    # penalty_reasons list (which also uses commas as the entry separator).
-    _penalty_raw = _safe_text(r.get("penalty_reasons"))
-    _uh_m = re.search(r"unknown_hard\(([^;)]+)", _penalty_raw)
-    _uh_fields = set(_uh_m.group(1).split(",")) if _uh_m else set()
-    has_unknown_bath = "bathrooms" in _uh_fields
-    has_unknown_bed = "bedrooms" in _uh_fields
-    warn_suffix = " ⚠️" if has_unknown_bath and not has_unknown_bed else ""
-
     parts: List[str] = []
-    parts.append(f"{star_prefix}{i}. {title}{warn_suffix}")
+    parts.append(f"{star_prefix}{i}. {title}")
     line2: List[str] = []
     if price is not None:
         price_str = f"\u00a3{int(round(price))}/pcm"
