@@ -8,6 +8,9 @@ from typing import Literal
 
 _logger = logging.getLogger(__name__)
 
+from core.chatbot_config import GENERAL_SYSTEM
+from core.llm_client import qwen_chat
+from orchestration.domain_router import domain_route_turn
 from orchestration.merger import derive_snapshot, push_history, snapshot_from_constraints, snapshot_to_constraints
 from orchestration.refinement_plan import build_refinement_plan
 from orchestration.router import route_turn
@@ -575,6 +578,74 @@ def qa_execute_node(state: GraphState) -> GraphState:
 def qa_node(state: GraphState) -> GraphState:
     # Backward-compatible composite entrypoint.
     return qa_execute_node(qa_plan_node(state))
+
+
+def domain_router_node(state: GraphState) -> GraphState:
+    agent_state = state["agent_state"]
+    text = str(state.get("user_input") or "").strip()
+    decision = domain_route_turn(
+        user_text=text,
+        history_hint=_make_history_hint(agent_state),
+        has_listings=bool(agent_state.last_results),
+    )
+    state["domain"] = decision.domain
+    if state.get("router_debug"):
+        _debug_print(True, {"phase": "domain_router", "domain": decision.domain, "reason": decision.reason})
+    return state
+
+
+def domain_branch(state: GraphState) -> str:
+    return str(state.get("domain") or "Rental")
+
+
+def _build_search_context_summary(agent_state) -> str:
+    """One-line summary of active constraints for general_node context."""
+    c = agent_state.constraints or {}
+    parts = []
+    locs = c.get("location_keywords") or []
+    if locs:
+        parts.append(", ".join(str(l) for l in locs[:3]))
+    for opt in (c.get("layout_options") or [])[:1]:
+        if isinstance(opt, dict):
+            beds = opt.get("bedrooms")
+            if beds is not None:
+                parts.append(f"{int(beds)}-bed")
+    budget = c.get("max_rent_pcm")
+    if budget is not None:
+        parts.append(f"under £{int(budget)}/mo")
+    if not parts:
+        return ""
+    return "Currently searching: " + " | ".join(parts)
+
+
+def general_node(state: GraphState) -> GraphState:
+    agent_state = state["agent_state"]
+    text = str(state.get("user_input") or "").strip()
+
+    context_parts = []
+    history_hint = _make_history_hint(agent_state)
+    if history_hint:
+        context_parts.append(f"Conversation so far:\n{history_hint}")
+    search_summary = _build_search_context_summary(agent_state)
+    if search_summary:
+        context_parts.append(search_summary)
+    context = "\n".join(context_parts)
+
+    user_payload = f"{context}\n\nUser: {text}".strip() if context else text
+
+    try:
+        reply = qwen_chat(
+            [
+                {"role": "system", "content": GENERAL_SYSTEM},
+                {"role": "user", "content": user_payload},
+            ],
+            temperature=0.7,
+        )
+    except Exception:
+        reply = "Sorry, I'm having trouble responding right now. How can I help you with your rental search?"
+
+    state["reply_text"] = reply.strip()
+    return state
 
 
 def chitchat_node(state: GraphState) -> GraphState:
