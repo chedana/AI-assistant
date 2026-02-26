@@ -101,7 +101,7 @@ def build_metadata(state: AgentState) -> dict | None:
                 "bathrooms": _num(r.get("bathrooms")),
                 "available_from": str(r.get("available_from", "")),
                 "final_score": _num(r.get("final_score")),
-                "penalty_reasons": _to_list(r.get("penalty_reasons")),
+                "penalty_reasons": [p for p in _to_list(r.get("penalty_reasons")) if not p.startswith("unknown_hard(")],
                 "preference_hits": _to_list(r.get("preference_hits")),
             })
         meta["search_results"] = {
