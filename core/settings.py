@@ -64,9 +64,10 @@ SEMANTIC_FIELD_WEIGHTS = {
 INTENT_HIT_THRESHOLD = 0.45
 INTENT_EVIDENCE_TOP_N = 2
 
-# Stage C P0: deposit/freshness soft-scoring controls.
+# Stage C P0: deposit/freshness/budget-headroom soft-scoring controls.
 W_DEPOSIT = float(os.environ.get("RENT_W_DEPOSIT", "0.05"))
 W_FRESHNESS = float(os.environ.get("RENT_W_FRESHNESS", "0.06"))
+W_BUDGET_HEADROOM = float(os.environ.get("RENT_W_BUDGET_HEADROOM", "0.10"))
 DEPOSIT_MISSING_POLICY = os.environ.get("RENT_DEPOSIT_MISSING_POLICY", "light_penalty").strip().lower()
 if DEPOSIT_MISSING_POLICY not in {"neutral", "light_penalty"}:
     DEPOSIT_MISSING_POLICY = "light_penalty"

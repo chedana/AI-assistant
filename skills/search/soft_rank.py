@@ -26,6 +26,7 @@ from core.settings import (
     SEMANTIC_TOP_K,
     UNKNOWN_PENALTY_CAP,
     UNKNOWN_PENALTY_WEIGHTS,
+    W_BUDGET_HEADROOM,
     W_DEPOSIT,
     W_FRESHNESS,
 )
@@ -59,6 +60,7 @@ def compute_stagec_weights(signals: Dict[str, Any]) -> Dict[str, float]:
         "penalty": penalty,
         "deposit": float(W_DEPOSIT),
         "freshness": float(W_FRESHNESS),
+        "budget_headroom": float(W_BUDGET_HEADROOM),
     }
 
 
@@ -122,6 +124,25 @@ def _score_freshness(raw_added_date: Any) -> Tuple[float, str]:
     half_life = max(1.0, float(FRESHNESS_HALF_LIFE_DAYS))
     score = math.exp(-math.log(2.0) * (float(age_days) / half_life))
     return float(score), f"age_days={age_days};half_life={half_life:.1f};score={score:.4f}"
+
+
+# ---------------------------------------------------------------------------
+# Budget headroom scoring
+# ---------------------------------------------------------------------------
+
+def _score_budget_headroom(price_pcm: Any, max_rent_pcm: Any) -> Tuple[float, str]:
+    """Reward listings that are under budget — (budget - price) / budget.
+
+    Returns 0.0 when budget or price is unknown; score ∈ [0, 1].
+    A listing at 85% of budget scores 0.15; one at 99% scores 0.01.
+    Stage B already filters out listings over budget, so scores are always ≥ 0.
+    """
+    price = _to_float(price_pcm)
+    budget = _to_float(max_rent_pcm)
+    if price is None or budget is None or budget <= 0:
+        return 0.0, "missing->no_signal(0.0)"
+    headroom = max(0.0, (budget - price) / budget)
+    return float(headroom), f"price={price:.0f};budget={budget:.0f};headroom={headroom:.4f}"
 
 
 # ---------------------------------------------------------------------------
@@ -357,6 +378,7 @@ def rank_stage_c(
     out["preference_score"] = 0.0
     out["deposit_score"] = 0.0
     out["freshness_score"] = 0.0
+    out["budget_headroom_score"] = 0.0
     out["penalty_score"] = 0.0
     out["location_hit_count"] = 0
     out["transit_hits"] = ""
@@ -369,6 +391,7 @@ def rank_stage_c(
     out["preference_detail"] = ""
     out["deposit_detail"] = ""
     out["freshness_detail"] = ""
+    out["budget_headroom_detail"] = ""
     out["penalty_detail"] = ""
     out["transit_evidence"] = ""
     out["school_evidence"] = ""
@@ -425,6 +448,9 @@ def rank_stage_c(
                 pref_source = "sidecar_missing_no_fallback"
         deposit_score, deposit_detail = _score_deposit(r.get("deposit"))
         freshness_score, freshness_detail = _score_freshness(r.get("added_date"))
+        budget_headroom_score, budget_headroom_detail = _score_budget_headroom(
+            r.get("price_pcm"), hard.get("max_rent_pcm")
+        )
         loc_hits = sum(1 for loc in location_terms if loc and loc in loc_text)
 
         penalties = []
@@ -529,8 +555,10 @@ def rank_stage_c(
             + f"source={pref_source}; "
             + pref_group_detail
         )
+        out.at[idx, "budget_headroom_score"] = float(budget_headroom_score)
         out.at[idx, "deposit_detail"] = str(deposit_detail)
         out.at[idx, "freshness_detail"] = str(freshness_detail)
+        out.at[idx, "budget_headroom_detail"] = str(budget_headroom_detail)
         out.at[idx, "penalty_detail"] = (
             f"sum(active_penalties)={penalty_score:.4f}; "
             f"triggers=[{', '.join(penalties)}]"
@@ -545,15 +573,17 @@ def rank_stage_c(
         + weights["preference"] * out["preference_score"]
         + weights["deposit"] * out["deposit_score"]
         + weights["freshness"] * out["freshness_score"]
+        + weights["budget_headroom"] * out["budget_headroom_score"]
         - weights["penalty"] * out["penalty_score"]
     )
     out["score_formula"] = (
         f"final = {weights['transit']:.3f}*transit + "
         f"{weights['school']:.3f}*school + "
-        f"{weights['preference']:.3f}*preference - "
-        f"{weights['penalty']:.3f}*penalty + "
+        f"{weights['preference']:.3f}*preference + "
         f"{weights['deposit']:.3f}*deposit + "
-        f"{weights['freshness']:.3f}*freshness"
+        f"{weights['freshness']:.3f}*freshness + "
+        f"{weights['budget_headroom']:.3f}*budget_headroom - "
+        f"{weights['penalty']:.3f}*penalty"
     )
     out["w_transit"] = weights["transit"]
     out["w_school"] = weights["school"]
@@ -561,6 +591,7 @@ def rank_stage_c(
     out["w_penalty"] = weights["penalty"]
     out["w_deposit"] = weights["deposit"]
     out["w_freshness"] = weights["freshness"]
+    out["w_budget_headroom"] = weights["budget_headroom"]
 
     out = out.sort_values(
         ["final_score", "location_hit_count", "qdrant_score"],
