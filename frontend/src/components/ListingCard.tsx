@@ -30,9 +30,14 @@ export default function ListingCard({ listing }: Props) {
         </span>
       </div>
 
-      <p className="mt-1 text-xs text-muted">
-        {listing.bedrooms} bed &middot; {listing.bathrooms} bath
-      </p>
+      {(listing.bedrooms > 0 || listing.bathrooms > 0) && (
+        <p className="mt-1 text-xs text-muted">
+          {[
+            listing.bedrooms > 0 && `${listing.bedrooms} bed`,
+            listing.bathrooms > 0 && `${listing.bathrooms} bath`,
+          ].filter(Boolean).join(" · ")}
+        </p>
+      )}
 
       {listing.address && (
         <p className="mt-1 text-xs text-muted">{listing.address}</p>
