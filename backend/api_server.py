@@ -58,12 +58,22 @@ MAX_USER_INPUT = 2000
 def _to_list(val: object) -> list[str]:
     """Normalise a field that may be str, list, or None into list[str]."""
     if isinstance(val, list):
-        return val
+        return [str(x) for x in val]
     if isinstance(val, str) and val.strip():
-        # Backend stores these as semicolon- or " and "-joined strings
         parts = [p.strip() for p in val.replace(" and ", ";").split(";") if p.strip()]
         return parts
     return []
+
+
+def _num(val: object, default: float = 0) -> float | int:
+    """Coerce any numeric type (including numpy) to a plain Python number."""
+    if val is None:
+        return default
+    try:
+        f = float(val)
+        return int(f) if f == int(f) else round(f, 4)
+    except (TypeError, ValueError):
+        return default
 
 
 def build_metadata(state: AgentState) -> dict | None:
@@ -75,14 +85,14 @@ def build_metadata(state: AgentState) -> dict | None:
         listings = []
         for r in state.last_results:
             listings.append({
-                "title": r.get("title", ""),
-                "url": r.get("url", ""),
-                "address": r.get("address", ""),
-                "price_pcm": r.get("price_pcm", 0),
-                "bedrooms": r.get("bedrooms", 0),
-                "bathrooms": r.get("bathrooms", 0),
-                "available_from": r.get("available_from", ""),
-                "final_score": r.get("final_score", 0),
+                "title": str(r.get("title", "")),
+                "url": str(r.get("url", "")),
+                "address": str(r.get("address", "")),
+                "price_pcm": _num(r.get("price_pcm")),
+                "bedrooms": _num(r.get("bedrooms")),
+                "bathrooms": _num(r.get("bathrooms")),
+                "available_from": str(r.get("available_from", "")),
+                "final_score": _num(r.get("final_score")),
                 "penalty_reasons": _to_list(r.get("penalty_reasons")),
                 "preference_hits": _to_list(r.get("preference_hits")),
             })
@@ -108,7 +118,7 @@ def build_metadata(state: AgentState) -> dict | None:
                 for lo in val:
                     b = lo.get("bedrooms")
                     if b is not None:
-                        beds.add(b)
+                        beds.add(int(b))
                 if beds:
                     display["bedrooms"] = sorted(beds)
             elif key in ("furnish_type", "let_type", "available_from", "min_tenancy_months"):
@@ -206,7 +216,12 @@ async def chat_stream(req: ChatStreamRequest, request: Request) -> StreamingResp
 
             metadata = build_metadata(state)
             if metadata:
+                print(f"[SSE] sending metadata: {len(metadata.get('search_results', {}).get('listings', []))} listings, "
+                      f"constraints={bool(metadata.get('constraints'))}, "
+                      f"quick_replies={len(metadata.get('quick_replies', []))}")
                 yield sse_event("metadata", metadata)
+            else:
+                print("[SSE] no metadata to send (last_results empty?)")
             yield sse_event("done", {"ok": True})
         except Exception as exc:  # noqa: BLE001
             yield sse_event("error", {"message": str(exc)})
