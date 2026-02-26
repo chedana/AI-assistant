@@ -72,6 +72,10 @@ class AgentState:
     has_more: bool = False
     snapshot_history: List[QuerySnapshot] = field(default_factory=list)
     original_budget: Optional[int] = None  # user's stated max_rent_pcm before any auto-relax
+    pending_suggestion: Optional[Dict[str, Any]] = None  # top ask_user suggestion awaiting confirmation
+    # Structure: {"field": str, "new_value": Any, "display": str}
+    # field maps: "budget"→max_rent_pcm, "furnish_type", "let_type",
+    #             "available_from", "min_size_sqm", "min_tenancy"→min_tenancy_months
 
 
 class GraphState(TypedDict, total=False):

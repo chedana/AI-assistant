@@ -18,7 +18,7 @@ class RouteDecision:
     page_action: Optional[str] = None
 
 
-_INTENTS = {"Search", "Specific_QA", "Chitchat", "Page_Nav"}
+_INTENTS = {"Search", "Specific_QA", "Chitchat", "Page_Nav", "AcceptSuggestion"}
 
 
 def _extract_first_json_obj(raw_text: str) -> Optional[Dict[str, Any]]:
@@ -142,12 +142,31 @@ def _classify_with_llm_for_listings(
     text: str,
     history_hint: Optional[str],
     has_focus: bool,
+    pending_suggestion_display: Optional[str] = None,
 ) -> Optional[RouteDecision]:
+    suggestion_policy = ""
+    suggestion_few_shot = ""
+    if pending_suggestion_display:
+        suggestion_policy = (
+            f"- The assistant previously suggested: \"{pending_suggestion_display}\".\n"
+            "- If the user is affirming that suggestion (e.g. 'yes', 'ok', 'do it', 'sure', 'go ahead',\n"
+            "  'yes please', 'sounds good', 'raise it'), set intent=AcceptSuggestion.\n"
+            "- Only use AcceptSuggestion when a pending suggestion exists AND the user is clearly accepting it.\n"
+        )
+        suggestion_few_shot = (
+            f"[Pending: \"{pending_suggestion_display}\"]\n"
+            "Query: 'yes do that'\n"
+            '{"intent":"AcceptSuggestion","target_index":null,"confidence":0.97,"reason":"accepting_suggestion","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+            f"[Pending: \"{pending_suggestion_display}\"]\n"
+            "Query: 'ok'\n"
+            '{"intent":"AcceptSuggestion","target_index":null,"confidence":0.93,"reason":"accepting_suggestion","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        )
+
     prompt = (
         "You are a router for a rental assistant.\n"
         f"Current state: has_listings=true, has_focus={'true' if has_focus else 'false'}.\n"
         "Return STRICT JSON only with schema:\n"
-        '{"intent":"Search|Specific_QA|Chitchat|Page_Nav","target_index":null,"confidence":0.0,"reason":"...",'
+        '{"intent":"Search|Specific_QA|Chitchat|Page_Nav|AcceptSuggestion","target_index":null,"confidence":0.0,"reason":"...",'
         '"need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Interpretation policy:\n"
         "- Search includes both new-search and refinement/reset actions.\n"
@@ -160,22 +179,24 @@ def _classify_with_llm_for_listings(
         "- If has_focus=false and QA target is ambiguous, set need_clarify=true.\n"
         "- If refinement request is underspecified (e.g., 'too expensive' without a target budget), set need_clarify=true.\n"
         "- For clear price reduction requests, set intent=Search and refinement_type='price_down'.\n"
+        + suggestion_policy +
         "\n"
         "Few-shot:\n"
+        + suggestion_few_shot +
         "Query: 'too expensive, cheaper please'\n"
-        'Output: {"intent":"Search","target_index":null,"confidence":0.97,"reason":"refinement_request","need_clarify":false,"clarify_question":null,"refinement_type":"price_down","page_action":null}\n'
+        '{"intent":"Search","target_index":null,"confidence":0.97,"reason":"refinement_request","need_clarify":false,"clarify_question":null,"refinement_type":"price_down","page_action":null}\n'
         "Query: 'does it have a gym?'\n"
-        'Output: {"intent":"Specific_QA","target_index":null,"confidence":0.90,"reason":"detail_question_about_listing","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        '{"intent":"Specific_QA","target_index":null,"confidence":0.90,"reason":"detail_question_about_listing","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Query: 'second one?'\n"
-        'Output: {"intent":"Specific_QA","target_index":2,"confidence":0.96,"reason":"explicit_result_reference","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        '{"intent":"Specific_QA","target_index":2,"confidence":0.96,"reason":"explicit_result_reference","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Query: 'start over'\n"
-        'Output: {"intent":"Search","target_index":null,"confidence":0.98,"reason":"reset_search","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        '{"intent":"Search","target_index":null,"confidence":0.98,"reason":"reset_search","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Query: 'thanks'\n"
-        'Output: {"intent":"Chitchat","target_index":null,"confidence":0.95,"reason":"small_talk","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        '{"intent":"Chitchat","target_index":null,"confidence":0.95,"reason":"small_talk","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Query: 'show me next page'\n"
-        'Output: {"intent":"Page_Nav","target_index":null,"confidence":0.96,"reason":"next_page_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":"next"}\n'
+        '{"intent":"Page_Nav","target_index":null,"confidence":0.96,"reason":"next_page_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":"next"}\n'
         "Query: 'go to previous page'\n"
-        'Output: {"intent":"Page_Nav","target_index":null,"confidence":0.96,"reason":"prev_page_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":"prev"}'
+        '{"intent":"Page_Nav","target_index":null,"confidence":0.96,"reason":"prev_page_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":"prev"}'
     )
     user_payload = f"Conversation summary:\n{history_hint or '(none)'}\n\nUser input:\n{text}"
     try:
@@ -255,6 +276,7 @@ def route_turn(
     has_listings: bool = False,
     has_focus: bool = False,
     listings_count: int = 0,
+    pending_suggestion_display: Optional[str] = None,
 ) -> RouteDecision:
     _ = mode
     text = (user_text or "").strip()
@@ -276,7 +298,12 @@ def route_turn(
         return RouteDecision(intent="Search", reason="fallback:no_listings_default_search", confidence=0.25)
 
     # has_listings=True: LLM intent routing only.
-    llm_decision = _classify_with_llm_for_listings(text, history_hint=history_hint, has_focus=has_focus)
+    llm_decision = _classify_with_llm_for_listings(
+        text,
+        history_hint=history_hint,
+        has_focus=has_focus,
+        pending_suggestion_display=pending_suggestion_display,
+    )
     if llm_decision is not None:
         return llm_decision
 
