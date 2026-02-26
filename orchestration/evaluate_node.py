@@ -65,29 +65,11 @@ def _parse_constraint_name(reason: str) -> str:
 
 # ── Internal relax-decision helpers (single-miss based) ─────────────────────
 
-def _compute_single_miss(audits: List[Dict[str, Any]]) -> Dict[str, int]:
-    """Count listings that failed *only* one constraint (for relax-target selection)."""
-    counts: Counter = Counter()
-    for audit in audits:
-        if audit.get("hard_pass"):
-            continue
-        reasons = audit.get("hard_fail_reasons") or []
-        if len(reasons) == 1:
-            counts[_parse_constraint_name(reasons[0])] += 1
-    return dict(counts)
-
 
 def _find_near_miss(audits: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Return audit records for listings that failed exactly one hard constraint."""
     return [a for a in audits if not a.get("hard_pass") and len(a.get("hard_fail_reasons") or []) == 1]
 
-
-def _find_auto_relax_target(sensitivity: Dict[str, int]) -> Optional[str]:
-    """Return the highest-impact auto-relax-safe constraint, or None."""
-    for constraint, count in sorted(sensitivity.items(), key=lambda x: -x[1]):
-        if constraint in AUTO_RELAX_SAFE and count > 0:
-            return constraint
-    return None
 
 
 # ── Confirmed sensitivity (user-facing) ─────────────────────────────────────
@@ -373,34 +355,39 @@ def evaluate_node(state: GraphState) -> GraphState:
         )
         return state
 
-    # 5. Diagnose the bottleneck from the audit trail.
-    single_miss = _compute_single_miss(audits)
-    bottleneck = _find_auto_relax_target(single_miss)
+    # 5. Diagnose the bottleneck using confirmed sensitivity.
+    #    Old approach (_compute_single_miss) was broken: layout_options bundled price
+    #    failures into a single "layout" reason, so budget never appeared as bottleneck.
+    confirmed = compute_confirmed_sensitivity(audits, agent_state.constraints or {})
+    budget_gain = (confirmed.get("budget") or {}).get("gain", 0)
+    other_counts = confirmed.get("other", {})
 
-    if bottleneck is None:
-        # Primary bottleneck is layout/location (not auto-relax-safe).
-        # Fallback: if a budget constraint is set, try raising it.
-        has_budget = (agent_state.constraints or {}).get("max_rent_pcm") is not None
-        if has_budget and attempt < MAX_RELAX_ATTEMPTS:
-            state["eval_decision"] = "relax"
-            state["relax_bottleneck"] = "budget"
-            state["relax_near_miss"] = _find_near_miss(audits)
-            return state
+    # Find best AUTO_RELAX_SAFE target from confirmed data.
+    # Budget uses confirmed gain; other minor constraints use single-miss (still valid).
+    best_target: Optional[str] = None
+    best_count = 0
+    if budget_gain > 0:
+        best_target = "budget"
+        best_count = budget_gain
+    for name, count in sorted(other_counts.items(), key=lambda x: -x[1]):
+        if name in AUTO_RELAX_SAFE and count > best_count:
+            best_target = name
+            best_count = count
 
-        # Truly stuck — layout / location / unknown, budget already tried or not set.
-        near_miss = _find_near_miss(audits)
-        confirmed = compute_confirmed_sensitivity(audits, agent_state.constraints or {})
-        state["eval_decision"] = "ask_user"
-        state["relax_near_miss"] = near_miss
-        sensitivity_msg = _build_sensitivity_message(confirmed, agent_state.constraints)
-        state["reply_text"] = (
-            "I couldn't find listings matching all your requirements."
-            + sensitivity_msg
-        )
+    if best_target is not None:
+        # 6. Auto-relax: found an actionable bottleneck.
+        state["eval_decision"] = "relax"
+        state["relax_bottleneck"] = best_target
+        state["relax_near_miss"] = _find_near_miss(audits)
         return state
 
-    # 6. Auto-relax: found a safe bottleneck.
-    state["eval_decision"] = "relax"
-    state["relax_bottleneck"] = bottleneck
-    state["relax_near_miss"] = _find_near_miss(audits)
+    # No auto-relax-safe bottleneck found (layout/location only, or nothing).
+    near_miss = _find_near_miss(audits)
+    sensitivity_msg = _build_sensitivity_message(confirmed, agent_state.constraints)
+    state["eval_decision"] = "ask_user"
+    state["relax_near_miss"] = near_miss
+    state["reply_text"] = (
+        "I couldn't find listings matching all your requirements."
+        + sensitivity_msg
+    )
     return state
