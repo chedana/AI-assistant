@@ -250,29 +250,38 @@ def evaluate_node(state: GraphState) -> GraphState:
                 sensitivity_message=sensitivity_msg,
                 original_budget=original_budget,
             )
-        elif len(strict_results) < k * MIN_PAGES:
-            # Some genuine matches but fewer than ideal — append a soft hint.
-            sensitivity = compute_sensitivity(audits)
-            sensitivity_msg = _build_sensitivity_message(
-                sensitivity,
-                constraints=agent_state.constraints,
-                relax_attempt=attempt,
-                original_budget=original_budget,
-            )
-            near_miss = _find_near_miss(audits)
-            layout_hint = _build_layout_suggestion(near_miss, agent_state.constraints)
-            hint_parts = []
-            if sensitivity_msg:
-                hint_parts.append(sensitivity_msg)
-            if layout_hint:
-                hint_parts.append(layout_hint)
-            if hint_parts:
-                n = len(strict_results)
-                note = (
-                    f"\n\nOnly {n} listing{'s' if n != 1 else ''} fully matched your requirements. "
-                    "To find more:" + "".join(hint_parts)
+        else:
+            # Use the full result set (all pages) for the hint threshold so we don't
+            # falsely say "Only N matched" when there are more qualifying listings on
+            # later pages.
+            full_results = list(getattr(agent_state, "search_full_results", None) or [])
+            all_for_hint = full_results if full_results else results
+            n_strict_total = len([
+                r for r in all_for_hint
+                if "unknown_hard" not in str(r.get("penalty_reasons") or "")
+            ])
+            if n_strict_total < k * MIN_PAGES:
+                # Genuinely few strict matches across all pages — append a soft hint.
+                sensitivity = compute_sensitivity(audits)
+                sensitivity_msg = _build_sensitivity_message(
+                    sensitivity,
+                    constraints=agent_state.constraints,
+                    relax_attempt=attempt,
+                    original_budget=original_budget,
                 )
-                state["reply_text"] = str(state.get("reply_text") or "") + note
+                near_miss = _find_near_miss(audits)
+                layout_hint = _build_layout_suggestion(near_miss, agent_state.constraints)
+                hint_parts = []
+                if sensitivity_msg:
+                    hint_parts.append(sensitivity_msg)
+                if layout_hint:
+                    hint_parts.append(layout_hint)
+                if hint_parts:
+                    note = (
+                        f"\n\nOnly {n_strict_total} listing{'s' if n_strict_total != 1 else ''} fully matched your requirements. "
+                        "To find more:" + "".join(hint_parts)
+                    )
+                    state["reply_text"] = str(state.get("reply_text") or "") + note
         return state
 
     # 3. Location miss (Stage A found nothing matching the location filter).
