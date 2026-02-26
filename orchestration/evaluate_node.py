@@ -265,16 +265,20 @@ def evaluate_node(state: GraphState) -> GraphState:
     original_budget: Optional[int] = state.get("original_budget")
     k: int = int(((agent_state.constraints or {}).get("k") or 5))
 
+    # Use full result set (all pages) for threshold decisions, not just current page.
+    full_results = list(getattr(agent_state, "search_full_results", None) or [])
+    all_results = full_results if full_results else results
+
     # display_results: bedrooms constraint is confirmed (bathrooms may be null/unknown).
     # A listing with unknown_hard(bathrooms) only is still a valid 2-bed — show it with ⚠️.
     # A listing with unknown_hard(bedrooms) could be anything (studio, parking) — exclude.
     display_results = [
-        r for r in results
+        r for r in all_results
         if "unknown_hard(bedrooms" not in str(r.get("penalty_reasons") or "")
     ]
-    # strict_results: all required fields confirmed — used for the sparse-results threshold.
+    # strict_results: all required fields confirmed.
     strict_results = [
-        r for r in results
+        r for r in all_results
         if "unknown_hard" not in str(r.get("penalty_reasons") or "")
     ]
 
@@ -300,16 +304,8 @@ def evaluate_node(state: GraphState) -> GraphState:
         state["eval_decision"] = "done"
 
         # Debug: show match counts so thresholds can be verified.
-        full_results = list(getattr(agent_state, "search_full_results", None) or [])
-        all_for_counts = full_results if full_results else results
-        n_display_total = len([
-            r for r in all_for_counts
-            if "unknown_hard(bedrooms" not in str(r.get("penalty_reasons") or "")
-        ])
-        n_strict_total = len([
-            r for r in all_for_counts
-            if "unknown_hard" not in str(r.get("penalty_reasons") or "")
-        ])
+        n_display_total = len(display_results)
+        n_strict_total = len(strict_results)
         count_line = f"\n\n[debug] display={n_display_total} strict={n_strict_total} k={k} threshold={k * MIN_PAGES} attempt={attempt}"
 
         # If we got here via a relax loop, rebuild reply with ★ markup + sensitivity table.
@@ -325,7 +321,7 @@ def evaluate_node(state: GraphState) -> GraphState:
             ) + count_line
         else:
             # attempt == 0, display >= threshold or no budget: show results with optional hint.
-            if n_strict_total < k * MIN_PAGES:
+            if len(strict_results) < k * MIN_PAGES:
                 confirmed = compute_confirmed_sensitivity(audits, agent_state.constraints or {})
                 sensitivity_msg = _build_sensitivity_message(confirmed, agent_state.constraints)
                 if sensitivity_msg:
