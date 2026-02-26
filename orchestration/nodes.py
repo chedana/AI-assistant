@@ -709,6 +709,45 @@ def direct_reply_node(state: GraphState) -> GraphState:
     return state
 
 
+def _build_explain_query(user_in: str, constraints: dict, signals: dict) -> str:
+    """Reframe the user question with structured context for Stage D.
+
+    Combines hard constraints + soft preferences into a concise framing
+    so the LLM knows what to evaluate against, not just "which is best?".
+    """
+    parts = []
+
+    # Hard requirements
+    req = []
+    locs = constraints.get("location_keywords") or []
+    if locs:
+        req.append(", ".join(str(l) for l in locs[:3]))
+    for opt in (constraints.get("layout_options") or [])[:1]:
+        if isinstance(opt, dict):
+            beds = opt.get("bedrooms")
+            if beds is not None:
+                req.append(f"{int(beds)}-bed")
+    budget = constraints.get("max_rent_pcm")
+    if budget is not None:
+        req.append(f"budget £{int(budget)}/mo")
+    if req:
+        parts.append("Looking for: " + ", ".join(req))
+
+    # Soft preferences
+    prefs = []
+    topic = (signals.get("topic_preferences") or {})
+    prefs.extend(topic.get("transit_terms") or [])
+    prefs.extend(topic.get("school_terms") or [])
+    prefs.extend(signals.get("general_semantic") or [])
+    if prefs:
+        parts.append("Preferences: " + ", ".join(prefs[:6]))
+
+    if not parts:
+        return user_in
+
+    return "\n".join(parts) + f"\n\nQuestion: {user_in}"
+
+
 def explain_node(state: GraphState) -> GraphState:
     """P2-C: Stage D grounded explanation on evaluation/comparison intent."""
     agent_state = state["agent_state"]
@@ -728,8 +767,10 @@ def explain_node(state: GraphState) -> GraphState:
         constraints = dict(agent_state.constraints or {})
         signals = dict(agent_state.user_profile or {})
 
+        user_query = _build_explain_query(user_in, constraints, signals)
+
         grounded_out, _, _ = llm_grounded_explain(
-            user_query=user_in,
+            user_query=user_query,
             c=constraints,
             signals=signals,
             df=df,

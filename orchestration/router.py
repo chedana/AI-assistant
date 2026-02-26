@@ -162,6 +162,12 @@ def _classify_with_llm_for_listings(
             f"[Pending: \"{pending_suggestion_display}\"]\n"
             "Query: 'ok'\n"
             '{"intent":"AcceptSuggestion","target_index":null,"confidence":0.93,"reason":"accepting_suggestion","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+            f"[Pending: \"{pending_suggestion_display}\"]\n"
+            "Query: 'no thanks, show me cheaper areas instead'\n"
+            '{"intent":"Search","target_index":null,"confidence":0.95,"reason":"rejecting_suggestion_new_search","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+            f"[Pending: \"{pending_suggestion_display}\"]\n"
+            "Query: 'not really, maybe try a different location'\n"
+            '{"intent":"Search","target_index":null,"confidence":0.92,"reason":"rejecting_suggestion_redirect","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         )
 
     prompt = (

@@ -68,7 +68,7 @@ def compute_stagec_weights(signals: Dict[str, Any]) -> Dict[str, float]:
 # Deposit scoring
 # ---------------------------------------------------------------------------
 
-def _score_deposit(raw_deposit: Any) -> Tuple[float, str]:
+def _score_deposit(raw_deposit: Any, price_pcm: Any = None) -> Tuple[float, str]:
     raw = _safe_text(raw_deposit).strip()
     if not raw:
         if DEPOSIT_MISSING_POLICY == "neutral":
@@ -86,9 +86,17 @@ def _score_deposit(raw_deposit: Any) -> Tuple[float, str]:
         return 0.40, "unparseable->light_penalty(0.40)"
     try:
         v = max(0.0, float(num_match.group(1)))
+        # Prefer ratio scoring (deposit / monthly_rent) — fairer across price points.
+        # A 5-week deposit on £2,000/mo = £2,308 = 1.15× rent → score ≈ 0.56 (tau=2.0).
+        # Falls back to absolute scoring when price_pcm is unavailable.
+        price = _to_float(price_pcm)
+        if price is not None and price > 0:
+            ratio = v / price
+            tau_ratio = 2.0
+            score = math.exp(-ratio / tau_ratio)
+            return float(score), f"parsed={v:.0f};price={price:.0f};ratio={ratio:.2f}x;tau={tau_ratio};score={score:.4f}"
         tau = max(1.0, float(DEPOSIT_SCORE_TAU))
         score = math.exp(-v / tau)
-        # Keep cap as a debug reference for backward compatibility.
         cap = max(1.0, float(DEPOSIT_SCORE_CAP))
         return float(score), f"parsed={v:.0f};tau={tau:.0f};cap_ref={cap:.0f};score={score:.4f}"
     except Exception:
@@ -446,7 +454,7 @@ def rank_stage_c(
             else:
                 pref_score, pref_hits, pref_group_detail, pref_evidence = (0.0, [], "fallback_disabled", [])
                 pref_source = "sidecar_missing_no_fallback"
-        deposit_score, deposit_detail = _score_deposit(r.get("deposit"))
+        deposit_score, deposit_detail = _score_deposit(r.get("deposit"), r.get("price_pcm"))
         freshness_score, freshness_detail = _score_freshness(r.get("added_date"))
         budget_headroom_score, budget_headroom_detail = _score_budget_headroom(
             r.get("price_pcm"), hard.get("max_rent_pcm")
