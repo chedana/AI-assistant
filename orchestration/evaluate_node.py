@@ -252,6 +252,33 @@ def _other_constraint_label(name: str, c: Dict[str, Any]) -> str:
     return "Relax other filter"
 
 
+# ── Near-miss display ────────────────────────────────────────────────────────
+
+def _format_near_miss_block(near_miss: List[Dict[str, Any]], max_show: int = 3) -> str:
+    """Format up to max_show near-miss audit records into a compact display block."""
+    if not near_miss:
+        return ""
+    lines = ["", "Near misses (one constraint away):"]
+    for rec in near_miss[:max_show]:
+        title = str(rec.get("title") or rec.get("address") or "Unknown listing").strip()
+        price = _to_num(rec.get("price_pcm"))
+        beds = _to_num(rec.get("bedrooms"))
+        baths = _to_num(rec.get("bathrooms"))
+        reasons = rec.get("hard_fail_reasons") or []
+
+        parts: List[str] = []
+        if price is not None:
+            parts.append(f"£{int(round(price))}/mo")
+        if beds is not None:
+            parts.append(f"{int(round(beds))} bed")
+        if baths is not None:
+            parts.append(f"{int(round(baths))} bath")
+        detail = " | ".join(parts)
+        why = reasons[0] if reasons else "unknown"
+        lines.append(f"  • {title}" + (f" — {detail}" if detail else "") + f" (failed: {why})")
+    return "\n".join(lines)
+
+
 # ── Node ─────────────────────────────────────────────────────────────────────
 
 def evaluate_node(state: GraphState) -> GraphState:
@@ -355,9 +382,11 @@ def evaluate_node(state: GraphState) -> GraphState:
         if relax_log:
             relax_summary = "\n\nI already tried: " + "; ".join(relax_log) + "."
         sensitivity_msg = _build_sensitivity_message(confirmed, agent_state.constraints)
+        near_miss_block = _format_near_miss_block(near_miss)
         state["reply_text"] = (
             "I still couldn't find matching listings after widening the search."
             + relax_summary
+            + near_miss_block
             + sensitivity_msg
         )
         return state
@@ -391,10 +420,12 @@ def evaluate_node(state: GraphState) -> GraphState:
     # No auto-relax-safe bottleneck found (layout/location only, or nothing).
     near_miss = _find_near_miss(audits)
     sensitivity_msg = _build_sensitivity_message(confirmed, agent_state.constraints)
+    near_miss_block = _format_near_miss_block(near_miss)
     state["eval_decision"] = "ask_user"
     state["relax_near_miss"] = near_miss
     state["reply_text"] = (
         "I couldn't find listings matching all your requirements."
+        + near_miss_block
         + sensitivity_msg
     )
     return state
