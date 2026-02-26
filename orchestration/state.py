@@ -78,6 +78,9 @@ class GraphState(TypedDict, total=False):
     # ── Input ────────────────────────────────────────────────────────────────
     user_input: str
 
+    # ── Domain (per-turn, set by domain_router_node) ─────────────────────────
+    domain: str                  # "Rental" | "General"
+
     # ── Routing (per-turn, set by route_node) ────────────────────────────────
     intent: str
     route_reason: str
@@ -123,6 +126,8 @@ def make_graph_state(user_input: str, *, agent_state: Any, runtime: Any, router_
     return GraphState(
         # Input
         user_input=str(user_input or "").strip(),
+        # Domain default — overwritten by domain_router_node
+        domain="Rental",
         # Routing defaults — overwritten by route_node
         intent="Search",
         route_reason="",
