@@ -12,17 +12,15 @@ Also populates:
 """
 from __future__ import annotations
 
+import re
 from collections import Counter
 from datetime import date, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from orchestration.state import GraphState
 from skills.search.formatter import format_relax_results_reply
 
 # ── Tunables ──────────────────────────────────────────────────────────────────
-# Relax triggers when strictly-matching results (no unknown_hard penalty) < k * MIN_PAGES.
-# A result with unknown_hard means a required field (e.g. bedrooms) was missing in the
-# listing, so it only passed the hard filter by benefit of the doubt — not a true match.
 MIN_PAGES = 2
 MAX_RELAX_ATTEMPTS = 2
 
@@ -30,7 +28,18 @@ MAX_RELAX_ATTEMPTS = 2
 AUTO_RELAX_SAFE = {"budget", "furnish_type", "let_type", "available_from", "min_size_sqm", "min_tenancy"}
 
 
-# ── Constraint-name parsing ───────────────────────────────────────────────────
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def _to_num(v: Any) -> Optional[float]:
+    """Safely convert a value to float; return None if not possible."""
+    if v is None:
+        return None
+    try:
+        s = re.sub(r"[^\d.\-]", "", str(v))
+        return float(s) if s else None
+    except (TypeError, ValueError):
+        return None
+
 
 def _parse_constraint_name(reason: str) -> str:
     """Map a hard-filter fail reason string to a canonical constraint name."""
@@ -54,13 +63,10 @@ def _parse_constraint_name(reason: str) -> str:
     return "other"
 
 
-# ── Core analysis functions ───────────────────────────────────────────────────
+# ── Internal relax-decision helpers (single-miss based) ─────────────────────
 
-def compute_sensitivity(audits: List[Dict[str, Any]]) -> Dict[str, int]:
-    """For each active constraint, count listings that failed *only* that constraint.
-
-    This is the marginal gain from relaxing that single constraint.
-    """
+def _compute_single_miss(audits: List[Dict[str, Any]]) -> Dict[str, int]:
+    """Count listings that failed *only* one constraint (for relax-target selection)."""
     counts: Counter = Counter()
     for audit in audits:
         if audit.get("hard_pass"):
@@ -84,120 +90,184 @@ def _find_auto_relax_target(sensitivity: Dict[str, int]) -> Optional[str]:
     return None
 
 
-def _build_sensitivity_message(
-    sensitivity: Dict[str, int],
-    constraints: Optional[Dict[str, Any]] = None,
-    relax_attempt: int = 0,
-    original_budget: Optional[int] = None,
-) -> str:
-    """Build a human-readable sensitivity table with specific actionable values.
+# ── Confirmed sensitivity (user-facing) ─────────────────────────────────────
 
-    For each blocking constraint, shows exactly what change would unlock more listings.
-    Falls back to a generic label if the specific value cannot be computed.
-    """
-    if not sensitivity:
-        return ""
-    lines = ["", "Adjusting one constraint could unlock more listings:"]
-    c = constraints or {}
-
-    for constraint, count in sorted(sensitivity.items(), key=lambda x: -x[1]):
-        if count <= 0:
+def _extract_layout_requirements(constraints: Dict[str, Any]) -> Tuple[set, set]:
+    """Extract required bedroom/bathroom values from layout_options."""
+    req_beds: set = set()
+    req_baths: set = set()
+    for opt in (constraints.get("layout_options") or []):
+        if not isinstance(opt, dict):
             continue
-
-        label: str
-        if constraint == "budget":
+        b = opt.get("bedrooms")
+        if b is not None:
             try:
-                base = float(original_budget) if original_budget is not None else float(c.get("max_rent_pcm") or 0)
-                factor = 1.15 if relax_attempt == 0 else 1.25
-                next_val = int(round(base * factor))
-                label = f"Raise budget to £{next_val:,}"
-            except (TypeError, ValueError):
-                label = "Raise budget"
-
-        elif constraint == "furnish_type":
-            val = str(c.get("furnish_type") or "").strip()
-            label = f"Remove {val} requirement" if val else "Remove furnished/unfurnished requirement"
-
-        elif constraint == "let_type":
-            val = str(c.get("let_type") or "").strip()
-            label = f"Remove {val} restriction" if val else "Remove let type restriction"
-
-        elif constraint == "available_from":
-            try:
-                raw = str(c.get("available_from") or "")[:10]
-                d = date.fromisoformat(raw)
-                new_d = d + timedelta(days=14)
-                label = f"Move available date to {new_d.isoformat()}"
-            except (ValueError, TypeError):
-                label = "Relax available-from date"
-
-        elif constraint == "min_size_sqm":
-            try:
-                val = float(c.get("min_size_sqm") or 0)
-                new_val = val * 0.9
-                label = f"Reduce min size to {new_val:.0f} m²"
-            except (TypeError, ValueError):
-                label = "Relax minimum size requirement"
-
-        elif constraint == "min_tenancy":
-            try:
-                months = c.get("min_tenancy_months")
-                label = f"Remove {int(float(months))}-month min tenancy" if months is not None else "Remove min tenancy restriction"
-            except (TypeError, ValueError):
-                label = "Remove minimum tenancy restriction"
-
-        elif constraint == "layout":
-            label = "Adjust bedroom/bathroom requirements"
-
-        else:
-            label = "Relax other filter"
-
-        lines.append(f"  \U0001f4a1 {label} \u2192 +{count} listing{'s' if count != 1 else ''}")
-
-    return "\n".join(lines)
-
-
-def _build_layout_suggestion(
-    near_miss: List[Dict[str, Any]],
-    constraints: Optional[Dict[str, Any]],
-) -> str:
-    """Generate a concrete layout alternative from near-miss listings.
-
-    Looks at listings that failed only a layout constraint, counts available
-    bedroom configurations, and suggests the most common one.
-    """
-    if not near_miss or not constraints:
-        return ""
-
-    # Filter to layout-only failures
-    layout_misses = [
-        a for a in near_miss
-        if len(a.get("hard_fail_reasons") or []) == 1
-        and _parse_constraint_name((a.get("hard_fail_reasons") or [""])[0]) == "layout"
-    ]
-    if not layout_misses:
-        return ""
-
-    # Count available bedroom configurations
-    bed_counts: Counter = Counter()
-    for a in layout_misses:
-        beds = a.get("bedrooms")
-        if beds is not None:
-            try:
-                bed_counts[int(round(float(beds)))] += 1
+                req_beds.add(int(round(float(b))))
             except (TypeError, ValueError):
                 pass
+        ba = opt.get("bathrooms")
+        if ba is not None:
+            try:
+                req_baths.add(float(ba))
+            except (TypeError, ValueError):
+                pass
+    return req_beds, req_baths
 
-    if not bed_counts:
+
+def compute_confirmed_sensitivity(
+    audits: List[Dict[str, Any]],
+    constraints: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Count listings with CONFIRMED values for alternative constraint scenarios.
+
+    Returns dict with optional keys:
+      "budget":  {"threshold": int, "gain": int}   — raise budget to threshold → +gain
+      "layout":  [(bed_count, confirmed_count), ...]  — alternative bedrooms within budget
+      "other":   {constraint_name: count, ...}      — single-miss for minor constraints
+    """
+    budget = _to_num(constraints.get("max_rent_pcm"))
+    req_beds, req_baths = _extract_layout_requirements(constraints)
+    result: Dict[str, Any] = {}
+
+    # --- Budget sensitivity ---
+    # How many CONFIRMED layout-matching listings are just above the current budget?
+    if budget is not None and req_beds:
+        for factor in [1.15, 1.25, 1.50]:
+            new_budget = int(round(budget * factor))
+            gain = 0
+            for a in audits:
+                price = _to_num(a.get("price_pcm"))
+                beds = _to_num(a.get("bedrooms"))
+                if price is None or beds is None:
+                    continue
+                # Must be over current budget but within new budget
+                if price <= budget or price > new_budget:
+                    continue
+                # Must match bedroom requirement
+                if int(round(beds)) not in req_beds:
+                    continue
+                # Bathrooms: if user specified, require confirmed match
+                if req_baths:
+                    baths = _to_num(a.get("bathrooms"))
+                    if baths is None:
+                        continue
+                    if float(baths) not in req_baths:
+                        continue
+                gain += 1
+            if gain > 0:
+                result["budget"] = {"threshold": new_budget, "gain": gain}
+                break  # use the smallest meaningful threshold
+
+    # --- Layout sensitivity ---
+    # How many CONFIRMED listings with different bedrooms are within budget?
+    layout_counts: Counter = Counter()
+    for a in audits:
+        price = _to_num(a.get("price_pcm"))
+        beds = _to_num(a.get("bedrooms"))
+        if price is None or beds is None:
+            continue
+        bed_val = int(round(beds))
+        # Must be within budget (confirmed)
+        if budget is not None and price > budget:
+            continue
+        # Must be a different bedroom count than requested
+        if bed_val in req_beds:
+            continue
+        layout_counts[bed_val] += 1
+    if layout_counts:
+        # Top 2 alternatives, sorted by count descending
+        result["layout"] = layout_counts.most_common(2)
+
+    # --- Other constraints (furnish, let_type, etc.) ---
+    # Single-miss approach is fine here — null values are rare for these fields.
+    other_counts: Counter = Counter()
+    for a in audits:
+        if a.get("hard_pass"):
+            continue
+        reasons = a.get("hard_fail_reasons") or []
+        if len(reasons) != 1:
+            continue
+        name = _parse_constraint_name(reasons[0])
+        if name in ("budget", "layout", "location", "other"):
+            continue  # handled separately or not actionable
+        other_counts[name] += 1
+    if other_counts:
+        result["other"] = dict(other_counts)
+
+    return result
+
+
+def _build_sensitivity_message(
+    confirmed: Dict[str, Any],
+    constraints: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Build a human-readable sensitivity message from confirmed sensitivity data."""
+    if not confirmed:
         return ""
+    lines = ["", "To find more:"]
+    c = constraints or {}
 
-    top_beds, top_count = bed_counts.most_common(1)[0]
-    bed_label = "studio" if top_beds == 0 else f"{top_beds}-bedroom"
-    plural = "listings" if top_count != 1 else "listing"
+    # Budget suggestion
+    budget_info = confirmed.get("budget")
+    if budget_info:
+        threshold = budget_info["threshold"]
+        gain = budget_info["gain"]
+        plural = "listings" if gain != 1 else "listing"
+        lines.append(f"  \U0001f4a1 Raise budget to \u00a3{threshold:,} \u2192 +{gain} confirmed {plural}")
 
-    # Suggest how to search
-    search_hint = f"say '{top_beds} bedroom'" if top_beds > 0 else "say 'studio'"
-    return f"  \U0001f4a1 {top_count} {plural} available as {bed_label} — {search_hint} to search those instead"
+    # Layout alternatives
+    layout_info = confirmed.get("layout")
+    if layout_info:
+        budget_val = _to_num(c.get("max_rent_pcm"))
+        budget_str = f" under \u00a3{int(budget_val):,}" if budget_val else ""
+        for bed_count, count in layout_info:
+            if count <= 0:
+                continue
+            bed_label = "studio" if bed_count == 0 else f"{bed_count}-bed"
+            plural = "listings" if count != 1 else "listing"
+            lines.append(f"  \U0001f4a1 {bed_label}{budget_str} \u2192 {count} confirmed {plural}")
+
+    # Other constraints
+    other_info = confirmed.get("other", {})
+    for name, count in sorted(other_info.items(), key=lambda x: -x[1]):
+        if count <= 0:
+            continue
+        label = _other_constraint_label(name, c)
+        plural = "listings" if count != 1 else "listing"
+        lines.append(f"  \U0001f4a1 {label} \u2192 +{count} {plural}")
+
+    return "\n".join(lines) if len(lines) > 1 else ""
+
+
+def _other_constraint_label(name: str, c: Dict[str, Any]) -> str:
+    """Human-readable label for minor constraints."""
+    if name == "furnish_type":
+        val = str(c.get("furnish_type") or "").strip()
+        return f"Remove {val} requirement" if val else "Remove furnished/unfurnished requirement"
+    if name == "let_type":
+        val = str(c.get("let_type") or "").strip()
+        return f"Remove {val} restriction" if val else "Remove let type restriction"
+    if name == "available_from":
+        try:
+            raw = str(c.get("available_from") or "")[:10]
+            d = date.fromisoformat(raw)
+            new_d = d + timedelta(days=14)
+            return f"Move available date to {new_d.isoformat()}"
+        except (ValueError, TypeError):
+            return "Relax available-from date"
+    if name == "min_size_sqm":
+        try:
+            val = float(c.get("min_size_sqm") or 0)
+            return f"Reduce min size to {val * 0.9:.0f} m\u00b2"
+        except (TypeError, ValueError):
+            return "Relax minimum size requirement"
+    if name == "min_tenancy":
+        try:
+            months = c.get("min_tenancy_months")
+            return f"Remove {int(float(months))}-month min tenancy" if months is not None else "Remove min tenancy restriction"
+        except (TypeError, ValueError):
+            return "Remove minimum tenancy restriction"
+    return "Relax other filter"
 
 
 # ── Node ─────────────────────────────────────────────────────────────────────
@@ -220,7 +290,7 @@ def evaluate_node(state: GraphState) -> GraphState:
         r for r in results
         if "unknown_hard(bedrooms" not in str(r.get("penalty_reasons") or "")
     ]
-    # strict_results: all required fields confirmed — used only for the hint threshold.
+    # strict_results: all required fields confirmed — used for the sparse-results threshold.
     strict_results = [
         r for r in results
         if "unknown_hard" not in str(r.get("penalty_reasons") or "")
@@ -231,18 +301,23 @@ def evaluate_node(state: GraphState) -> GraphState:
         state["eval_decision"] = "done"
         return state
 
-    # 2. Results are sufficient — done if at least one result has confirmed bedrooms.
+    # 2. Results present — at least one result has confirmed bedrooms.
     if status in ("cache_hit", "success") and len(display_results) >= 1:
+        # Sparse strict results on first attempt: try a one-time budget relax to surface
+        # more confirmed listings.  Guard: attempt == 0 prevents cascading relax loops.
+        if attempt == 0 and len(strict_results) < k * MIN_PAGES:
+            has_budget = (agent_state.constraints or {}).get("max_rent_pcm") is not None
+            if has_budget:
+                state["eval_decision"] = "relax"
+                state["relax_bottleneck"] = "budget"
+                state["relax_near_miss"] = _find_near_miss(audits)
+                return state
+
         state["eval_decision"] = "done"
         # If we got here via a relax loop, rebuild reply with ★ markup + sensitivity table.
         if attempt > 0:
-            sensitivity = compute_sensitivity(audits)
-            sensitivity_msg = _build_sensitivity_message(
-                sensitivity,
-                constraints=agent_state.constraints,
-                relax_attempt=attempt,
-                original_budget=original_budget,
-            )
+            confirmed = compute_confirmed_sensitivity(audits, agent_state.constraints or {})
+            sensitivity_msg = _build_sensitivity_message(confirmed, agent_state.constraints)
             state["reply_text"] = format_relax_results_reply(
                 listings=results,
                 k=k,
@@ -251,9 +326,7 @@ def evaluate_node(state: GraphState) -> GraphState:
                 original_budget=original_budget,
             )
         else:
-            # Use the full result set (all pages) for the hint threshold so we don't
-            # falsely say "Only N matched" when there are more qualifying listings on
-            # later pages.
+            # attempt == 0, strict >= 2*k or no budget: show results with optional hint.
             full_results = list(getattr(agent_state, "search_full_results", None) or [])
             all_for_hint = full_results if full_results else results
             n_strict_total = len([
@@ -261,25 +334,12 @@ def evaluate_node(state: GraphState) -> GraphState:
                 if "unknown_hard" not in str(r.get("penalty_reasons") or "")
             ])
             if n_strict_total < k * MIN_PAGES:
-                # Genuinely few strict matches across all pages — append a soft hint.
-                sensitivity = compute_sensitivity(audits)
-                sensitivity_msg = _build_sensitivity_message(
-                    sensitivity,
-                    constraints=agent_state.constraints,
-                    relax_attempt=attempt,
-                    original_budget=original_budget,
-                )
-                near_miss = _find_near_miss(audits)
-                layout_hint = _build_layout_suggestion(near_miss, agent_state.constraints)
-                hint_parts = []
+                confirmed = compute_confirmed_sensitivity(audits, agent_state.constraints or {})
+                sensitivity_msg = _build_sensitivity_message(confirmed, agent_state.constraints)
                 if sensitivity_msg:
-                    hint_parts.append(sensitivity_msg)
-                if layout_hint:
-                    hint_parts.append(layout_hint)
-                if hint_parts:
                     note = (
                         f"\n\nOnly {n_strict_total} listing{'s' if n_strict_total != 1 else ''} fully matched your requirements. "
-                        "To find more:" + "".join(hint_parts)
+                        + sensitivity_msg
                     )
                     state["reply_text"] = str(state.get("reply_text") or "") + note
         return state
@@ -288,53 +348,38 @@ def evaluate_node(state: GraphState) -> GraphState:
     if prefilter_count == 0:
         state["eval_decision"] = "ask_user"
         state["relax_near_miss"] = []
-        sensitivity = compute_sensitivity(audits)
         state["reply_text"] = (
-            "I couldn't find any listings in that area — the location may not be in "
+            "I couldn't find any listings in that area \u2014 the location may not be in "
             "the database or the keywords didn't match.\n\n"
             "Try a different neighbourhood name, postcode, or nearby area."
-            + _build_sensitivity_message(
-                sensitivity,
-                constraints=agent_state.constraints,
-                relax_attempt=attempt,
-                original_budget=original_budget,
-            )
         )
         return state
 
     # 4. Max relax attempts reached — stop and ask user.
     if attempt >= MAX_RELAX_ATTEMPTS:
         near_miss = _find_near_miss(audits)
-        sensitivity = compute_sensitivity(audits)
+        confirmed = compute_confirmed_sensitivity(audits, agent_state.constraints or {})
         state["eval_decision"] = "ask_user"
         state["relax_near_miss"] = near_miss
         relax_log = list(state.get("relax_log") or [])
         relax_summary = ""
         if relax_log:
             relax_summary = "\n\nI already tried: " + "; ".join(relax_log) + "."
-        layout_hint = _build_layout_suggestion(near_miss, agent_state.constraints)
+        sensitivity_msg = _build_sensitivity_message(confirmed, agent_state.constraints)
         state["reply_text"] = (
             "I still couldn't find matching listings after widening the search."
             + relax_summary
-            + _build_sensitivity_message(
-                sensitivity,
-                constraints=agent_state.constraints,
-                relax_attempt=attempt,
-                original_budget=original_budget,
-            )
-            + ("\n" + layout_hint if layout_hint else "")
+            + sensitivity_msg
         )
         return state
 
     # 5. Diagnose the bottleneck from the audit trail.
-    sensitivity = compute_sensitivity(audits)
-    bottleneck = _find_auto_relax_target(sensitivity)
+    single_miss = _compute_single_miss(audits)
+    bottleneck = _find_auto_relax_target(single_miss)
 
     if bottleneck is None:
         # Primary bottleneck is layout/location (not auto-relax-safe).
-        # Fallback: if a budget constraint is set, try raising it — a higher budget
-        # may surface 2b2b listings that previously exceeded the price limit, even
-        # when budget doesn't appear as the single-miss leader.
+        # Fallback: if a budget constraint is set, try raising it.
         has_budget = (agent_state.constraints or {}).get("max_rent_pcm") is not None
         if has_budget and attempt < MAX_RELAX_ATTEMPTS:
             state["eval_decision"] = "relax"
@@ -344,24 +389,18 @@ def evaluate_node(state: GraphState) -> GraphState:
 
         # Truly stuck — layout / location / unknown, budget already tried or not set.
         near_miss = _find_near_miss(audits)
-        layout_hint = _build_layout_suggestion(near_miss, agent_state.constraints)
+        confirmed = compute_confirmed_sensitivity(audits, agent_state.constraints or {})
         state["eval_decision"] = "ask_user"
         state["relax_near_miss"] = near_miss
+        sensitivity_msg = _build_sensitivity_message(confirmed, agent_state.constraints)
         state["reply_text"] = (
             "I couldn't find listings matching all your requirements."
-            + _build_sensitivity_message(
-                sensitivity,
-                constraints=agent_state.constraints,
-                relax_attempt=attempt,
-                original_budget=original_budget,
-            )
-            + ("\n" + layout_hint if layout_hint else "")
+            + sensitivity_msg
         )
         return state
 
     # 6. Auto-relax: found a safe bottleneck.
     state["eval_decision"] = "relax"
     state["relax_bottleneck"] = bottleneck
-    # Store sensitivity so formatter can show the table after relax completes.
     state["relax_near_miss"] = _find_near_miss(audits)
     return state
