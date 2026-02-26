@@ -254,6 +254,16 @@ def _other_constraint_label(name: str, c: Dict[str, Any]) -> str:
 
 # ── Pending suggestion builder ───────────────────────────────────────────────
 
+def _build_single_suggestion_message(suggestion: Optional[Dict[str, Any]]) -> str:
+    """Format a single pending_suggestion as a user-facing hint."""
+    if not suggestion:
+        return ""
+    display = str(suggestion.get("display") or "").strip()
+    if not display:
+        return ""
+    return f"\n\nSuggestion: {display} — reply 'yes' to apply, or give a new search query."
+
+
 def _build_pending_suggestion(
     confirmed: Dict[str, Any],
     constraints: Dict[str, Any],
@@ -438,14 +448,14 @@ def evaluate_node(state: GraphState) -> GraphState:
         relax_summary = ""
         if relax_log:
             relax_summary = "\n\nI already tried: " + "; ".join(relax_log) + "."
-        sensitivity_msg = _build_sensitivity_message(confirmed, agent_state.constraints)
         near_miss_block = _format_near_miss_block(near_miss)
         agent_state.pending_suggestion = _build_pending_suggestion(confirmed, agent_state.constraints or {})
+        suggestion_msg = _build_single_suggestion_message(agent_state.pending_suggestion)
         state["reply_text"] = (
             "I still couldn't find matching listings after widening the search."
             + relax_summary
             + near_miss_block
-            + sensitivity_msg
+            + suggestion_msg
         )
         return state
 
@@ -477,14 +487,14 @@ def evaluate_node(state: GraphState) -> GraphState:
 
     # No auto-relax-safe bottleneck found (layout/location only, or nothing).
     near_miss = _find_near_miss(audits)
-    sensitivity_msg = _build_sensitivity_message(confirmed, agent_state.constraints)
     near_miss_block = _format_near_miss_block(near_miss)
     agent_state.pending_suggestion = _build_pending_suggestion(confirmed, agent_state.constraints or {})
+    suggestion_msg = _build_single_suggestion_message(agent_state.pending_suggestion)
     state["eval_decision"] = "ask_user"
     state["relax_near_miss"] = near_miss
     state["reply_text"] = (
         "I couldn't find listings matching all your requirements."
         + near_miss_block
-        + sensitivity_msg
+        + suggestion_msg
     )
     return state
