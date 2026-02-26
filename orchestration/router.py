@@ -18,7 +18,7 @@ class RouteDecision:
     page_action: Optional[str] = None
 
 
-_INTENTS = {"Search", "Specific_QA", "Chitchat", "Page_Nav", "AcceptSuggestion"}
+_INTENTS = {"Search", "Specific_QA", "Chitchat", "Page_Nav", "AcceptSuggestion", "Explain"}
 
 
 def _extract_first_json_obj(raw_text: str) -> Optional[Dict[str, Any]]:
@@ -92,8 +92,10 @@ def _classify_with_llm_no_listings(text: str, history_hint: Optional[str]) -> Op
     intent = str(obj.get("intent") or "").strip()
     if intent not in _INTENTS:
         return None
-    # Guardrail: no listings -> never QA.
+    # Guardrail: no listings -> never QA or Explain.
     if intent == "Specific_QA":
+        intent = "Search"
+    if intent == "Explain":
         intent = "Search"
 
     try:
@@ -166,7 +168,7 @@ def _classify_with_llm_for_listings(
         "You are a router for a rental assistant.\n"
         f"Current state: has_listings=true, has_focus={'true' if has_focus else 'false'}.\n"
         "Return STRICT JSON only with schema:\n"
-        '{"intent":"Search|Specific_QA|Chitchat|Page_Nav|AcceptSuggestion","target_index":null,"confidence":0.0,"reason":"...",'
+        '{"intent":"Search|Specific_QA|Chitchat|Page_Nav|AcceptSuggestion|Explain","target_index":null,"confidence":0.0,"reason":"...",'
         '"need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Interpretation policy:\n"
         "- Search includes both new-search and refinement/reset actions.\n"
@@ -179,6 +181,7 @@ def _classify_with_llm_for_listings(
         "- If has_focus=false and QA target is ambiguous, set need_clarify=true.\n"
         "- If refinement request is underspecified (e.g., 'too expensive' without a target budget), set need_clarify=true.\n"
         "- For clear price reduction requests, set intent=Search and refinement_type='price_down'.\n"
+        "- Explain is for evaluation or comparison requests like 'which is best?', 'explain these', 'why did you recommend these?', 'compare them'.\n"
         + suggestion_policy +
         "\n"
         "Few-shot:\n"
@@ -196,7 +199,13 @@ def _classify_with_llm_for_listings(
         "Query: 'show me next page'\n"
         '{"intent":"Page_Nav","target_index":null,"confidence":0.96,"reason":"next_page_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":"next"}\n'
         "Query: 'go to previous page'\n"
-        '{"intent":"Page_Nav","target_index":null,"confidence":0.96,"reason":"prev_page_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":"prev"}'
+        '{"intent":"Page_Nav","target_index":null,"confidence":0.96,"reason":"prev_page_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":"prev"}\n'
+        "Query: 'which one is best?'\n"
+        '{"intent":"Explain","target_index":null,"confidence":0.93,"reason":"evaluation_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        "Query: 'explain these results'\n"
+        '{"intent":"Explain","target_index":null,"confidence":0.95,"reason":"evaluation_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        "Query: 'why did you recommend these?'\n"
+        '{"intent":"Explain","target_index":null,"confidence":0.91,"reason":"evaluation_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}'
     )
     user_payload = f"Conversation summary:\n{history_hint or '(none)'}\n\nUser input:\n{text}"
     try:
