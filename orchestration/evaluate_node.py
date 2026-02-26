@@ -322,40 +322,48 @@ def _build_pending_suggestion(
 # ── Near-miss display ────────────────────────────────────────────────────────
 
 def _humanize_fail_reason(reason: str, rec: Dict[str, Any]) -> str:
-    """Convert a raw hard_fail_reasons string into user-friendly text."""
+    """Show the actual listing value for the failed constraint."""
     r = reason.lower()
+    checks: Dict[str, Any] = rec.get("hard_checks") or {}
+
     if "price" in r or "rent" in r:
-        # e.g. "price 2050 > 2000"
-        price = _to_num(rec.get("price_pcm"))
-        budget = None
-        try:
-            # extract the limit value after ">"
-            parts = reason.split(">")
-            if len(parts) == 2:
-                budget = _to_num(parts[1].strip())
-        except Exception:
-            pass
-        if price is not None and budget is not None:
-            over = int(round(price - budget))
-            return f"£{over} over your budget"
-        return "slightly over your budget"
+        actual = _to_num((checks.get("max_rent_pcm") or {}).get("actual")) or _to_num(rec.get("price_pcm"))
+        if actual is not None:
+            return f"price: £{int(round(actual))}/mo"
+        return "price: over budget"
+
     if "layout" in r:
-        return "bedrooms or bathrooms don't match"
+        beds = _to_num(rec.get("bedrooms"))
+        baths = _to_num(rec.get("bathrooms"))
+        parts = []
+        if beds is not None:
+            parts.append(f"{int(round(beds))} bed")
+        if baths is not None:
+            parts.append(f"{int(round(baths))} bath")
+        return "layout: " + " | ".join(parts) if parts else "layout: doesn't match"
+
     if "furnish" in r:
-        return "different furnishing type"
-    if "available" in r:
-        # e.g. "available_from 2024-05-01 > 2024-04-01"
-        try:
-            listing_date = reason.split()[1][:7]  # "2024-05"
-            return f"not available until {listing_date}"
-        except Exception:
-            return "available date doesn't match"
+        actual = (checks.get("furnish_type") or {}).get("actual")
+        return f"furnish_type: {actual}" if actual else "furnish_type: unknown"
+
     if "let_type" in r:
-        return "different let type"
+        actual = (checks.get("let_type") or {}).get("actual")
+        return f"let_type: {actual}" if actual else "let_type: unknown"
+
+    if "available" in r:
+        actual = (checks.get("available_from") or {}).get("actual")
+        if actual:
+            return f"available: {str(actual)[:10]}"
+        return "available: date doesn't match"
+
     if "tenancy" in r:
-        return "minimum tenancy too long"
+        actual = _to_num((checks.get("min_tenancy_months") or {}).get("actual"))
+        return f"min_tenancy: {int(actual)} months" if actual is not None else "min_tenancy: too long"
+
     if "size" in r or "sqm" in r:
-        return "below your minimum size"
+        actual = _to_num((checks.get("min_size_sqm") or {}).get("actual"))
+        return f"size: {actual:.0f}m²" if actual is not None else "size: too small"
+
     return "one requirement doesn't match"
 
 
