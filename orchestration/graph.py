@@ -4,10 +4,12 @@ from typing import Any
 
 from orchestration.evaluate_node import evaluate_node
 from orchestration.nodes import (
-    chitchat_node,
     direct_reply_node,
+    domain_branch,
+    domain_router_node,
     fallback_node,
     finalize_node,
+    general_node,
     qa_execute_node,
     qa_plan_node,
     paginate_node,
@@ -31,6 +33,12 @@ def build_graph() -> Any:
         raise ImportError("langgraph is not installed. Please install langgraph before using build_graph().")
 
     graph = StateGraph(GraphState)
+
+    # ── Top-level domain routing ──────────────────────────────────────────────
+    graph.add_node("domain_router", domain_router_node)
+    graph.add_node("general", general_node)
+
+    # ── Rental sub-pipeline ───────────────────────────────────────────────────
     graph.add_node("route", route_node)
     graph.add_node("search", search_node)
     graph.add_node("evaluate", evaluate_node)
@@ -38,19 +46,30 @@ def build_graph() -> Any:
     graph.add_node("qa_plan", qa_plan_node)
     graph.add_node("qa_execute", qa_execute_node)
     graph.add_node("paginate", paginate_node)
-    graph.add_node("chitchat", chitchat_node)
     graph.add_node("direct_reply", direct_reply_node)
     graph.add_node("fallback", fallback_node)
+
+    # ── Shared ────────────────────────────────────────────────────────────────
     graph.add_node("finalize", finalize_node)
 
-    graph.add_edge(START, "route")
+    # ── Edges: domain dispatch ────────────────────────────────────────────────
+    graph.add_edge(START, "domain_router")
+    graph.add_conditional_edges(
+        "domain_router",
+        domain_branch,
+        {
+            "Rental": "route",
+            "General": "general",
+        },
+    )
+
+    # ── Edges: rental sub-pipeline ────────────────────────────────────────────
     graph.add_conditional_edges(
         "route",
         route_branch,
         {
             "Search": "search",
             "Specific_QA": "qa_plan",
-            "Chitchat": "chitchat",
             "DirectReply": "direct_reply",
             "Page_Nav": "paginate",
             "Fallback": "fallback",
@@ -71,9 +90,12 @@ def build_graph() -> Any:
     graph.add_edge("qa_plan", "qa_execute")
     graph.add_edge("qa_execute", "finalize")
     graph.add_edge("paginate", "finalize")
-    graph.add_edge("chitchat", "finalize")
     graph.add_edge("direct_reply", "finalize")
     graph.add_edge("fallback", "finalize")
+
+    # ── Edges: general ────────────────────────────────────────────────────────
+    graph.add_edge("general", "finalize")
+
     graph.add_edge("finalize", END)
 
     return graph.compile()

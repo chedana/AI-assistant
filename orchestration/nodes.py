@@ -681,8 +681,6 @@ def route_branch(state: GraphState) -> IntentName:
         return "Search"
     if intent == "Specific_QA":
         return "Specific_QA"
-    if intent == "Chitchat":
-        return "Chitchat"
     if intent == "DirectReply":
         return "DirectReply"
     if intent == "Page_Nav":
