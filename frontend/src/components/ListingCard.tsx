@@ -4,9 +4,15 @@ type Props = {
   listing: ListingData;
 };
 
+function toArray(val: string[] | string | undefined): string[] {
+  if (Array.isArray(val)) return val;
+  if (typeof val === "string" && val.trim()) return [val];
+  return [];
+}
+
 export default function ListingCard({ listing }: Props) {
-  const hasPenalties = listing.penalty_reasons && listing.penalty_reasons.length > 0;
-  const hasHits = listing.preference_hits && listing.preference_hits.length > 0;
+  const penalties = toArray(listing.penalty_reasons);
+  const hits = toArray(listing.preference_hits);
 
   return (
     <div className="rounded-lg border border-border bg-panel p-4">
@@ -32,9 +38,9 @@ export default function ListingCard({ listing }: Props) {
         <p className="mt-1 text-xs text-muted">{listing.address}</p>
       )}
 
-      {hasHits && (
+      {hits.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1">
-          {listing.preference_hits.map((hit) => (
+          {hits.map((hit) => (
             <span
               key={hit}
               className="rounded bg-green-900/40 px-1.5 py-0.5 text-[11px] text-green-400"
@@ -45,9 +51,9 @@ export default function ListingCard({ listing }: Props) {
         </div>
       )}
 
-      {hasPenalties && (
+      {penalties.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1">
-          {listing.penalty_reasons.map((reason) => (
+          {penalties.map((reason) => (
             <span
               key={reason}
               className="rounded bg-amber-900/40 px-1.5 py-0.5 text-[11px] text-amber-400"

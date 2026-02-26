@@ -55,6 +55,17 @@ SESSION_LOCKS_META = Lock()  # protects SESSION_LOCKS dict itself
 MAX_USER_INPUT = 2000
 
 
+def _to_list(val: object) -> list[str]:
+    """Normalise a field that may be str, list, or None into list[str]."""
+    if isinstance(val, list):
+        return val
+    if isinstance(val, str) and val.strip():
+        # Backend stores these as semicolon- or " and "-joined strings
+        parts = [p.strip() for p in val.replace(" and ", ";").split(";") if p.strip()]
+        return parts
+    return []
+
+
 def build_metadata(state: AgentState) -> dict | None:
     """Extract structured metadata from agent state for the frontend."""
     meta: dict = {}
@@ -72,8 +83,8 @@ def build_metadata(state: AgentState) -> dict | None:
                 "bathrooms": r.get("bathrooms", 0),
                 "available_from": r.get("available_from", ""),
                 "final_score": r.get("final_score", 0),
-                "penalty_reasons": r.get("penalty_reasons", []),
-                "preference_hits": r.get("preference_hits", []),
+                "penalty_reasons": _to_list(r.get("penalty_reasons")),
+                "preference_hits": _to_list(r.get("preference_hits")),
             })
         meta["search_results"] = {
             "listings": listings,
