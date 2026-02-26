@@ -285,9 +285,11 @@ def evaluate_node(state: GraphState) -> GraphState:
 
     # 2. Results present — at least one result has confirmed bedrooms.
     if status in ("cache_hit", "success") and len(display_results) >= 1:
-        # Sparse strict results on first attempt: try a one-time budget relax to surface
+        # Sparse display results on first attempt: try a one-time budget relax to surface
         # more confirmed listings.  Guard: attempt == 0 prevents cascading relax loops.
-        if attempt == 0 and len(strict_results) < k * MIN_PAGES:
+        # Uses display_results (bedrooms confirmed) not strict_results (all fields confirmed),
+        # because strict is too aggressive — most listings have at least one null field.
+        if attempt == 0 and len(display_results) < k * MIN_PAGES:
             has_budget = (agent_state.constraints or {}).get("max_rent_pcm") is not None
             if has_budget:
                 state["eval_decision"] = "relax"
@@ -296,6 +298,20 @@ def evaluate_node(state: GraphState) -> GraphState:
                 return state
 
         state["eval_decision"] = "done"
+
+        # Debug: show match counts so thresholds can be verified.
+        full_results = list(getattr(agent_state, "search_full_results", None) or [])
+        all_for_counts = full_results if full_results else results
+        n_display_total = len([
+            r for r in all_for_counts
+            if "unknown_hard(bedrooms" not in str(r.get("penalty_reasons") or "")
+        ])
+        n_strict_total = len([
+            r for r in all_for_counts
+            if "unknown_hard" not in str(r.get("penalty_reasons") or "")
+        ])
+        count_line = f"\n\n[debug] display={n_display_total} strict={n_strict_total} k={k} threshold={k * MIN_PAGES} attempt={attempt}"
+
         # If we got here via a relax loop, rebuild reply with ★ markup + sensitivity table.
         if attempt > 0:
             confirmed = compute_confirmed_sensitivity(audits, agent_state.constraints or {})
@@ -306,15 +322,9 @@ def evaluate_node(state: GraphState) -> GraphState:
                 relax_log=list(state.get("relax_log") or []),
                 sensitivity_message=sensitivity_msg,
                 original_budget=original_budget,
-            )
+            ) + count_line
         else:
-            # attempt == 0, strict >= 2*k or no budget: show results with optional hint.
-            full_results = list(getattr(agent_state, "search_full_results", None) or [])
-            all_for_hint = full_results if full_results else results
-            n_strict_total = len([
-                r for r in all_for_hint
-                if "unknown_hard" not in str(r.get("penalty_reasons") or "")
-            ])
+            # attempt == 0, display >= threshold or no budget: show results with optional hint.
             if n_strict_total < k * MIN_PAGES:
                 confirmed = compute_confirmed_sensitivity(audits, agent_state.constraints or {})
                 sensitivity_msg = _build_sensitivity_message(confirmed, agent_state.constraints)
@@ -324,6 +334,7 @@ def evaluate_node(state: GraphState) -> GraphState:
                         + sensitivity_msg
                     )
                     state["reply_text"] = str(state.get("reply_text") or "") + note
+            state["reply_text"] = str(state.get("reply_text") or "") + count_line
         return state
 
     # 3. Location miss (Stage A found nothing matching the location filter).
