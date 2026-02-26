@@ -9,7 +9,7 @@ from typing import Literal
 _logger = logging.getLogger(__name__)
 
 from core.chatbot_config import GENERAL_SYSTEM
-from core.llm_client import qwen_chat
+from core.llm_client import llm_grounded_explain, qwen_chat, render_stage_d_for_user
 from orchestration.domain_router import domain_route_turn
 from orchestration.merger import derive_snapshot, push_history, snapshot_from_constraints, snapshot_to_constraints
 from orchestration.refinement_plan import build_refinement_plan
@@ -26,7 +26,7 @@ from skills.search.handler import format_listing_row
 
 from orchestration.state import GraphState
 
-IntentName = Literal["Search", "Specific_QA", "Chitchat", "DirectReply", "Page_Nav", "Fallback"]
+IntentName = Literal["Search", "Specific_QA", "Chitchat", "DirectReply", "Page_Nav", "Fallback", "Explain"]
 
 
 def _auto_focus_first(agent_state) -> None:
@@ -709,6 +709,45 @@ def direct_reply_node(state: GraphState) -> GraphState:
     return state
 
 
+def explain_node(state: GraphState) -> GraphState:
+    """P2-C: Stage D grounded explanation on evaluation/comparison intent."""
+    agent_state = state["agent_state"]
+    user_in = str(state.get("user_input") or "")
+    listings = list(agent_state.last_results or [])
+
+    if not listings:
+        state["reply_text"] = (
+            "I don't have any listings to explain yet. "
+            "Tell me your search requirements first and I'll find some options."
+        )
+        return state
+
+    try:
+        import pandas as pd
+        df = pd.DataFrame(listings)
+        constraints = dict(agent_state.constraints or {})
+        signals = dict(agent_state.user_profile or {})
+
+        grounded_out, _, _ = llm_grounded_explain(
+            user_query=user_in,
+            c=constraints,
+            signals=signals,
+            df=df,
+        )
+        reply = render_stage_d_for_user(grounded_out, df=df, max_items=len(listings))
+        if not reply:
+            reply = grounded_out
+    except Exception:
+        _logger.exception("explain_node: llm_grounded_explain failed")
+        reply = (
+            "I had trouble generating an explanation. "
+            "You can ask about a specific listing, e.g., 'tell me more about listing 2'."
+        )
+
+    state["reply_text"] = reply
+    return state
+
+
 def finalize_node(state: GraphState) -> GraphState:
     state["attempt_count"] = int(state.get("attempt_count") or 0) + 1
     agent_state = state["agent_state"]
@@ -726,6 +765,8 @@ def route_branch(state: GraphState) -> IntentName:
         return "Specific_QA"
     if intent == "AcceptSuggestion":
         return "AcceptSuggestion"
+    if intent == "Explain":
+        return "Explain"
     if intent == "DirectReply":
         return "DirectReply"
     if intent == "Page_Nav":

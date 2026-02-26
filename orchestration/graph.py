@@ -8,6 +8,7 @@ from orchestration.nodes import (
     direct_reply_node,
     domain_branch,
     domain_router_node,
+    explain_node,
     fallback_node,
     finalize_node,
     general_node,
@@ -48,6 +49,7 @@ def build_graph() -> Any:
     graph.add_node("qa_plan", qa_plan_node)
     graph.add_node("qa_execute", qa_execute_node)
     graph.add_node("paginate", paginate_node)
+    graph.add_node("explain", explain_node)
     graph.add_node("direct_reply", direct_reply_node)
     graph.add_node("fallback", fallback_node)
 
@@ -73,6 +75,7 @@ def build_graph() -> Any:
             "Search": "search",
             "AcceptSuggestion": "apply_suggestion",
             "Specific_QA": "qa_plan",
+            "Explain": "explain",
             "DirectReply": "direct_reply",
             "Page_Nav": "paginate",
             "Fallback": "fallback",
@@ -94,6 +97,7 @@ def build_graph() -> Any:
     graph.add_edge("qa_plan", "qa_execute")
     graph.add_edge("qa_execute", "finalize")
     graph.add_edge("paginate", "finalize")
+    graph.add_edge("explain", "finalize")
     graph.add_edge("direct_reply", "finalize")
     graph.add_edge("fallback", "finalize")
 
