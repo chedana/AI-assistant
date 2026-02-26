@@ -1,14 +1,17 @@
+import type { SessionMetadata } from "../types/chat";
+
 type StreamOptions = {
   signal: AbortSignal;
   onChunk: (chunk: string) => void;
+  onMetadata?: (meta: SessionMetadata) => void;
 };
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "";
 
-export async function streamMockReply(
+export async function streamChat(
   sessionId: string,
   userText: string,
-  options: StreamOptions
+  options: StreamOptions,
 ): Promise<void> {
   const response = await fetch(`${API_BASE}/api/chat/stream`, {
     method: "POST",
@@ -48,10 +51,17 @@ export async function streamMockReply(
         }
       }
       if (!dataLine) continue;
-      const data = JSON.parse(dataLine) as { text?: string; message?: string };
-      if (eventName === "delta" && data.text) {
-        options.onChunk(data.text);
+
+      if (eventName === "delta") {
+        const data = JSON.parse(dataLine) as { text?: string };
+        if (data.text) {
+          options.onChunk(data.text);
+        }
+      } else if (eventName === "metadata") {
+        const data = JSON.parse(dataLine) as SessionMetadata;
+        options.onMetadata?.(data);
       } else if (eventName === "error") {
+        const data = JSON.parse(dataLine) as { message?: string };
         throw new Error(data.message ?? "Stream error");
       } else if (eventName === "done") {
         return;
