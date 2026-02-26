@@ -60,17 +60,25 @@ def _to_list(val: object) -> list[str]:
     if isinstance(val, list):
         return [str(x) for x in val]
     if isinstance(val, str) and val.strip():
-        parts = [p.strip() for p in val.replace(" and ", ";").split(";") if p.strip()]
-        return parts
+        # Split on " and " that is NOT inside parentheses.
+        # e.g. "boosted by deposit (0.56) and freshness (1.00)" → two items
+        # but  "unknown_hard(bedrooms;+0.16)" stays as one item
+        import re
+        parts = re.split(r'\)\s+and\s+', val)
+        # Re-attach the closing paren we consumed (except on the last piece)
+        result = [p.strip() + ")" for p in parts[:-1]] + [parts[-1].strip()]
+        return [r for r in result if r]
     return []
 
 
-def _num(val: object, default: float = 0) -> float | int:
+def _num(val: object, default: float | int = 0, *, keep_zero: bool = True) -> float | int:
     """Coerce any numeric type (including numpy) to a plain Python number."""
     if val is None:
         return default
     try:
         f = float(val)
+        if not keep_zero and f == 0:
+            return default
         return int(f) if f == int(f) else round(f, 4)
     except (TypeError, ValueError):
         return default
