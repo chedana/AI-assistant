@@ -252,6 +252,63 @@ def _other_constraint_label(name: str, c: Dict[str, Any]) -> str:
     return "Relax other filter"
 
 
+# ── Pending suggestion builder ───────────────────────────────────────────────
+
+def _build_pending_suggestion(
+    confirmed: Dict[str, Any],
+    constraints: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Return the single most actionable suggestion for AcceptSuggestion routing.
+
+    Priority: budget first (guaranteed gain), then highest-count other constraint.
+    Returns None if nothing actionable is found.
+    """
+    # Budget suggestion
+    budget_info = confirmed.get("budget")
+    if budget_info:
+        threshold = int(budget_info["threshold"])
+        return {
+            "field": "budget",
+            "new_value": threshold,
+            "display": f"Raise budget to £{threshold:,}",
+        }
+
+    # Best minor constraint (furnish_type, let_type, available_from, min_size_sqm, min_tenancy)
+    other = confirmed.get("other") or {}
+    if not other:
+        return None
+    best_name = max(other, key=lambda k: other[k])
+
+    if best_name == "furnish_type":
+        return {"field": "furnish_type", "new_value": None, "display": "Remove furnished/unfurnished filter"}
+
+    if best_name == "let_type":
+        return {"field": "let_type", "new_value": None, "display": "Remove let type restriction"}
+
+    if best_name == "available_from":
+        try:
+            raw = str(constraints.get("available_from") or "")[:10]
+            new_d = date.fromisoformat(raw) + timedelta(days=14)
+            return {"field": "available_from", "new_value": new_d.isoformat(),
+                    "display": f"Move available date to {new_d.isoformat()}"}
+        except (ValueError, TypeError):
+            return {"field": "available_from", "new_value": None, "display": "Remove available-from filter"}
+
+    if best_name == "min_size_sqm":
+        try:
+            val = float(constraints.get("min_size_sqm") or 0)
+            new_val = round(val * 0.9, 1)
+            return {"field": "min_size_sqm", "new_value": new_val,
+                    "display": f"Reduce min size to {new_val:.0f} m²"}
+        except (TypeError, ValueError):
+            pass
+
+    if best_name == "min_tenancy":
+        return {"field": "min_tenancy", "new_value": None, "display": "Remove min tenancy restriction"}
+
+    return None
+
+
 # ── Near-miss display ────────────────────────────────────────────────────────
 
 def _format_near_miss_block(near_miss: List[Dict[str, Any]], max_show: int = 3) -> str:
@@ -383,6 +440,7 @@ def evaluate_node(state: GraphState) -> GraphState:
             relax_summary = "\n\nI already tried: " + "; ".join(relax_log) + "."
         sensitivity_msg = _build_sensitivity_message(confirmed, agent_state.constraints)
         near_miss_block = _format_near_miss_block(near_miss)
+        agent_state.pending_suggestion = _build_pending_suggestion(confirmed, agent_state.constraints or {})
         state["reply_text"] = (
             "I still couldn't find matching listings after widening the search."
             + relax_summary
@@ -421,6 +479,7 @@ def evaluate_node(state: GraphState) -> GraphState:
     near_miss = _find_near_miss(audits)
     sensitivity_msg = _build_sensitivity_message(confirmed, agent_state.constraints)
     near_miss_block = _format_near_miss_block(near_miss)
+    agent_state.pending_suggestion = _build_pending_suggestion(confirmed, agent_state.constraints or {})
     state["eval_decision"] = "ask_user"
     state["relax_near_miss"] = near_miss
     state["reply_text"] = (

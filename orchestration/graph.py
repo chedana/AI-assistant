@@ -4,6 +4,7 @@ from typing import Any
 
 from orchestration.evaluate_node import evaluate_node
 from orchestration.nodes import (
+    apply_suggestion_node,
     direct_reply_node,
     domain_branch,
     domain_router_node,
@@ -40,6 +41,7 @@ def build_graph() -> Any:
 
     # ── Rental sub-pipeline ───────────────────────────────────────────────────
     graph.add_node("route", route_node)
+    graph.add_node("apply_suggestion", apply_suggestion_node)
     graph.add_node("search", search_node)
     graph.add_node("evaluate", evaluate_node)
     graph.add_node("relax", relax_node)
@@ -69,12 +71,14 @@ def build_graph() -> Any:
         route_branch,
         {
             "Search": "search",
+            "AcceptSuggestion": "apply_suggestion",
             "Specific_QA": "qa_plan",
             "DirectReply": "direct_reply",
             "Page_Nav": "paginate",
             "Fallback": "fallback",
         },
     )
+    graph.add_edge("apply_suggestion", "search")
     # search → evaluate → (done|ask_user) → finalize, or relax → search loop
     graph.add_edge("search", "evaluate")
     graph.add_conditional_edges(

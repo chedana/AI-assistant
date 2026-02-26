@@ -88,6 +88,7 @@ def route_node(state: GraphState) -> GraphState:
         state["reply_text"] = "Empty input."
         return state
 
+    pending = agent_state.pending_suggestion
     decision = route_turn(
         text,
         mode=agent_state.mode,
@@ -95,6 +96,7 @@ def route_node(state: GraphState) -> GraphState:
         has_listings=bool(agent_state.last_results),
         has_focus=bool(agent_state.current_focus_listing_payload),
         listings_count=len(agent_state.last_results),
+        pending_suggestion_display=str(pending["display"]) if pending else None,
     )
     state["intent"] = str(decision.intent or "Fallback")
     state["route_reason"] = str(decision.reason or "")
@@ -233,12 +235,13 @@ def search_node(state: GraphState) -> GraphState:
         return state
 
     # ── Normal (non-relax) path ───────────────────────────────────────────────
-    # Reset relax counters at the start of every fresh user-initiated search.
+    # Reset relax counters and pending suggestion at the start of every fresh search.
     state["relax_attempt"] = 0
     state["relax_log"] = []
     state["relax_near_miss"] = []
     state["stage_b_audits"] = []
     state["stage_a_prefilter_count"] = -1
+    agent_state.pending_suggestion = None
 
     # Build merge plan from current user turn before running physical search.
     plan = build_refinement_plan(
@@ -580,6 +583,46 @@ def qa_node(state: GraphState) -> GraphState:
     return qa_execute_node(qa_plan_node(state))
 
 
+_SUGGESTION_FIELD_MAP = {
+    "budget": "max_rent_pcm",
+    "furnish_type": "furnish_type",
+    "let_type": "let_type",
+    "available_from": "available_from",
+    "min_size_sqm": "min_size_sqm",
+    "min_tenancy": "min_tenancy_months",
+}
+
+
+def apply_suggestion_node(state: GraphState) -> GraphState:
+    """Apply the stored pending_suggestion directly as override constraints."""
+    agent_state = state["agent_state"]
+    suggestion = agent_state.pending_suggestion
+    agent_state.pending_suggestion = None  # consume regardless
+
+    if not suggestion:
+        # Nothing to apply — fall through to search with current constraints.
+        state["relax_override_constraints"] = None
+        return state
+
+    import copy
+    constraints = copy.deepcopy(agent_state.constraints or {})
+    field = suggestion.get("field")
+    new_value = suggestion.get("new_value")
+    constraint_key = _SUGGESTION_FIELD_MAP.get(str(field or ""))
+
+    if constraint_key:
+        constraints[constraint_key] = new_value
+
+    state["relax_override_constraints"] = constraints
+    # Reset relax counters so the subsequent search starts fresh.
+    state["relax_attempt"] = 0
+    state["relax_log"] = []
+    state["relax_near_miss"] = []
+    state["stage_b_audits"] = []
+    state["stage_a_prefilter_count"] = -1
+    return state
+
+
 def domain_router_node(state: GraphState) -> GraphState:
     agent_state = state["agent_state"]
     text = str(state.get("user_input") or "").strip()
@@ -681,6 +724,8 @@ def route_branch(state: GraphState) -> IntentName:
         return "Search"
     if intent == "Specific_QA":
         return "Specific_QA"
+    if intent == "AcceptSuggestion":
+        return "AcceptSuggestion"
     if intent == "DirectReply":
         return "DirectReply"
     if intent == "Page_Nav":
