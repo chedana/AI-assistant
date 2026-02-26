@@ -383,6 +383,49 @@ def _format_near_miss_block(near_miss: List[Dict[str, Any]], max_show: int = 3) 
     return "\n".join(lines)
 
 
+# ── Proactive result insight (P3) ─────────────────────────────────────────────
+
+def _build_proactive_insight(
+    display_results: List[Dict[str, Any]],
+    constraints: Dict[str, Any],
+    k: int,
+) -> str:
+    """1-2 sentence quality snapshot appended after every successful search.
+
+    Shows: count (shown vs total), price range, and budget headroom.
+    """
+    if not display_results:
+        return ""
+
+    n_total = len(display_results)
+    prices = sorted(
+        p for r in display_results if (p := _to_num(r.get("price_pcm"))) is not None
+    )
+    budget = _to_num(constraints.get("max_rent_pcm"))
+
+    count_str = f"Showing {k} of {n_total}" if n_total > k else str(n_total)
+    listing_label = "listing" if n_total == 1 else "listings"
+
+    if not prices:
+        return f"\n\n{count_str} {listing_label} found."
+
+    min_p, max_p = int(prices[0]), int(prices[-1])
+    range_str = f"£{min_p:,}/mo" if min_p == max_p else f"£{min_p:,}–£{max_p:,}/mo"
+
+    if budget:
+        n_within = sum(1 for p in prices if p <= budget)
+        if n_within == len(prices):
+            budget_str = f", all within your £{int(budget):,} budget"
+        elif n_within == 0:
+            budget_str = f", all above your £{int(budget):,} budget"
+        else:
+            budget_str = f" ({n_within} of {len(prices)} within your £{int(budget):,} budget)"
+    else:
+        budget_str = ""
+
+    return f"\n\n{count_str} {listing_label} found, priced {range_str}{budget_str}."
+
+
 # ── Node ─────────────────────────────────────────────────────────────────────
 
 def evaluate_node(state: GraphState) -> GraphState:
@@ -439,6 +482,9 @@ def evaluate_node(state: GraphState) -> GraphState:
         n_strict_total = len(strict_results)
         count_line = f"\n\n[debug] display={n_display_total} strict={n_strict_total} k={k} threshold={k * MIN_PAGES} attempt={attempt}"
 
+        # P3: proactive quality insight appended to every successful search reply.
+        insight = _build_proactive_insight(display_results, agent_state.constraints or {}, k)
+
         # If we got here via a relax loop, rebuild reply with ★ markup + sensitivity table.
         if attempt > 0:
             confirmed = compute_confirmed_sensitivity(audits, agent_state.constraints or {})
@@ -449,19 +495,20 @@ def evaluate_node(state: GraphState) -> GraphState:
                 relax_log=list(state.get("relax_log") or []),
                 sensitivity_message=sensitivity_msg,
                 original_budget=original_budget,
-            ) + count_line
+            ) + insight + count_line
         else:
-            # attempt == 0, display >= threshold or no budget: show results with optional hint.
-            if len(strict_results) < k * MIN_PAGES:
+            # attempt == 0: base reply + P3 insight + optional sensitivity hint.
+            base = str(state.get("reply_text") or "")
+            sensitivity_note = ""
+            if n_strict_total < k * MIN_PAGES:
                 confirmed = compute_confirmed_sensitivity(audits, agent_state.constraints or {})
                 sensitivity_msg = _build_sensitivity_message(confirmed, agent_state.constraints)
                 if sensitivity_msg:
-                    note = (
+                    sensitivity_note = (
                         f"\n\nOnly {n_strict_total} listing{'s' if n_strict_total != 1 else ''} fully matched your requirements. "
                         + sensitivity_msg
                     )
-                    state["reply_text"] = str(state.get("reply_text") or "") + note
-            state["reply_text"] = str(state.get("reply_text") or "") + count_line
+            state["reply_text"] = base + insight + sensitivity_note + count_line
         return state
 
     # 3. Location miss (Stage A found nothing matching the location filter).
