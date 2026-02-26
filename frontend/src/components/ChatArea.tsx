@@ -1,0 +1,80 @@
+import { useEffect, useRef } from "react";
+import type { ChatSession, SessionMetadata } from "../types/chat";
+import ConstraintTags from "./ConstraintTags";
+import ListingCard from "./ListingCard";
+import MessageBubble from "./MessageBubble";
+import QuickReplies from "./QuickReplies";
+
+type Props = {
+  session: ChatSession | undefined;
+  isGenerating: boolean;
+  metadata: SessionMetadata | null;
+  onQuickReply: (text: string) => void;
+};
+
+export default function ChatArea({ session, isGenerating, metadata, onQuickReply }: Props) {
+  const endRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [session?.messages.length, isGenerating, metadata]);
+
+  const showConstraints = metadata?.constraints && Object.keys(metadata.constraints).length > 0;
+  const showListings = metadata?.search_results && metadata.search_results.listings.length > 0;
+  const showQuickReplies = !isGenerating && metadata?.quick_replies && metadata.quick_replies.length > 0;
+
+  return (
+    <section className="relative flex-1 overflow-y-auto">
+      {showConstraints && (
+        <ConstraintTags
+          constraints={metadata!.constraints!}
+          onRemove={onQuickReply}
+        />
+      )}
+
+      <div className="px-4 py-4">
+        <div className="mx-auto max-w-3xl space-y-4">
+          {session?.messages.length ? (
+            <>
+              {session.messages.map((message) => (
+                <MessageBubble
+                  key={message.id}
+                  message={message}
+                  isGenerating={isGenerating}
+                />
+              ))}
+
+              {showListings && (
+                <div className="space-y-3">
+                  {metadata!.search_results!.listings.map((listing, idx) => (
+                    <ListingCard key={listing.url || idx} listing={listing} />
+                  ))}
+                  {metadata!.search_results!.has_more && (
+                    <button
+                      onClick={() => onQuickReply("show me more")}
+                      className="w-full rounded-lg border border-border py-2 text-xs text-muted hover:bg-neutral-800 hover:text-text"
+                    >
+                      Show more results ({metadata!.search_results!.total - metadata!.search_results!.listings.length * (metadata!.search_results!.page_index + 1)} remaining)
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {showQuickReplies && (
+                <QuickReplies
+                  replies={metadata!.quick_replies!}
+                  onSelect={onQuickReply}
+                />
+              )}
+            </>
+          ) : (
+            <div className="pt-16 text-center text-sm text-muted">
+              Start a conversation.
+            </div>
+          )}
+          <div ref={endRef} />
+        </div>
+      </div>
+    </section>
+  );
+}

@@ -55,6 +55,69 @@ SESSION_LOCKS_META = Lock()  # protects SESSION_LOCKS dict itself
 MAX_USER_INPUT = 2000
 
 
+def build_metadata(state: AgentState) -> dict | None:
+    """Extract structured metadata from agent state for the frontend."""
+    meta: dict = {}
+
+    # Search results
+    if state.last_results:
+        listings = []
+        for r in state.last_results:
+            listings.append({
+                "title": r.get("title", ""),
+                "url": r.get("url", ""),
+                "address": r.get("address", ""),
+                "price_pcm": r.get("price_pcm", 0),
+                "bedrooms": r.get("bedrooms", 0),
+                "bathrooms": r.get("bathrooms", 0),
+                "available_from": r.get("available_from", ""),
+                "final_score": r.get("final_score", 0),
+                "penalty_reasons": r.get("penalty_reasons", []),
+                "preference_hits": r.get("preference_hits", []),
+            })
+        meta["search_results"] = {
+            "listings": listings,
+            "page_index": state.page_index,
+            "has_more": state.has_more,
+            "total": len(state.search_full_results),
+        }
+
+    # Constraints
+    if state.constraints:
+        display: dict = {}
+        for key, val in state.constraints.items():
+            if val is None:
+                continue
+            if key == "max_rent_pcm" and val:
+                display["budget"] = f"\u2264\u00a3{int(val)}/pcm"
+            elif key == "location_keywords" and val:
+                display["location"] = val
+            elif key == "layout_options" and val:
+                beds = set()
+                for lo in val:
+                    b = lo.get("bedrooms")
+                    if b is not None:
+                        beds.add(b)
+                if beds:
+                    display["bedrooms"] = sorted(beds)
+            elif key in ("furnish_type", "let_type", "available_from", "min_tenancy_months"):
+                display[key] = val
+        if display:
+            meta["constraints"] = display
+
+    # Quick replies — contextual suggestions
+    quick: list[dict] = []
+    if state.last_results:
+        if state.has_more:
+            quick.append({"label": "Show more", "text": "show me more"})
+        quick.append({"label": "Lower budget", "text": "find cheaper options"})
+        quick.append({"label": "Compare all", "text": "compare these listings"})
+    if quick:
+        meta["quick_replies"] = quick
+
+    return meta if meta else None
+
+
 def sse_event(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
@@ -130,6 +193,9 @@ async def chat_stream(req: ChatStreamRequest, request: Request) -> StreamingResp
                 yield sse_event("delta", {"text": chunk})
                 await asyncio.sleep(0.01)
 
+            metadata = build_metadata(state)
+            if metadata:
+                yield sse_event("metadata", metadata)
             yield sse_event("done", {"ok": True})
         except Exception as exc:  # noqa: BLE001
             yield sse_event("error", {"message": str(exc)})
