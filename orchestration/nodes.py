@@ -195,6 +195,10 @@ def search_node(state: GraphState) -> GraphState:
         state["stage_a_prefilter_count"] = int(out.get("stage_a_prefilter_count") or 0)
 
         agent_state.constraints = out.get("constraints")
+        # Auto-relax must not permanently modify the user's stated budget.
+        # Restore it so the next fresh search starts from the user's original figure.
+        if agent_state.original_budget is not None and agent_state.constraints:
+            agent_state.constraints["max_rent_pcm"] = agent_state.original_budget
         agent_state.user_profile.update(out.get("profile_patch") or {})
         full_results = list(out.get("all_ranked_listings") or out.get("listings") or [])
         k = int(((out.get("constraints") or {}).get("k") or 5))
@@ -232,13 +236,17 @@ def search_node(state: GraphState) -> GraphState:
     state["relax_near_miss"] = []
     state["stage_b_audits"] = []
     state["stage_a_prefilter_count"] = -1
-    state["original_budget"] = None
 
     # Build merge plan from current user turn before running physical search.
     plan = build_refinement_plan(
         user_text=str(state.get("user_input") or ""),
         existing_constraints=agent_state.constraints,
     )
+
+    # If the user explicitly sets a new budget (or resets entirely), clear the
+    # stored original_budget so ★ markup reflects the new intent.
+    if "max_rent_pcm" in plan.set_fields or plan.is_reset:
+        agent_state.original_budget = None
 
     old_snapshot = snapshot_from_constraints(
         agent_state.constraints,

@@ -262,7 +262,7 @@ def evaluate_node(state: GraphState) -> GraphState:
     audits: List[Dict[str, Any]] = list(state.get("stage_b_audits") or [])
     prefilter_count: int = int(state.get("stage_a_prefilter_count") or -1)
     attempt: int = int(state.get("relax_attempt") or 0)
-    original_budget: Optional[int] = state.get("original_budget")
+    original_budget: Optional[int] = agent_state.original_budget
     k: int = int(((agent_state.constraints or {}).get("k") or 5))
 
     # Use full result set (all pages) for threshold decisions, not just current page.

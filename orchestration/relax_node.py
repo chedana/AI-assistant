@@ -6,10 +6,10 @@ Reads:
   state["agent_state"].constraints — current merged constraints
 
 Writes:
-  state["relax_override_constraints"] — relaxed constraints for search_node
-  state["relax_attempt"]              — incremented
-  state["relax_log"]                  — human-readable log entry appended
-  state["original_budget"]            — set on first budget relax (for ★ markup)
+  state["relax_override_constraints"]   — relaxed constraints for search_node
+  state["relax_attempt"]               — incremented
+  state["relax_log"]                   — human-readable log entry appended
+  agent_state.original_budget          — set on first budget relax (for ★ markup)
 """
 from __future__ import annotations
 
@@ -41,18 +41,17 @@ def relax_node(state: GraphState) -> GraphState:
     if bottleneck == "budget":
         # Always apply the factor against the user's *original* budget so increments
         # are additive from baseline (15% → 25%), not compounded (15% → 15%×125% = +44%).
-        stored_original = state.get("original_budget")
         current = constraints.get("max_rent_pcm")
         if current is not None:
-            base = float(stored_original) if stored_original is not None else float(current)
+            base = float(agent_state.original_budget) if agent_state.original_budget is not None else float(current)
             factor = 1.15 if attempt == 0 else 1.25
             new_val = int(round(base * factor))
             constraints["max_rent_pcm"] = new_val
             relax_log.append(f"budget widened from £{int(base):,} to £{new_val:,}")
             # Record original budget for ★ over-budget markup in formatter.
             # Only store on the very first relax so we keep the user's original figure.
-            if stored_original is None:
-                state["original_budget"] = int(base)
+            if agent_state.original_budget is None:
+                agent_state.original_budget = int(base)
 
     elif bottleneck == "furnish_type":
         old = constraints.get("furnish_type") or "any"
