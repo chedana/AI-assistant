@@ -321,28 +321,57 @@ def _build_pending_suggestion(
 
 # ── Near-miss display ────────────────────────────────────────────────────────
 
+def _humanize_fail_reason(reason: str, rec: Dict[str, Any]) -> str:
+    """Convert a raw hard_fail_reasons string into user-friendly text."""
+    r = reason.lower()
+    if "price" in r or "rent" in r:
+        # e.g. "price 2050 > 2000"
+        price = _to_num(rec.get("price_pcm"))
+        budget = None
+        try:
+            # extract the limit value after ">"
+            parts = reason.split(">")
+            if len(parts) == 2:
+                budget = _to_num(parts[1].strip())
+        except Exception:
+            pass
+        if price is not None and budget is not None:
+            over = int(round(price - budget))
+            return f"£{over} over your budget"
+        return "slightly over your budget"
+    if "layout" in r:
+        return "bedrooms or bathrooms don't match"
+    if "furnish" in r:
+        return "different furnishing type"
+    if "available" in r:
+        # e.g. "available_from 2024-05-01 > 2024-04-01"
+        try:
+            listing_date = reason.split()[1][:7]  # "2024-05"
+            return f"not available until {listing_date}"
+        except Exception:
+            return "available date doesn't match"
+    if "let_type" in r:
+        return "different let type"
+    if "tenancy" in r:
+        return "minimum tenancy too long"
+    if "size" in r or "sqm" in r:
+        return "below your minimum size"
+    return "one requirement doesn't match"
+
+
 def _format_near_miss_block(near_miss: List[Dict[str, Any]], max_show: int = 3) -> str:
     """Format up to max_show near-miss audit records into a compact display block."""
     if not near_miss:
         return ""
-    lines = ["", "Near misses (one constraint away):"]
+    lines = ["", "Close matches:"]
     for rec in near_miss[:max_show]:
         title = str(rec.get("title") or rec.get("address") or "Unknown listing").strip()
-        price = _to_num(rec.get("price_pcm"))
-        beds = _to_num(rec.get("bedrooms"))
-        baths = _to_num(rec.get("bathrooms"))
         reasons = rec.get("hard_fail_reasons") or []
-
-        parts: List[str] = []
-        if price is not None:
-            parts.append(f"£{int(round(price))}/mo")
-        if beds is not None:
-            parts.append(f"{int(round(beds))} bed")
-        if baths is not None:
-            parts.append(f"{int(round(baths))} bath")
-        detail = " | ".join(parts)
-        why = reasons[0] if reasons else "unknown"
-        lines.append(f"  • {title}" + (f" — {detail}" if detail else "") + f" (failed: {why})")
+        why = _humanize_fail_reason(reasons[0], rec) if reasons else ""
+        line = f"  • {title}"
+        if why:
+            line += f" — {why}"
+        lines.append(line)
     return "\n".join(lines)
 
 
