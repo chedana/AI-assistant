@@ -322,7 +322,18 @@ def evaluate_node(state: GraphState) -> GraphState:
     bottleneck = _find_auto_relax_target(sensitivity)
 
     if bottleneck is None:
-        # Only layout / location / unknown constraints blocking — can't auto-relax.
+        # Primary bottleneck is layout/location (not auto-relax-safe).
+        # Fallback: if a budget constraint is set, try raising it — a higher budget
+        # may surface 2b2b listings that previously exceeded the price limit, even
+        # when budget doesn't appear as the single-miss leader.
+        has_budget = (agent_state.constraints or {}).get("max_rent_pcm") is not None
+        if has_budget and attempt < MAX_RELAX_ATTEMPTS:
+            state["eval_decision"] = "relax"
+            state["relax_bottleneck"] = "budget"
+            state["relax_near_miss"] = _find_near_miss(audits)
+            return state
+
+        # Truly stuck — layout / location / unknown, budget already tried or not set.
         near_miss = _find_near_miss(audits)
         layout_hint = _build_layout_suggestion(near_miss, agent_state.constraints)
         state["eval_decision"] = "ask_user"
