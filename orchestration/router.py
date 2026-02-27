@@ -1,7 +1,7 @@
 import json
 import re
-from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 
 from core.llm_client import qwen_router_chat
 
@@ -11,6 +11,7 @@ class RouteDecision:
     intent: str
     reason: str
     target_index: Optional[int] = None
+    target_indices: List[int] = field(default_factory=list)
     refinement_type: Optional[str] = None
     confidence: float = 0.0
     need_clarify: bool = False
@@ -18,7 +19,7 @@ class RouteDecision:
     page_action: Optional[str] = None
 
 
-_INTENTS = {"Search", "Specific_QA", "Chitchat", "Page_Nav", "AcceptSuggestion", "Explain"}
+_INTENTS = {"Search", "Specific_QA", "Compare", "Chitchat", "Page_Nav", "AcceptSuggestion", "Explain"}
 
 
 def _extract_first_json_obj(raw_text: str) -> Optional[Dict[str, Any]]:
@@ -92,10 +93,12 @@ def _classify_with_llm_no_listings(text: str, history_hint: Optional[str]) -> Op
     intent = str(obj.get("intent") or "").strip()
     if intent not in _INTENTS:
         return None
-    # Guardrail: no listings -> never QA or Explain.
+    # Guardrail: no listings -> never QA, Explain, or Compare.
     if intent == "Specific_QA":
         intent = "Search"
     if intent == "Explain":
+        intent = "Search"
+    if intent == "Compare":
         intent = "Search"
 
     try:
@@ -174,7 +177,7 @@ def _classify_with_llm_for_listings(
         "You are a router for a rental assistant.\n"
         f"Current state: has_listings=true, has_focus={'true' if has_focus else 'false'}.\n"
         "Return STRICT JSON only with schema:\n"
-        '{"intent":"Search|Specific_QA|Chitchat|Page_Nav|AcceptSuggestion|Explain","target_index":null,"confidence":0.0,"reason":"...",'
+        '{"intent":"Search|Specific_QA|Compare|Chitchat|Page_Nav|AcceptSuggestion|Explain","target_index":null,"target_indices":[],"confidence":0.0,"reason":"...",'
         '"need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Interpretation policy:\n"
         "- Search includes both new-search and refinement/reset actions.\n"
@@ -182,12 +185,14 @@ def _classify_with_llm_for_listings(
         "- Page_Nav is for paging requests.\n"
         "- Use page_action='next' for: 'next page', 'show more', 'more results', 'next batch'.\n"
         "- Use page_action='prev' for: 'previous page', 'prev page', 'go back', 'last page'.\n"
-        "- target_index is 1-based when user references a specific result number.\n"
+        "- target_index is 1-based when user references a SINGLE specific listing in QA.\n"
+        "- Compare is for structured side-by-side comparison: 'compare listing 1 and 3', 'listing 2 vs 4', 'difference between 1 and 2'. Set target_indices to the 1-based indices mentioned. If no specific indices given, leave target_indices as [].\n"
+        "- Explain is for holistic evaluation without 'compare' keyword: 'which is best?', 'explain these results', 'why recommend these?'.\n"
+        "- Specific_QA with target_indices: when user asks a question about multiple specific listings, e.g. 'do listing 1 and 2 allow pets?'. Set target_indices=[1,2], target_index=null.\n"
         "- If has_focus=true and user asks a listing detail question without index, keep intent=Specific_QA and need_clarify=false.\n"
         "- If has_focus=false and QA target is ambiguous, set need_clarify=true.\n"
         "- If refinement request is underspecified (e.g., 'too expensive' without a target budget), set need_clarify=true.\n"
         "- For clear price reduction requests, set intent=Search and refinement_type='price_down'.\n"
-        "- Explain is for evaluation or comparison requests like 'which is best?', 'explain these', 'why did you recommend these?', 'compare them'.\n"
         + suggestion_policy +
         "\n"
         "Few-shot:\n"
@@ -207,11 +212,21 @@ def _classify_with_llm_for_listings(
         "Query: 'go to previous page'\n"
         '{"intent":"Page_Nav","target_index":null,"confidence":0.96,"reason":"prev_page_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":"prev"}\n'
         "Query: 'which one is best?'\n"
-        '{"intent":"Explain","target_index":null,"confidence":0.93,"reason":"evaluation_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        '{"intent":"Explain","target_index":null,"target_indices":[],"confidence":0.93,"reason":"evaluation_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Query: 'explain these results'\n"
-        '{"intent":"Explain","target_index":null,"confidence":0.95,"reason":"evaluation_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        '{"intent":"Explain","target_index":null,"target_indices":[],"confidence":0.95,"reason":"evaluation_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Query: 'why did you recommend these?'\n"
-        '{"intent":"Explain","target_index":null,"confidence":0.91,"reason":"evaluation_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}'
+        '{"intent":"Explain","target_index":null,"target_indices":[],"confidence":0.91,"reason":"evaluation_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        "Query: 'compare listing 1 and 3'\n"
+        '{"intent":"Compare","target_index":null,"target_indices":[1,3],"confidence":0.97,"reason":"structured_comparison","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        "Query: 'listing 2 vs 4'\n"
+        '{"intent":"Compare","target_index":null,"target_indices":[2,4],"confidence":0.96,"reason":"structured_comparison","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        "Query: 'what is the difference between 1 and 2?'\n"
+        '{"intent":"Compare","target_index":null,"target_indices":[1,2],"confidence":0.94,"reason":"structured_comparison","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        "Query: 'compare all of them'\n"
+        '{"intent":"Compare","target_index":null,"target_indices":[],"confidence":0.92,"reason":"structured_comparison_all","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        "Query: 'do listing 1 and 2 allow pets?'\n"
+        '{"intent":"Specific_QA","target_index":null,"target_indices":[1,2],"confidence":0.92,"reason":"multi_listing_qa","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}'
     )
     user_payload = f"Conversation summary:\n{history_hint or '(none)'}\n\nUser input:\n{text}"
     try:
@@ -259,7 +274,16 @@ def _classify_with_llm_for_listings(
             target_index = None
     except Exception:
         target_index = None
-    if intent != "Specific_QA":
+    raw_indices = obj.get("target_indices") or []
+    try:
+        target_indices = [int(x) for x in raw_indices if isinstance(x, (int, float)) and int(x) >= 1]
+    except Exception:
+        target_indices = []
+    if intent not in {"Compare", "Specific_QA"}:
+        target_index = None
+        target_indices = []
+    if intent == "Specific_QA" and len(target_indices) > 1:
+        # Multi-target QA: clear single target_index, keep target_indices.
         target_index = None
     if intent != "Search":
         refinement_type = None
@@ -267,7 +291,7 @@ def _classify_with_llm_for_listings(
         page_action = None
     elif page_action is None:
         page_action = "next"
-    if intent == "Specific_QA" and has_focus and target_index is None:
+    if intent == "Specific_QA" and has_focus and target_index is None and not target_indices:
         need_clarify = False
         clarify_question = None
     if not need_clarify:
@@ -276,6 +300,7 @@ def _classify_with_llm_for_listings(
         intent=intent,
         reason=f"llm:{reason}",
         target_index=target_index,
+        target_indices=target_indices,
         refinement_type=refinement_type,
         confidence=conf,
         need_clarify=need_clarify,

@@ -26,7 +26,7 @@ from skills.search.handler import format_listing_row
 
 from orchestration.state import GraphState
 
-IntentName = Literal["Search", "Specific_QA", "Chitchat", "DirectReply", "Page_Nav", "Fallback", "Explain"]
+IntentName = Literal["Search", "Specific_QA", "Compare", "Chitchat", "DirectReply", "Page_Nav", "Fallback", "Explain"]
 
 
 def _auto_focus_first(agent_state) -> None:
@@ -103,6 +103,7 @@ def route_node(state: GraphState) -> GraphState:
     state["need_clarify"] = bool(decision.need_clarify)
     state["clarify_question"] = decision.clarify_question
     state["target_index"] = decision.target_index
+    state["target_indices"] = list(decision.target_indices or [])
     state["refinement_type"] = decision.refinement_type
     state["page_action"] = getattr(decision, "page_action", None)
 
@@ -138,12 +139,18 @@ def route_node(state: GraphState) -> GraphState:
         # Guardrail: comparative "which one..." should not be coerced into single-target QA.
         state["target_index"] = None
 
-    if state["intent"] == "Specific_QA" and state.get("target_index") is not None:
+    target_indices = list(state.get("target_indices") or [])
+    if state["intent"] == "Specific_QA" and state.get("target_index") is not None and len(target_indices) <= 1:
+        # Single-target QA: set focus listing.
         focus_err = _focus_by_index(agent_state, int(state["target_index"]), source="user_query")
         if focus_err:
             state["reply_text"] = focus_err
             state["intent"] = "DirectReply"
             return state
+        state["need_clarify"] = False
+        state["clarify_question"] = None
+    elif state["intent"] == "Specific_QA" and len(target_indices) > 1:
+        # Multi-target QA: indices already stored, no single focus needed.
         state["need_clarify"] = False
         state["clarify_question"] = None
     elif state["intent"] == "Specific_QA" and agent_state.current_focus_listing_payload:
@@ -528,6 +535,23 @@ def qa_execute_node(state: GraphState) -> GraphState:
     }
     target_scope = str(state.get("qa_target_scope") or "").strip().lower()
 
+    # Multi-target QA: user asked about N specific listings (e.g. "do listing 1 and 2 allow pets?")
+    qa_target_indices = [i for i in (state.get("target_indices") or []) if isinstance(i, int)]
+    if len(qa_target_indices) > 1 and state.get("target_index") is None:
+        agent_state.last_qa_scope = "list"
+        all_listings = list(agent_state.last_results or [])
+        selected = [all_listings[i - 1] for i in qa_target_indices if 1 <= i <= len(all_listings)]
+        if not selected:
+            state["reply_text"] = "Could not find the specified listings on this page."
+            return state
+        state["reply_text"] = answer_multi_listing_question(
+            question=user_in,
+            listings=selected,
+            embedder=runtime.embedder,
+            qa_ctx=qa_ctx,
+        )
+        return state
+
     if state.get("target_index") is not None:
         focus_listing = get_focus_listing(agent_state)
         if not focus_listing:
@@ -789,6 +813,148 @@ def explain_node(state: GraphState) -> GraphState:
     return state
 
 
+_COMPARE_FIELDS = [
+    ("price_pcm",     "Price/mo",   lambda v: f"£{int(float(v)):,}" if v is not None else "—"),
+    ("bedrooms",      "Beds",       lambda v: str(int(float(v))) if v is not None else "—"),
+    ("bathrooms",     "Baths",      lambda v: str(v) if v is not None else "—"),
+    ("deposit",       "Deposit",    lambda v: f"£{int(float(v)):,}" if v is not None else "—"),
+    ("available_from","Available",  lambda v: str(v) if v else "—"),
+    ("size_sqm",      "Size",       lambda v: f"{float(v):.0f} sqm" if v is not None else "—"),
+    ("furnish_type",  "Furnished",  lambda v: str(v) if v else "—"),
+    ("property_type", "Type",       lambda v: str(v) if v else "—"),
+]
+
+
+def _short_title(r: dict) -> str:
+    title = str(r.get("title") or r.get("address") or "").strip()
+    if not title:
+        return "listing"
+    return title[:28] + ("…" if len(title) > 28 else "")
+
+
+def _run_compare(user_in: str, rows: list, constraints: dict, signals: dict) -> str:
+    """Build a markdown table + LLM verdict for N listings."""
+    headers = ["Field"] + [f"#{idx} — {_short_title(r)}" for idx, r in rows]
+    table_rows = []
+    for field_key, field_label, fmt in _COMPARE_FIELDS:
+        cells = [field_label]
+        for _idx, r in rows:
+            raw = r.get(field_key)
+            try:
+                cells.append(fmt(raw) if raw is not None else "—")
+            except Exception:
+                cells.append("—")
+        table_rows.append(cells)
+
+    def _row_md(cells):
+        return "| " + " | ".join(str(c) for c in cells) + " |"
+
+    sep = "| " + " | ".join(["---"] * len(headers)) + " |"
+    table_md = "\n".join([_row_md(headers), sep] + [_row_md(r) for r in table_rows])
+
+    # Context for LLM verdict
+    req_parts = []
+    locs = constraints.get("location_keywords") or []
+    if locs:
+        req_parts.append(f"location: {', '.join(str(l) for l in locs[:3])}")
+    budget = constraints.get("max_rent_pcm")
+    if budget:
+        req_parts.append(f"budget: £{int(budget)}/mo")
+    for opt in (constraints.get("layout_options") or [])[:1]:
+        if isinstance(opt, dict) and opt.get("bedrooms") is not None:
+            req_parts.append(f"{int(opt['bedrooms'])}-bed")
+
+    pref_parts: list = []
+    topic = (signals.get("topic_preferences") or {})
+    pref_parts.extend(topic.get("transit_terms") or [])
+    pref_parts.extend(topic.get("school_terms") or [])
+    pref_parts.extend(signals.get("general_semantic") or [])
+
+    context_lines = []
+    if req_parts:
+        context_lines.append("Requirements: " + ", ".join(req_parts))
+    if pref_parts:
+        context_lines.append("Preferences: " + ", ".join(str(p) for p in pref_parts[:5]))
+    context = "\n".join(context_lines)
+
+    system = (
+        "You are a rental comparison assistant. "
+        "Given a comparison table and user requirements, write a concise 2-4 sentence verdict. "
+        "Identify the strongest option and explain why, referencing specific numbers. Be direct."
+    )
+    user_payload = (f"{context}\n\n" if context else "") + (
+        f"Comparison ({len(rows)} listings):\n{table_md}\n\nUser question: {user_in}\n\nVerdict:"
+    )
+    try:
+        verdict = qwen_chat(
+            [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_payload},
+            ],
+            temperature=0.3,
+        ).strip()
+    except Exception:
+        verdict = ""
+
+    label = " vs ".join(f"#{idx}" for idx, _ in rows)
+    lines = [f"**Comparison: {label}**", "", table_md]
+    if verdict:
+        lines += ["", "**Verdict**", verdict]
+    return "\n".join(lines)
+
+
+def compare_node(state: GraphState) -> GraphState:
+    """Structured side-by-side comparison of N listings with LLM verdict."""
+    agent_state = state["agent_state"]
+    user_in = str(state.get("user_input") or "")
+    listings = list(agent_state.last_results or [])
+
+    if not listings:
+        state["reply_text"] = (
+            "I don't have any listings to compare yet. "
+            "Tell me your search requirements first and I'll find some options."
+        )
+        return state
+
+    raw_indices = [i for i in (state.get("target_indices") or []) if isinstance(i, int)]
+
+    if len(raw_indices) >= 2:
+        rows, bad = [], []
+        for idx in raw_indices:
+            if 1 <= idx <= len(listings):
+                rows.append((idx, listings[idx - 1]))
+            else:
+                bad.append(idx)
+        if bad:
+            state["reply_text"] = (
+                f"Listing {bad[0] if len(bad) == 1 else bad} out of range. "
+                f"I have {len(listings)} listing{'s' if len(listings) != 1 else ''} on this page."
+            )
+            return state
+    else:
+        # No specific indices — compare all on current page.
+        rows = [(i + 1, r) for i, r in enumerate(listings)]
+
+    if len(rows) < 2:
+        state["reply_text"] = "I need at least 2 listings to compare. Try searching first."
+        return state
+
+    constraints = dict(agent_state.constraints or {})
+    signals = dict(agent_state.user_profile or {})
+
+    try:
+        reply = _run_compare(user_in, rows, constraints, signals)
+    except Exception:
+        _logger.exception("compare_node: _run_compare failed")
+        reply = (
+            "I had trouble generating a comparison. "
+            "You can ask about individual listings, e.g. 'tell me more about listing 2'."
+        )
+
+    state["reply_text"] = reply
+    return state
+
+
 def finalize_node(state: GraphState) -> GraphState:
     state["attempt_count"] = int(state.get("attempt_count") or 0) + 1
     agent_state = state["agent_state"]
@@ -804,6 +970,8 @@ def route_branch(state: GraphState) -> IntentName:
         return "Search"
     if intent == "Specific_QA":
         return "Specific_QA"
+    if intent == "Compare":
+        return "Compare"
     if intent == "AcceptSuggestion":
         return "AcceptSuggestion"
     if intent == "Explain":
