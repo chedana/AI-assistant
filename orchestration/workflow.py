@@ -32,7 +32,7 @@ def _legacy_process_turn(user_in: str, state: AgentState, runtime, router_debug:
             + json.dumps(
                 {
                     "intent": decision.intent,
-                    "target_index": decision.target_index,
+                    "target_indices": list(decision.target_indices or []),
                     "refinement_type": decision.refinement_type,
                     "page_action": getattr(decision, "page_action", None),
                     "confidence": decision.confidence,
@@ -46,8 +46,8 @@ def _legacy_process_turn(user_in: str, state: AgentState, runtime, router_debug:
             )
         )
 
-    if decision.intent == "Specific_QA" and decision.target_index is not None:
-        focus_err = _focus_by_index(state, decision.target_index, source="user_query")
+    if decision.intent == "Specific_QA" and len(decision.target_indices or []) == 1:
+        focus_err = _focus_by_index(state, decision.target_indices[0], source="user_query")
         if focus_err:
             state.history.append((user_in, focus_err))
             return focus_err
@@ -127,7 +127,7 @@ def _legacy_process_turn(user_in: str, state: AgentState, runtime, router_debug:
                 bot_text = "\n".join(lines)
     elif decision.intent == "Specific_QA":
         # Explicit target index from router always means single-listing QA.
-        if decision.target_index is not None:
+        if len(decision.target_indices or []) == 1:
             if not state.current_focus_listing_payload:
                 bot_text = "Which listing do you mean? Use /focus 1 to select one first."
             else:

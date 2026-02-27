@@ -90,7 +90,6 @@ class GraphState(TypedDict, total=False):
     route_reason: str
     need_clarify: bool
     clarify_question: Optional[str]
-    target_index: Optional[int]
     target_indices: List[int]
     refinement_type: Optional[str]
     page_action: Optional[str]
@@ -138,7 +137,6 @@ def make_graph_state(user_input: str, *, agent_state: Any, runtime: Any, router_
         route_reason="",
         need_clarify=False,
         clarify_question=None,
-        target_index=None,
         target_indices=[],
         refinement_type=None,
         page_action=None,

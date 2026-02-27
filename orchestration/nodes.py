@@ -102,7 +102,6 @@ def route_node(state: GraphState) -> GraphState:
     state["route_reason"] = str(decision.reason or "")
     state["need_clarify"] = bool(decision.need_clarify)
     state["clarify_question"] = decision.clarify_question
-    state["target_index"] = decision.target_index
     state["target_indices"] = list(decision.target_indices or [])
     state["refinement_type"] = decision.refinement_type
     state["page_action"] = getattr(decision, "page_action", None)
@@ -113,7 +112,7 @@ def route_node(state: GraphState) -> GraphState:
             + json.dumps(
                 {
                     "intent": decision.intent,
-                    "target_index": decision.target_index,
+                    "target_indices": list(decision.target_indices or []),
                     "refinement_type": decision.refinement_type,
                     "page_action": getattr(decision, "page_action", None),
                     "confidence": decision.confidence,
@@ -135,14 +134,16 @@ def route_node(state: GraphState) -> GraphState:
             },
         )
 
+    target_indices = list(state.get("target_indices") or [])
+
     if state["intent"] == "Specific_QA" and _is_cross_candidate_query(text):
         # Guardrail: comparative "which one..." should not be coerced into single-target QA.
-        state["target_index"] = None
+        state["target_indices"] = []
+        target_indices = []
 
-    target_indices = list(state.get("target_indices") or [])
-    if state["intent"] == "Specific_QA" and state.get("target_index") is not None and len(target_indices) <= 1:
+    if state["intent"] == "Specific_QA" and len(target_indices) == 1:
         # Single-target QA: set focus listing.
-        focus_err = _focus_by_index(agent_state, int(state["target_index"]), source="user_query")
+        focus_err = _focus_by_index(agent_state, target_indices[0], source="user_query")
         if focus_err:
             state["reply_text"] = focus_err
             state["intent"] = "DirectReply"
@@ -491,7 +492,7 @@ def qa_plan_node(state: GraphState) -> GraphState:
     state["qa_semantic_terms"] = dict((qa_ctx or {}).get("semantic_terms") or {})
     state["qa_signals"] = dict((qa_ctx or {}).get("signals") or {})
 
-    if state.get("target_index") is not None:
+    if len(state.get("target_indices") or []) == 1:
         target_scope = "single"
     else:
         scope = classify_qa_scope(
@@ -537,7 +538,7 @@ def qa_execute_node(state: GraphState) -> GraphState:
 
     # Multi-target QA: user asked about N specific listings (e.g. "do listing 1 and 2 allow pets?")
     qa_target_indices = [i for i in (state.get("target_indices") or []) if isinstance(i, int)]
-    if len(qa_target_indices) > 1 and state.get("target_index") is None:
+    if len(qa_target_indices) > 1:
         agent_state.last_qa_scope = "list"
         all_listings = list(agent_state.last_results or [])
         selected = [all_listings[i - 1] for i in qa_target_indices if 1 <= i <= len(all_listings)]
@@ -552,7 +553,7 @@ def qa_execute_node(state: GraphState) -> GraphState:
         )
         return state
 
-    if state.get("target_index") is not None:
+    if len(state.get("target_indices") or []) == 1:
         focus_listing = get_focus_listing(agent_state)
         if not focus_listing:
             state["reply_text"] = "Which listing do you mean? Use /focus 1 to select one first."
