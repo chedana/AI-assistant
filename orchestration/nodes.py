@@ -1088,6 +1088,8 @@ def _run_area_compare(areas: list, base_constraints: dict, user_in: str, runtime
     lines = [f"**Area comparison: {areas_label}{title_suffix}**", "", table_md]
     if verdict:
         lines += ["", "**Verdict**", verdict]
+    if not _has_layout_constraints(base_constraints):
+        lines += ["", "_Note: prices cover all property types — add a bedroom filter (e.g. '2-bed') for a like-for-like view._"]
     return "\n".join(lines)
 
 
@@ -1114,11 +1116,12 @@ def area_compare_node(state: GraphState) -> GraphState:
         )
         return state
 
-    # Determine base constraints for like-for-like comparison.
+    # Use session constraints as base. Layout (bedrooms) is optional — if present the comparison
+    # is like-for-like; if absent we compare all property types and note it in the output.
     base_constraints = dict(agent_state.constraints or {})
 
-    # If no bedroom layout yet, try extracting from user_in (handles pending follow-up).
-    if not _has_layout_constraints(base_constraints) and user_in:
+    # If user_in mentions a layout (e.g. "2 bed"), try to extract and layer it on top.
+    if user_in and not _has_layout_constraints(base_constraints):
         try:
             plan = build_refinement_plan(user_text=user_in, existing_constraints=agent_state.constraints)
             old_snap = snapshot_from_constraints(agent_state.constraints or {}, results=[])
@@ -1128,17 +1131,6 @@ def area_compare_node(state: GraphState) -> GraphState:
                 base_constraints = extracted
         except Exception:
             pass
-
-    # Still no bedroom layout → ask user for layout info and store pending.
-    if not _has_layout_constraints(base_constraints):
-        areas_str = _format_areas(areas)
-        agent_state.pending_area_compare = {"areas": areas}
-        state["reply_text"] = (
-            f"I'd be happy to compare {areas_str}! "
-            "What type of place are you looking for? "
-            "For example: 1-bed, 2-bed furnished, 2-bed 2-bath, etc."
-        )
-        return state
 
     try:
         reply = _run_area_compare(areas, base_constraints, user_in, runtime)
