@@ -77,6 +77,8 @@ class AgentState:
     # Structure: {"field": str, "new_value": Any, "display": str}
     # field maps: "budget"→max_rent_pcm, "furnish_type", "let_type",
     #             "available_from", "min_size_sqm", "min_tenancy"→min_tenancy_months
+    pending_area_compare: Optional[Dict[str, Any]] = None  # pending area compare awaiting layout info
+    # Structure: {"areas": List[str]}
 
 
 class GraphState(TypedDict, total=False):
@@ -92,6 +94,7 @@ class GraphState(TypedDict, total=False):
     need_clarify: bool
     clarify_question: Optional[str]
     target_indices: List[int]
+    target_areas: List[str]
     refinement_type: Optional[str]
     page_action: Optional[str]
 
@@ -139,6 +142,7 @@ def make_graph_state(user_input: str, *, agent_state: Any, runtime: Any, router_
         need_clarify=False,
         clarify_question=None,
         target_indices=[],
+        target_areas=[],
         refinement_type=None,
         page_action=None,
         # Turn output defaults
