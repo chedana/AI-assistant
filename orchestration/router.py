@@ -57,21 +57,6 @@ def _classify_with_llm_no_listings(
     history_hint: Optional[str],
     pending_area_compare_areas: Optional[List[str]] = None,
 ) -> Optional[RouteDecision]:
-    pending_ac_policy = ""
-    pending_ac_few_shot = ""
-    if pending_area_compare_areas:
-        areas_str = ", ".join(pending_area_compare_areas)
-        pending_ac_policy = (
-            f"- A previous area comparison for [{areas_str}] is awaiting layout information.\n"
-            "- If the user is providing layout details (e.g. '2 bed', 'furnished'), "
-            "set intent=AreaCompare with target_areas=[] (areas will be inherited from pending).\n"
-        )
-        pending_ac_few_shot = (
-            f"[Pending area compare: {areas_str}]\n"
-            "Query: '2 bed furnished'\n"
-            '{"intent":"AreaCompare","target_areas":[],"confidence":0.95,"reason":"pending_area_compare_layout_reply",'
-            '"need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-        )
     prompt = (
         "You are a router for a rental assistant.\n"
         "Current state always has_listings=false and has_focus=false.\n"
@@ -86,11 +71,9 @@ def _classify_with_llm_no_listings(
         "- Use AreaCompare when user wants to compare rental prices or availability across multiple areas "
         "(e.g. 'Is Hackney cheaper than Peckham?', 'compare rents in zone 2 vs zone 3'). "
         "Set target_areas to the list of area names mentioned.\n"
-        + pending_ac_policy
-        + "\n"
+        "\n"
         "Few-shot:\n"
-        + pending_ac_few_shot
-        + "Query: 'How r you'\n"
+        "Query: 'How r you'\n"
         'Output: {"intent":"Chitchat","target_areas":[],"confidence":0.92,"reason":"small_talk","need_clarify":false,"clarify_question":null,"refinement_type":null}\n'
         "Query: 'Find 1 bed near Waterloo under 2500'\n"
         'Output: {"intent":"Search","target_areas":[],"confidence":0.96,"reason":"search_request","need_clarify":false,"clarify_question":null,"refinement_type":null}\n'
@@ -206,22 +189,6 @@ def _classify_with_llm_for_listings(
             '{"intent":"Search","confidence":0.92,"reason":"rejecting_suggestion_redirect","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         )
 
-    area_compare_policy = ""
-    area_compare_few_shot = ""
-    if pending_area_compare_areas:
-        areas_str = ", ".join(pending_area_compare_areas)
-        area_compare_policy = (
-            f"- A previous area comparison for [{areas_str}] is awaiting layout information.\n"
-            "- If the user is providing layout details (e.g. '2 bed', 'furnished'), "
-            "set intent=AreaCompare with target_areas=[] (areas will be inherited from pending).\n"
-        )
-        area_compare_few_shot = (
-            f"[Pending area compare: {areas_str}]\n"
-            "Query: '2 bed furnished'\n"
-            '{"intent":"AreaCompare","target_indices":[],"target_areas":[],"confidence":0.95,"reason":"pending_area_compare_layout_reply",'
-            '"need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-        )
-
     prompt = (
         "You are a router for a rental assistant.\n"
         f"Current state: has_listings=true, has_focus={'true' if has_focus else 'false'}.\n"
@@ -246,11 +213,9 @@ def _classify_with_llm_for_listings(
         "- If refinement request is underspecified (e.g., 'too expensive' without a target budget), set need_clarify=true.\n"
         "- For clear price reduction requests, set intent=Search and refinement_type='price_down'.\n"
         + suggestion_policy
-        + area_compare_policy
         + "\n"
         "Few-shot:\n"
         + suggestion_few_shot
-        + area_compare_few_shot
         + "Query: 'too expensive, cheaper please'\n"
         '{"intent":"Search","confidence":0.97,"reason":"refinement_request","need_clarify":false,"clarify_question":null,"refinement_type":"price_down","page_action":null}\n'
         "Query: 'does it have a gym?'\n"
