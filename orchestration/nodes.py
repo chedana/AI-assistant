@@ -26,7 +26,7 @@ from skills.search.handler import format_listing_row
 
 from orchestration.state import GraphState
 
-IntentName = Literal["Search", "Specific_QA", "Compare", "Chitchat", "DirectReply", "Page_Nav", "Fallback", "Explain"]
+IntentName = Literal["Search", "Specific_QA", "Compare", "AreaCompare", "Chitchat", "DirectReply", "Page_Nav", "Fallback", "Explain"]
 
 
 def _auto_focus_first(agent_state) -> None:
@@ -89,6 +89,7 @@ def route_node(state: GraphState) -> GraphState:
         return state
 
     pending = agent_state.pending_suggestion
+    pending_ac = agent_state.pending_area_compare
     decision = route_turn(
         text,
         mode=agent_state.mode,
@@ -97,12 +98,14 @@ def route_node(state: GraphState) -> GraphState:
         has_focus=bool(agent_state.current_focus_listing_payload),
         listings_count=len(agent_state.last_results),
         pending_suggestion_display=str(pending["display"]) if pending else None,
+        pending_area_compare_areas=list(pending_ac["areas"]) if pending_ac and pending_ac.get("areas") else None,
     )
     state["intent"] = str(decision.intent or "Fallback")
     state["route_reason"] = str(decision.reason or "")
     state["need_clarify"] = bool(decision.need_clarify)
     state["clarify_question"] = decision.clarify_question
     state["target_indices"] = list(decision.target_indices or [])
+    state["target_areas"] = list(decision.target_areas or [])
     state["refinement_type"] = decision.refinement_type
     state["page_action"] = getattr(decision, "page_action", None)
 
@@ -113,6 +116,7 @@ def route_node(state: GraphState) -> GraphState:
                 {
                     "intent": decision.intent,
                     "target_indices": list(decision.target_indices or []),
+                    "target_areas": list(decision.target_areas or []),
                     "refinement_type": decision.refinement_type,
                     "page_action": getattr(decision, "page_action", None),
                     "confidence": decision.confidence,
@@ -956,6 +960,199 @@ def compare_node(state: GraphState) -> GraphState:
     return state
 
 
+def _has_layout_constraints(constraints: dict) -> bool:
+    """Return True if constraints include at least one layout option with bedrooms specified."""
+    for opt in (constraints.get("layout_options") or []):
+        if isinstance(opt, dict) and opt.get("bedrooms") is not None:
+            return True
+    return False
+
+
+def _describe_layout(constraints: dict) -> str:
+    """Human-readable layout description from constraints (e.g. '2-bed furnished')."""
+    parts = []
+    for opt in (constraints.get("layout_options") or [])[:1]:
+        if isinstance(opt, dict):
+            beds = opt.get("bedrooms")
+            baths = opt.get("bathrooms")
+            if beds is not None:
+                parts.append(f"{int(beds)}-bed")
+            if baths is not None:
+                parts.append(f"{int(baths)}-bath")
+    furnish = constraints.get("furnish_type")
+    if furnish:
+        parts.append(str(furnish))
+    return " ".join(parts) if parts else ""
+
+
+def _format_areas(areas: list) -> str:
+    """Human-readable area list: 'Hackney, Peckham and Brixton'."""
+    if not areas:
+        return "those areas"
+    if len(areas) == 1:
+        return areas[0]
+    if len(areas) == 2:
+        return f"{areas[0]} and {areas[1]}"
+    return ", ".join(areas[:-1]) + f" and {areas[-1]}"
+
+
+def _run_area_compare(areas: list, base_constraints: dict, user_in: str, runtime) -> str:
+    """Per-area Qdrant search → aggregate price stats → markdown table + LLM verdict."""
+    import statistics as _stats
+
+    area_data = []
+    for area in areas:
+        area_constraints = {**base_constraints, "location_keywords": [area]}
+        try:
+            out = run_search_skill(
+                user_text="",
+                state_constraints={},
+                runtime=runtime,
+                override_constraints=area_constraints,
+                precomputed_semantic_terms={},
+            )
+            all_listings = list(out.get("all_ranked_listings") or out.get("listings") or [])
+            prices = [
+                float(r["price_pcm"])
+                for r in all_listings
+                if r.get("price_pcm") is not None
+            ]
+        except Exception:
+            _logger.exception("area_compare: search failed for area=%s", area)
+            all_listings = []
+            prices = []
+
+        if prices:
+            min_p = min(prices)
+            max_p = max(prices)
+            med_p = _stats.median(prices)
+        else:
+            min_p = max_p = med_p = None
+
+        area_data.append({
+            "area": area,
+            "count": len(all_listings),
+            "min": min_p,
+            "median": med_p,
+            "max": max_p,
+        })
+
+    def _fp(v):
+        return f"£{int(v):,}" if v is not None else "—"
+
+    def _row_md(cells):
+        return "| " + " | ".join(str(c) for c in cells) + " |"
+
+    headers = ["Area", "Listings", "Min/mo", "Median/mo", "Max/mo"]
+    sep = "| " + " | ".join(["---"] * len(headers)) + " |"
+    rows_md = [
+        _row_md([
+            d["area"],
+            str(d["count"]) if d["count"] > 0 else "No results",
+            _fp(d["min"]),
+            _fp(d["median"]),
+            _fp(d["max"]),
+        ])
+        for d in area_data
+    ]
+    table_md = "\n".join([_row_md(headers), sep] + rows_md)
+
+    layout_desc = _describe_layout(base_constraints)
+    title_suffix = f" ({layout_desc})" if layout_desc else ""
+
+    system = (
+        "You are a rental market analyst. "
+        "Given an area comparison table, write a concise 2-4 sentence verdict. "
+        "State which area is cheapest, by how much, and any notable trade-offs (supply count, price spread). "
+        "Reference specific figures. Be direct and factual."
+    )
+    budget = base_constraints.get("max_rent_pcm")
+    budget_line = f"Budget cap: £{int(budget)}/mo. " if budget else ""
+    user_payload = (
+        f"{budget_line}Layout: {layout_desc or 'any'}.\n\n"
+        f"Area price comparison:\n{table_md}\n\n"
+        f"User question: {user_in}\n\nVerdict:"
+    )
+    try:
+        verdict = qwen_chat(
+            [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_payload},
+            ],
+            temperature=0.3,
+        ).strip()
+    except Exception:
+        verdict = ""
+
+    areas_label = " vs ".join(d["area"] for d in area_data)
+    lines = [f"**Area comparison: {areas_label}{title_suffix}**", "", table_md]
+    if verdict:
+        lines += ["", "**Verdict**", verdict]
+    return "\n".join(lines)
+
+
+def area_compare_node(state: GraphState) -> GraphState:
+    """Compare rental price stats across multiple geographic areas."""
+    agent_state = state["agent_state"]
+    user_in = str(state.get("user_input") or "")
+    runtime = state["runtime"]
+
+    target_areas = [a for a in (state.get("target_areas") or []) if isinstance(a, str) and a.strip()]
+    pending = agent_state.pending_area_compare
+
+    # Resolve which areas to compare.
+    if target_areas:
+        areas = target_areas[:4]
+        agent_state.pending_area_compare = None  # clear stale pending if user gave new areas
+    elif pending and pending.get("areas"):
+        areas = list(pending["areas"])[:4]
+        agent_state.pending_area_compare = None  # consume
+    else:
+        state["reply_text"] = (
+            "Which areas would you like to compare? "
+            "For example: 'Is Hackney cheaper than Peckham?'"
+        )
+        return state
+
+    # Determine base constraints for like-for-like comparison.
+    base_constraints = dict(agent_state.constraints or {})
+
+    # If no bedroom layout yet, try extracting from user_in (handles pending follow-up).
+    if not _has_layout_constraints(base_constraints) and user_in:
+        try:
+            plan = build_refinement_plan(user_text=user_in, existing_constraints=agent_state.constraints)
+            old_snap = snapshot_from_constraints(agent_state.constraints or {}, results=[])
+            new_snap = derive_snapshot(old_snap, plan.set_fields, plan.clear_fields, plan.is_reset)
+            extracted = snapshot_to_constraints(new_snap) or {}
+            if _has_layout_constraints(extracted):
+                base_constraints = extracted
+        except Exception:
+            pass
+
+    # Still no bedroom layout → ask user for layout info and store pending.
+    if not _has_layout_constraints(base_constraints):
+        areas_str = _format_areas(areas)
+        agent_state.pending_area_compare = {"areas": areas}
+        state["reply_text"] = (
+            f"I'd be happy to compare {areas_str}! "
+            "What type of place are you looking for? "
+            "For example: 1-bed, 2-bed furnished, 2-bed 2-bath, etc."
+        )
+        return state
+
+    try:
+        reply = _run_area_compare(areas, base_constraints, user_in, runtime)
+    except Exception:
+        _logger.exception("area_compare_node: _run_area_compare failed")
+        reply = (
+            "I had trouble comparing those areas. "
+            "Please try again or search a specific area directly."
+        )
+
+    state["reply_text"] = reply
+    return state
+
+
 def finalize_node(state: GraphState) -> GraphState:
     state["attempt_count"] = int(state.get("attempt_count") or 0) + 1
     agent_state = state["agent_state"]
@@ -973,6 +1170,8 @@ def route_branch(state: GraphState) -> IntentName:
         return "Specific_QA"
     if intent == "Compare":
         return "Compare"
+    if intent == "AreaCompare":
+        return "AreaCompare"
     if intent == "AcceptSuggestion":
         return "AcceptSuggestion"
     if intent == "Explain":

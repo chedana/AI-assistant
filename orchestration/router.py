@@ -11,6 +11,7 @@ class RouteDecision:
     intent: str
     reason: str
     target_indices: List[int] = field(default_factory=list)
+    target_areas: List[str] = field(default_factory=list)
     refinement_type: Optional[str] = None
     confidence: float = 0.0
     need_clarify: bool = False
@@ -18,7 +19,7 @@ class RouteDecision:
     page_action: Optional[str] = None
 
 
-_INTENTS = {"Search", "Specific_QA", "Compare", "Chitchat", "Page_Nav", "AcceptSuggestion", "Explain"}
+_INTENTS = {"Search", "Specific_QA", "Compare", "AreaCompare", "Chitchat", "Page_Nav", "AcceptSuggestion", "Explain"}
 
 
 def _extract_first_json_obj(raw_text: str) -> Optional[Dict[str, Any]]:
@@ -51,28 +52,56 @@ def _extract_first_json_obj(raw_text: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _classify_with_llm_no_listings(text: str, history_hint: Optional[str]) -> Optional[RouteDecision]:
+def _classify_with_llm_no_listings(
+    text: str,
+    history_hint: Optional[str],
+    pending_area_compare_areas: Optional[List[str]] = None,
+) -> Optional[RouteDecision]:
+    pending_ac_policy = ""
+    pending_ac_few_shot = ""
+    if pending_area_compare_areas:
+        areas_str = ", ".join(pending_area_compare_areas)
+        pending_ac_policy = (
+            f"- A previous area comparison for [{areas_str}] is awaiting layout information.\n"
+            "- If the user is providing layout details (e.g. '2 bed', 'furnished'), "
+            "set intent=AreaCompare with target_areas=[] (areas will be inherited from pending).\n"
+        )
+        pending_ac_few_shot = (
+            f"[Pending area compare: {areas_str}]\n"
+            "Query: '2 bed furnished'\n"
+            '{"intent":"AreaCompare","target_areas":[],"confidence":0.95,"reason":"pending_area_compare_layout_reply",'
+            '"need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        )
     prompt = (
         "You are a router for a rental assistant.\n"
         "Current state always has_listings=false and has_focus=false.\n"
         "Return STRICT JSON only with schema:\n"
-        '{"intent":"Search|Specific_QA|Chitchat|Page_Nav","confidence":0.0,"reason":"...",'
+        '{"intent":"Search|Specific_QA|Chitchat|Page_Nav|AreaCompare","target_areas":[],"confidence":0.0,"reason":"...",'
         '"need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Policy:\n"
         "- Without listings, Specific_QA is invalid and should generally map to Search.\n"
         "- If user asks to navigate pages, intent=Page_Nav with page_action='next' or 'prev'.\n"
         "- Use Chitchat for greetings/small talk.\n"
         "- Use Search for search requests or filter statements.\n"
-        "\n"
+        "- Use AreaCompare when user wants to compare rental prices or availability across multiple areas "
+        "(e.g. 'Is Hackney cheaper than Peckham?', 'compare rents in zone 2 vs zone 3'). "
+        "Set target_areas to the list of area names mentioned.\n"
+        + pending_ac_policy
+        + "\n"
         "Few-shot:\n"
-        "Query: 'How r you'\n"
-        'Output: {"intent":"Chitchat","confidence":0.92,"reason":"small_talk","need_clarify":false,"clarify_question":null,"refinement_type":null}\n'
+        + pending_ac_few_shot
+        + "Query: 'How r you'\n"
+        'Output: {"intent":"Chitchat","target_areas":[],"confidence":0.92,"reason":"small_talk","need_clarify":false,"clarify_question":null,"refinement_type":null}\n'
         "Query: 'Find 1 bed near Waterloo under 2500'\n"
-        'Output: {"intent":"Search","confidence":0.96,"reason":"search_request","need_clarify":false,"clarify_question":null,"refinement_type":null}\n'
+        'Output: {"intent":"Search","target_areas":[],"confidence":0.96,"reason":"search_request","need_clarify":false,"clarify_question":null,"refinement_type":null}\n'
         "Query: 'Is it close to the station?'\n"
-        'Output: {"intent":"Search","confidence":0.84,"reason":"no_listing_context_for_qa","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        'Output: {"intent":"Search","target_areas":[],"confidence":0.84,"reason":"no_listing_context_for_qa","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Query: 'show more'\n"
-        'Output: {"intent":"Page_Nav","confidence":0.95,"reason":"next_page_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":"next"}'
+        'Output: {"intent":"Page_Nav","target_areas":[],"confidence":0.95,"reason":"next_page_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":"next"}\n'
+        "Query: 'Is Hackney cheaper than Peckham?'\n"
+        'Output: {"intent":"AreaCompare","target_areas":["Hackney","Peckham"],"confidence":0.95,"reason":"area_price_comparison","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        "Query: 'compare rents in zone 2 vs zone 3'\n"
+        'Output: {"intent":"AreaCompare","target_areas":["zone 2","zone 3"],"confidence":0.93,"reason":"area_price_comparison","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}'
     )
     user_payload = f"Conversation summary:\n{history_hint or '(none)'}\n\nUser input:\n{text}"
     try:
@@ -121,7 +150,13 @@ def _classify_with_llm_no_listings(text: str, history_hint: Optional[str]) -> Op
         page_action = None
     if page_action not in {"next", "prev"}:
         page_action = None
-
+    raw_areas = obj.get("target_areas") or []
+    try:
+        target_areas = [str(a).strip() for a in raw_areas if str(a).strip()]
+    except Exception:
+        target_areas = []
+    if intent != "AreaCompare":
+        target_areas = []
     if intent != "Search":
         refinement_type = None
     if intent != "Page_Nav":
@@ -131,6 +166,7 @@ def _classify_with_llm_no_listings(text: str, history_hint: Optional[str]) -> Op
     return RouteDecision(
         intent=intent,
         reason=f"llm_no_listings:{reason}",
+        target_areas=target_areas,
         refinement_type=refinement_type,
         confidence=conf,
         need_clarify=need_clarify,
@@ -144,6 +180,7 @@ def _classify_with_llm_for_listings(
     history_hint: Optional[str],
     has_focus: bool,
     pending_suggestion_display: Optional[str] = None,
+    pending_area_compare_areas: Optional[List[str]] = None,
 ) -> Optional[RouteDecision]:
     suggestion_policy = ""
     suggestion_few_shot = ""
@@ -169,11 +206,27 @@ def _classify_with_llm_for_listings(
             '{"intent":"Search","confidence":0.92,"reason":"rejecting_suggestion_redirect","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         )
 
+    area_compare_policy = ""
+    area_compare_few_shot = ""
+    if pending_area_compare_areas:
+        areas_str = ", ".join(pending_area_compare_areas)
+        area_compare_policy = (
+            f"- A previous area comparison for [{areas_str}] is awaiting layout information.\n"
+            "- If the user is providing layout details (e.g. '2 bed', 'furnished'), "
+            "set intent=AreaCompare with target_areas=[] (areas will be inherited from pending).\n"
+        )
+        area_compare_few_shot = (
+            f"[Pending area compare: {areas_str}]\n"
+            "Query: '2 bed furnished'\n"
+            '{"intent":"AreaCompare","target_indices":[],"target_areas":[],"confidence":0.95,"reason":"pending_area_compare_layout_reply",'
+            '"need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        )
+
     prompt = (
         "You are a router for a rental assistant.\n"
         f"Current state: has_listings=true, has_focus={'true' if has_focus else 'false'}.\n"
         "Return STRICT JSON only with schema:\n"
-        '{"intent":"Search|Specific_QA|Compare|Chitchat|Page_Nav|AcceptSuggestion|Explain","target_indices":[],"confidence":0.0,"reason":"...",'
+        '{"intent":"Search|Specific_QA|Compare|AreaCompare|Chitchat|Page_Nav|AcceptSuggestion|Explain","target_indices":[],"target_areas":[],"confidence":0.0,"reason":"...",'
         '"need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Interpretation policy:\n"
         "- Search includes both new-search and refinement/reset actions.\n"
@@ -183,17 +236,22 @@ def _classify_with_llm_for_listings(
         "- Use page_action='prev' for: 'previous page', 'prev page', 'go back', 'last page'.\n"
         "- For a single listing reference in QA, use target_indices=[N] (e.g. 'second listing' → target_indices=[2]).\n"
         "- Compare is for structured side-by-side comparison: 'compare listing 1 and 3', 'listing 2 vs 4', 'difference between 1 and 2'. Set target_indices to the 1-based indices mentioned. If no specific indices given, leave target_indices as [].\n"
+        "- AreaCompare is for comparing rental prices/availability across multiple geographic areas "
+        "(e.g. 'Is Hackney cheaper than Peckham?', 'compare rents in zone 2 vs zone 3'). "
+        "Set target_areas to the list of area names mentioned.\n"
         "- Explain is for holistic evaluation without 'compare' keyword: 'which is best?', 'explain these results', 'why recommend these?'.\n"
         "- Specific_QA with multiple listings: e.g. 'do listing 1 and 2 allow pets?'. Set target_indices=[1,2].\n"
         "- If has_focus=true and user asks a listing detail question without index, keep intent=Specific_QA and need_clarify=false.\n"
         "- If has_focus=false and QA target is ambiguous, set need_clarify=true.\n"
         "- If refinement request is underspecified (e.g., 'too expensive' without a target budget), set need_clarify=true.\n"
         "- For clear price reduction requests, set intent=Search and refinement_type='price_down'.\n"
-        + suggestion_policy +
-        "\n"
+        + suggestion_policy
+        + area_compare_policy
+        + "\n"
         "Few-shot:\n"
-        + suggestion_few_shot +
-        "Query: 'too expensive, cheaper please'\n"
+        + suggestion_few_shot
+        + area_compare_few_shot
+        + "Query: 'too expensive, cheaper please'\n"
         '{"intent":"Search","confidence":0.97,"reason":"refinement_request","need_clarify":false,"clarify_question":null,"refinement_type":"price_down","page_action":null}\n'
         "Query: 'does it have a gym?'\n"
         '{"intent":"Specific_QA","confidence":0.90,"reason":"detail_question_about_listing","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
@@ -222,7 +280,11 @@ def _classify_with_llm_for_listings(
         "Query: 'compare all of them'\n"
         '{"intent":"Compare","target_indices":[],"confidence":0.92,"reason":"structured_comparison_all","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Query: 'do listing 1 and 2 allow pets?'\n"
-        '{"intent":"Specific_QA","target_indices":[1,2],"confidence":0.92,"reason":"multi_listing_qa","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}'
+        '{"intent":"Specific_QA","target_indices":[1,2],"confidence":0.92,"reason":"multi_listing_qa","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        "Query: 'Is Hackney cheaper than Peckham for a 2 bed?'\n"
+        '{"intent":"AreaCompare","target_indices":[],"target_areas":["Hackney","Peckham"],"confidence":0.96,"reason":"area_price_comparison","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        "Query: 'which area is more affordable, Brixton or Clapham?'\n"
+        '{"intent":"AreaCompare","target_indices":[],"target_areas":["Brixton","Clapham"],"confidence":0.94,"reason":"area_price_comparison","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}'
     )
     user_payload = f"Conversation summary:\n{history_hint or '(none)'}\n\nUser input:\n{text}"
     try:
@@ -270,6 +332,13 @@ def _classify_with_llm_for_listings(
         target_indices = []
     if intent not in {"Compare", "Specific_QA"}:
         target_indices = []
+    raw_areas = obj.get("target_areas") or []
+    try:
+        target_areas = [str(a).strip() for a in raw_areas if str(a).strip()]
+    except Exception:
+        target_areas = []
+    if intent != "AreaCompare":
+        target_areas = []
     if intent != "Search":
         refinement_type = None
     if intent != "Page_Nav":
@@ -285,6 +354,7 @@ def _classify_with_llm_for_listings(
         intent=intent,
         reason=f"llm:{reason}",
         target_indices=target_indices,
+        target_areas=target_areas,
         refinement_type=refinement_type,
         confidence=conf,
         need_clarify=need_clarify,
@@ -301,6 +371,7 @@ def route_turn(
     has_focus: bool = False,
     listings_count: int = 0,
     pending_suggestion_display: Optional[str] = None,
+    pending_area_compare_areas: Optional[List[str]] = None,
 ) -> RouteDecision:
     _ = mode
     text = (user_text or "").strip()
@@ -316,7 +387,11 @@ def route_turn(
 
     # After command parsing, route by LLM only.
     if not has_listings:
-        llm_no_listings = _classify_with_llm_no_listings(text, history_hint=history_hint)
+        llm_no_listings = _classify_with_llm_no_listings(
+            text,
+            history_hint=history_hint,
+            pending_area_compare_areas=pending_area_compare_areas,
+        )
         if llm_no_listings is not None:
             return llm_no_listings
         return RouteDecision(intent="Search", reason="fallback:no_listings_default_search", confidence=0.25)
@@ -327,6 +402,7 @@ def route_turn(
         history_hint=history_hint,
         has_focus=has_focus,
         pending_suggestion_display=pending_suggestion_display,
+        pending_area_compare_areas=pending_area_compare_areas,
     )
     if llm_decision is not None:
         return llm_decision
