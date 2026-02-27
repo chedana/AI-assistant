@@ -919,18 +919,36 @@ def compare_node(state: GraphState) -> GraphState:
     """Structured side-by-side comparison of N listings with LLM verdict."""
     agent_state = state["agent_state"]
     user_in = str(state.get("user_input") or "")
-    listings = list(agent_state.last_results or [])
+
+    # Detect shortlist compare: user mentions "shortlist"/"saved"/"bookmark" and has saved items.
+    use_shortlist = bool(agent_state.shortlist) and any(
+        kw in user_in.lower() for kw in ("shortlist", "saved", "bookmark")
+    )
+
+    if use_shortlist:
+        listings = list(agent_state.shortlist)
+        source_label = "shortlist"
+    else:
+        listings = list(agent_state.last_results or [])
+        source_label = "search results"
 
     if not listings:
-        state["reply_text"] = (
-            "I don't have any listings to compare yet. "
-            "Tell me your search requirements first and I'll find some options."
-        )
+        if use_shortlist or any(kw in user_in.lower() for kw in ("shortlist", "saved", "bookmark")):
+            state["reply_text"] = (
+                "Your shortlist is empty. "
+                "Save listings first with 'save listing 2', then compare them."
+            )
+        else:
+            state["reply_text"] = (
+                "I don't have any listings to compare yet. "
+                "Tell me your search requirements first and I'll find some options."
+            )
         return state
 
     raw_indices = [i for i in (state.get("target_indices") or []) if isinstance(i, int)]
 
-    if len(raw_indices) >= 2:
+    if not use_shortlist and len(raw_indices) >= 2:
+        # Specific indices — only valid when comparing search results (not shortlist).
         rows, bad = [], []
         for idx in raw_indices:
             if 1 <= idx <= len(listings):
@@ -944,11 +962,14 @@ def compare_node(state: GraphState) -> GraphState:
             )
             return state
     else:
-        # No specific indices — compare all on current page.
+        # Compare all items from the chosen source (shortlist or current page).
         rows = [(i + 1, r) for i, r in enumerate(listings)]
 
     if len(rows) < 2:
-        state["reply_text"] = "I need at least 2 listings to compare. Try searching first."
+        state["reply_text"] = (
+            f"I need at least 2 listings to compare. "
+            f"Your {source_label} only has {len(rows)} item."
+        )
         return state
 
     constraints = dict(agent_state.constraints or {})
