@@ -992,6 +992,51 @@ def _describe_layout(constraints: dict) -> str:
     return " ".join(parts) if parts else ""
 
 
+def _describe_base_constraints(constraints: dict) -> str:
+    """One-line summary of all active search constraints for display in AreaCompare output."""
+    parts = []
+    # Layout: bedrooms / bathrooms (all layout_options, de-duplicated)
+    bed_strs, bath_strs = [], []
+    for opt in (constraints.get("layout_options") or []):
+        if isinstance(opt, dict):
+            b = opt.get("bedrooms")
+            ba = opt.get("bathrooms")
+            if b is not None and str(int(b)) not in bed_strs:
+                bed_strs.append(str(int(b)))
+            if ba is not None and str(ba) not in bath_strs:
+                bath_strs.append(str(ba))
+    if bed_strs:
+        label = "studio" if bed_strs == ["0"] else f"{'/'.join(bed_strs)}-bed"
+        parts.append(label)
+    if bath_strs:
+        parts.append(f"{'/'.join(bath_strs)}-bath")
+    # Budget
+    budget = constraints.get("max_rent_pcm")
+    if budget:
+        parts.append(f"max £{int(budget)}/mo")
+    # Furnishing
+    furnish = constraints.get("furnish_type")
+    if furnish:
+        parts.append(str(furnish))
+    # Let type
+    let_type = constraints.get("let_type")
+    if let_type:
+        parts.append(str(let_type))
+    # Available from
+    avail = constraints.get("available_from")
+    if avail:
+        parts.append(f"from {avail}")
+    # Min tenancy
+    tenancy = constraints.get("min_tenancy_months")
+    if tenancy:
+        parts.append(f"≥{int(tenancy)}mo tenancy")
+    # Min size
+    size = constraints.get("min_size_sqm")
+    if size:
+        parts.append(f"≥{int(size)} sqm")
+    return " · ".join(parts) if parts else ""
+
+
 def _format_areas(areas: list) -> str:
     """Human-readable area list: 'Hackney, Peckham and Brixton'."""
     if not areas:
@@ -1065,7 +1110,7 @@ def _run_area_compare(areas: list, base_constraints: dict, user_in: str, runtime
     table_md = "\n".join([_row_md(headers), sep] + rows_md)
 
     layout_desc = _describe_layout(base_constraints)
-    title_suffix = f" ({layout_desc})" if layout_desc else ""
+    constraint_summary = _describe_base_constraints(base_constraints)
 
     system = (
         "You are a rental market analyst. "
@@ -1092,11 +1137,13 @@ def _run_area_compare(areas: list, base_constraints: dict, user_in: str, runtime
         verdict = ""
 
     areas_label = " vs ".join(d["area"] for d in area_data)
-    lines = [f"**Area comparison: {areas_label}{title_suffix}**", "", table_md]
+    if constraint_summary:
+        filters_line = f"_Filters: {constraint_summary}_"
+    else:
+        filters_line = "_Filters: none — all property types and price ranges included. Add e.g. '1-bed' for a like-for-like view._"
+    lines = [f"**Area comparison: {areas_label}**", filters_line, "", table_md]
     if verdict:
         lines += ["", "**Verdict**", verdict]
-    if not _has_layout_constraints(base_constraints):
-        lines += ["", "_Note: prices include all listings in each area (studios, 1-beds, 2-beds, etc. mixed together) — add a bedroom filter (e.g. '2-bed') for a like-for-like view._"]
     return "\n".join(lines)
 
 
