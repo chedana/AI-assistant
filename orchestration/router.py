@@ -258,7 +258,11 @@ def _classify_with_llm_for_listings(
         "Query: 'what is the difference between 1 and 2?'\n"
         '{"intent":"Compare","target_indices":[1,2],"confidence":0.94,"reason":"structured_comparison","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Query: 'compare all of them'\n"
-        '{"intent":"Compare","target_indices":[],"confidence":0.92,"reason":"structured_comparison_all","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        '{"intent":"Compare","shortlist_action":null,"target_indices":[],"target_areas":[],"confidence":0.92,"reason":"structured_comparison_all","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        "Query: 'compare my shortlist'\n"
+        '{"intent":"Compare","shortlist_action":null,"target_indices":[],"target_areas":[],"confidence":0.93,"reason":"compare_shortlist","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        "Query: 'compare my saved listings'\n"
+        '{"intent":"Compare","shortlist_action":null,"target_indices":[],"target_areas":[],"confidence":0.92,"reason":"compare_shortlist","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Query: 'do listing 1 and 2 allow pets?'\n"
         '{"intent":"Specific_QA","target_indices":[1,2],"confidence":0.92,"reason":"multi_listing_qa","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Query: 'do the first and second allow pets?'\n"
