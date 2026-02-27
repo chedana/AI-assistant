@@ -2,6 +2,8 @@ import type { ListingData } from "../types/chat";
 
 type Props = {
   listing: ListingData;
+  isSaved?: boolean;
+  onSave?: () => void;
 };
 
 function toArray(val: string[] | string | undefined): string[] {
@@ -10,7 +12,7 @@ function toArray(val: string[] | string | undefined): string[] {
   return [];
 }
 
-export default function ListingCard({ listing }: Props) {
+export default function ListingCard({ listing, isSaved, onSave }: Props) {
   const penalties = toArray(listing.penalty_reasons);
   const hits = toArray(listing.preference_hits);
 
@@ -25,9 +27,21 @@ export default function ListingCard({ listing }: Props) {
         >
           {listing.title}
         </a>
-        <span className="shrink-0 rounded bg-accent/20 px-2 py-0.5 text-xs font-semibold text-accent">
-          &pound;{listing.price_pcm.toLocaleString()}/pcm
-        </span>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <span className="rounded bg-accent/20 px-2 py-0.5 text-xs font-semibold text-accent">
+            &pound;{listing.price_pcm.toLocaleString()}/pcm
+          </span>
+          <button
+            type="button"
+            aria-label={isSaved ? "Saved" : "Save listing"}
+            onClick={!isSaved && onSave ? onSave : undefined}
+            className={`p-0.5 transition-colors ${isSaved ? "text-accent" : "text-muted hover:text-accent"}`}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill={isSaved ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
+              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {(listing.bedrooms > 0 || listing.bathrooms > 0) && (
