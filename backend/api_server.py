@@ -153,6 +153,17 @@ def build_metadata(state: AgentState) -> dict | None:
             })
         meta["compare_data"] = {"listings": compare_listings}
 
+    # Shortlist — always included so frontend can show saved/unsaved state on cards
+    saved_ids = [
+        str(r.get("listing_id") or r.get("url") or "")
+        for r in (state.shortlist or [])
+        if r.get("listing_id") or r.get("url")
+    ]
+    meta["shortlist"] = {
+        "count": len(state.shortlist or []),
+        "saved_ids": saved_ids,
+    }
+
     # Quick replies — contextual suggestions
     quick: list[dict] = []
     if state.last_results:
@@ -161,6 +172,8 @@ def build_metadata(state: AgentState) -> dict | None:
                 quick.append({"label": "Show more", "text": "show me more"})
             quick.append({"label": "Lower budget", "text": "find cheaper options"})
             quick.append({"label": "Compare all", "text": "compare these listings"})
+    if state.shortlist:
+        quick.append({"label": "My shortlist", "text": "show my shortlist"})
     if quick:
         meta["quick_replies"] = quick
 
@@ -246,6 +259,7 @@ async def chat_stream(req: ChatStreamRequest, request: Request) -> StreamingResp
             if metadata:
                 print(f"[SSE] sending metadata: {len(metadata.get('search_results', {}).get('listings', []))} listings, "
                       f"constraints={bool(metadata.get('constraints'))}, "
+                      f"shortlist={metadata.get('shortlist', {}).get('count', 0)}, "
                       f"quick_replies={len(metadata.get('quick_replies', []))}")
                 yield sse_event("metadata", metadata)
             else:
