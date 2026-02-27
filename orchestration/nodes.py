@@ -140,8 +140,9 @@ def route_node(state: GraphState) -> GraphState:
 
     target_indices = list(state.get("target_indices") or [])
 
-    if state["intent"] == "Specific_QA" and _is_cross_candidate_query(text):
-        # Guardrail: comparative "which one..." should not be coerced into single-target QA.
+    if state["intent"] == "Specific_QA" and not target_indices and _is_cross_candidate_query(text):
+        # Guardrail: ambiguous "which one..." with no explicit indices should go to list-QA, not single.
+        # Only fires when the router did NOT resolve explicit target indices — explicit indices take priority.
         state["target_indices"] = []
         target_indices = []
 
@@ -1089,7 +1090,7 @@ def _run_area_compare(areas: list, base_constraints: dict, user_in: str, runtime
     if verdict:
         lines += ["", "**Verdict**", verdict]
     if not _has_layout_constraints(base_constraints):
-        lines += ["", "_Note: prices cover all property types — add a bedroom filter (e.g. '2-bed') for a like-for-like view._"]
+        lines += ["", "_Note: prices include all listings in each area (studios, 1-beds, 2-beds, etc. mixed together) — add a bedroom filter (e.g. '2-bed') for a like-for-like view._"]
     return "\n".join(lines)
 
 
