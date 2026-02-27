@@ -96,7 +96,7 @@ export function markdownToHtml(md: string): string {
 
 function renderTable(lines: string[]): string {
   const rows = lines
-    .filter(l => !l.match(/^\s*\|[\s:-]+\|\s*$/))  // skip separator rows
+    .filter(l => !l.match(/^\s*\|[\s|:-]+\|\s*$/))  // skip separator rows
     .map(l =>
       l.split("|")
         .slice(1, -1)  // remove leading/trailing empty from |col|col|
