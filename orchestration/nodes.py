@@ -927,7 +927,7 @@ def compare_node(state: GraphState) -> GraphState:
         if not agent_state.shortlist:
             state["reply_text"] = (
                 "Your shortlist is empty. "
-                "Save listings first with 'save listing 2', then compare them."
+                "You need to have at least two listings to compare."
             )
             return state
         listings = list(agent_state.shortlist)
