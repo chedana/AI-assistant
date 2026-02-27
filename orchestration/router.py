@@ -10,7 +10,6 @@ from core.llm_client import qwen_router_chat
 class RouteDecision:
     intent: str
     reason: str
-    target_index: Optional[int] = None
     target_indices: List[int] = field(default_factory=list)
     refinement_type: Optional[str] = None
     confidence: float = 0.0
@@ -57,7 +56,7 @@ def _classify_with_llm_no_listings(text: str, history_hint: Optional[str]) -> Op
         "You are a router for a rental assistant.\n"
         "Current state always has_listings=false and has_focus=false.\n"
         "Return STRICT JSON only with schema:\n"
-        '{"intent":"Search|Specific_QA|Chitchat|Page_Nav","target_index":null,"confidence":0.0,"reason":"...",'
+        '{"intent":"Search|Specific_QA|Chitchat|Page_Nav","confidence":0.0,"reason":"...",'
         '"need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Policy:\n"
         "- Without listings, Specific_QA is invalid and should generally map to Search.\n"
@@ -67,13 +66,13 @@ def _classify_with_llm_no_listings(text: str, history_hint: Optional[str]) -> Op
         "\n"
         "Few-shot:\n"
         "Query: 'How r you'\n"
-        'Output: {"intent":"Chitchat","target_index":null,"confidence":0.92,"reason":"small_talk","need_clarify":false,"clarify_question":null,"refinement_type":null}\n'
+        'Output: {"intent":"Chitchat","confidence":0.92,"reason":"small_talk","need_clarify":false,"clarify_question":null,"refinement_type":null}\n'
         "Query: 'Find 1 bed near Waterloo under 2500'\n"
-        'Output: {"intent":"Search","target_index":null,"confidence":0.96,"reason":"search_request","need_clarify":false,"clarify_question":null,"refinement_type":null}\n'
+        'Output: {"intent":"Search","confidence":0.96,"reason":"search_request","need_clarify":false,"clarify_question":null,"refinement_type":null}\n'
         "Query: 'Is it close to the station?'\n"
-        'Output: {"intent":"Search","target_index":null,"confidence":0.84,"reason":"no_listing_context_for_qa","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        'Output: {"intent":"Search","confidence":0.84,"reason":"no_listing_context_for_qa","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Query: 'show more'\n"
-        'Output: {"intent":"Page_Nav","target_index":null,"confidence":0.95,"reason":"next_page_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":"next"}'
+        'Output: {"intent":"Page_Nav","confidence":0.95,"reason":"next_page_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":"next"}'
     )
     user_payload = f"Conversation summary:\n{history_hint or '(none)'}\n\nUser input:\n{text}"
     try:
@@ -123,8 +122,6 @@ def _classify_with_llm_no_listings(text: str, history_hint: Optional[str]) -> Op
     if page_action not in {"next", "prev"}:
         page_action = None
 
-    # No listings: target index is always irrelevant.
-    target_index = None
     if intent != "Search":
         refinement_type = None
     if intent != "Page_Nav":
@@ -134,7 +131,6 @@ def _classify_with_llm_no_listings(text: str, history_hint: Optional[str]) -> Op
     return RouteDecision(
         intent=intent,
         reason=f"llm_no_listings:{reason}",
-        target_index=target_index,
         refinement_type=refinement_type,
         confidence=conf,
         need_clarify=need_clarify,
@@ -161,23 +157,23 @@ def _classify_with_llm_for_listings(
         suggestion_few_shot = (
             f"[Pending: \"{pending_suggestion_display}\"]\n"
             "Query: 'yes do that'\n"
-            '{"intent":"AcceptSuggestion","target_index":null,"confidence":0.97,"reason":"accepting_suggestion","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+            '{"intent":"AcceptSuggestion","confidence":0.97,"reason":"accepting_suggestion","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
             f"[Pending: \"{pending_suggestion_display}\"]\n"
             "Query: 'ok'\n"
-            '{"intent":"AcceptSuggestion","target_index":null,"confidence":0.93,"reason":"accepting_suggestion","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+            '{"intent":"AcceptSuggestion","confidence":0.93,"reason":"accepting_suggestion","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
             f"[Pending: \"{pending_suggestion_display}\"]\n"
             "Query: 'no thanks, show me cheaper areas instead'\n"
-            '{"intent":"Search","target_index":null,"confidence":0.95,"reason":"rejecting_suggestion_new_search","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+            '{"intent":"Search","confidence":0.95,"reason":"rejecting_suggestion_new_search","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
             f"[Pending: \"{pending_suggestion_display}\"]\n"
             "Query: 'not really, maybe try a different location'\n"
-            '{"intent":"Search","target_index":null,"confidence":0.92,"reason":"rejecting_suggestion_redirect","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+            '{"intent":"Search","confidence":0.92,"reason":"rejecting_suggestion_redirect","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         )
 
     prompt = (
         "You are a router for a rental assistant.\n"
         f"Current state: has_listings=true, has_focus={'true' if has_focus else 'false'}.\n"
         "Return STRICT JSON only with schema:\n"
-        '{"intent":"Search|Specific_QA|Compare|Chitchat|Page_Nav|AcceptSuggestion|Explain","target_index":null,"target_indices":[],"confidence":0.0,"reason":"...",'
+        '{"intent":"Search|Specific_QA|Compare|Chitchat|Page_Nav|AcceptSuggestion|Explain","target_indices":[],"confidence":0.0,"reason":"...",'
         '"need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Interpretation policy:\n"
         "- Search includes both new-search and refinement/reset actions.\n"
@@ -185,10 +181,10 @@ def _classify_with_llm_for_listings(
         "- Page_Nav is for paging requests.\n"
         "- Use page_action='next' for: 'next page', 'show more', 'more results', 'next batch'.\n"
         "- Use page_action='prev' for: 'previous page', 'prev page', 'go back', 'last page'.\n"
-        "- target_index is 1-based when user references a SINGLE specific listing in QA.\n"
+        "- For a single listing reference in QA, use target_indices=[N] (e.g. 'second listing' → target_indices=[2]).\n"
         "- Compare is for structured side-by-side comparison: 'compare listing 1 and 3', 'listing 2 vs 4', 'difference between 1 and 2'. Set target_indices to the 1-based indices mentioned. If no specific indices given, leave target_indices as [].\n"
         "- Explain is for holistic evaluation without 'compare' keyword: 'which is best?', 'explain these results', 'why recommend these?'.\n"
-        "- Specific_QA with target_indices: when user asks a question about multiple specific listings, e.g. 'do listing 1 and 2 allow pets?'. Set target_indices=[1,2], target_index=null.\n"
+        "- Specific_QA with multiple listings: e.g. 'do listing 1 and 2 allow pets?'. Set target_indices=[1,2].\n"
         "- If has_focus=true and user asks a listing detail question without index, keep intent=Specific_QA and need_clarify=false.\n"
         "- If has_focus=false and QA target is ambiguous, set need_clarify=true.\n"
         "- If refinement request is underspecified (e.g., 'too expensive' without a target budget), set need_clarify=true.\n"
@@ -198,35 +194,35 @@ def _classify_with_llm_for_listings(
         "Few-shot:\n"
         + suggestion_few_shot +
         "Query: 'too expensive, cheaper please'\n"
-        '{"intent":"Search","target_index":null,"confidence":0.97,"reason":"refinement_request","need_clarify":false,"clarify_question":null,"refinement_type":"price_down","page_action":null}\n'
+        '{"intent":"Search","confidence":0.97,"reason":"refinement_request","need_clarify":false,"clarify_question":null,"refinement_type":"price_down","page_action":null}\n'
         "Query: 'does it have a gym?'\n"
-        '{"intent":"Specific_QA","target_index":null,"confidence":0.90,"reason":"detail_question_about_listing","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        '{"intent":"Specific_QA","confidence":0.90,"reason":"detail_question_about_listing","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Query: 'second one?'\n"
-        '{"intent":"Specific_QA","target_index":2,"confidence":0.96,"reason":"explicit_result_reference","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        '{"intent":"Specific_QA","target_indices":[2],"confidence":0.96,"reason":"explicit_result_reference","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Query: 'start over'\n"
-        '{"intent":"Search","target_index":null,"confidence":0.98,"reason":"reset_search","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        '{"intent":"Search","confidence":0.98,"reason":"reset_search","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Query: 'thanks'\n"
-        '{"intent":"Chitchat","target_index":null,"confidence":0.95,"reason":"small_talk","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        '{"intent":"Chitchat","confidence":0.95,"reason":"small_talk","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Query: 'show me next page'\n"
-        '{"intent":"Page_Nav","target_index":null,"confidence":0.96,"reason":"next_page_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":"next"}\n'
+        '{"intent":"Page_Nav","confidence":0.96,"reason":"next_page_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":"next"}\n'
         "Query: 'go to previous page'\n"
-        '{"intent":"Page_Nav","target_index":null,"confidence":0.96,"reason":"prev_page_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":"prev"}\n'
+        '{"intent":"Page_Nav","confidence":0.96,"reason":"prev_page_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":"prev"}\n'
         "Query: 'which one is best?'\n"
-        '{"intent":"Explain","target_index":null,"target_indices":[],"confidence":0.93,"reason":"evaluation_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        '{"intent":"Explain","target_indices":[],"confidence":0.93,"reason":"evaluation_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Query: 'explain these results'\n"
-        '{"intent":"Explain","target_index":null,"target_indices":[],"confidence":0.95,"reason":"evaluation_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        '{"intent":"Explain","target_indices":[],"confidence":0.95,"reason":"evaluation_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Query: 'why did you recommend these?'\n"
-        '{"intent":"Explain","target_index":null,"target_indices":[],"confidence":0.91,"reason":"evaluation_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        '{"intent":"Explain","target_indices":[],"confidence":0.91,"reason":"evaluation_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Query: 'compare listing 1 and 3'\n"
-        '{"intent":"Compare","target_index":null,"target_indices":[1,3],"confidence":0.97,"reason":"structured_comparison","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        '{"intent":"Compare","target_indices":[1,3],"confidence":0.97,"reason":"structured_comparison","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Query: 'listing 2 vs 4'\n"
-        '{"intent":"Compare","target_index":null,"target_indices":[2,4],"confidence":0.96,"reason":"structured_comparison","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        '{"intent":"Compare","target_indices":[2,4],"confidence":0.96,"reason":"structured_comparison","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Query: 'what is the difference between 1 and 2?'\n"
-        '{"intent":"Compare","target_index":null,"target_indices":[1,2],"confidence":0.94,"reason":"structured_comparison","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        '{"intent":"Compare","target_indices":[1,2],"confidence":0.94,"reason":"structured_comparison","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Query: 'compare all of them'\n"
-        '{"intent":"Compare","target_index":null,"target_indices":[],"confidence":0.92,"reason":"structured_comparison_all","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        '{"intent":"Compare","target_indices":[],"confidence":0.92,"reason":"structured_comparison_all","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Query: 'do listing 1 and 2 allow pets?'\n"
-        '{"intent":"Specific_QA","target_index":null,"target_indices":[1,2],"confidence":0.92,"reason":"multi_listing_qa","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}'
+        '{"intent":"Specific_QA","target_indices":[1,2],"confidence":0.92,"reason":"multi_listing_qa","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}'
     )
     user_payload = f"Conversation summary:\n{history_hint or '(none)'}\n\nUser input:\n{text}"
     try:
@@ -267,31 +263,20 @@ def _classify_with_llm_for_listings(
     clarify_question = str(clarify_question).strip() if clarify_question is not None else None
     if clarify_question == "":
         clarify_question = None
-    target_index = obj.get("target_index")
-    try:
-        target_index = int(target_index) if target_index is not None else None
-        if target_index is not None and target_index < 1:
-            target_index = None
-    except Exception:
-        target_index = None
     raw_indices = obj.get("target_indices") or []
     try:
         target_indices = [int(x) for x in raw_indices if isinstance(x, (int, float)) and int(x) >= 1]
     except Exception:
         target_indices = []
     if intent not in {"Compare", "Specific_QA"}:
-        target_index = None
         target_indices = []
-    if intent == "Specific_QA" and len(target_indices) > 1:
-        # Multi-target QA: clear single target_index, keep target_indices.
-        target_index = None
     if intent != "Search":
         refinement_type = None
     if intent != "Page_Nav":
         page_action = None
     elif page_action is None:
         page_action = "next"
-    if intent == "Specific_QA" and has_focus and target_index is None and not target_indices:
+    if intent == "Specific_QA" and has_focus and not target_indices:
         need_clarify = False
         clarify_question = None
     if not need_clarify:
@@ -299,7 +284,6 @@ def _classify_with_llm_for_listings(
     return RouteDecision(
         intent=intent,
         reason=f"llm:{reason}",
-        target_index=target_index,
         target_indices=target_indices,
         refinement_type=refinement_type,
         confidence=conf,
@@ -328,7 +312,7 @@ def route_turn(
         return RouteDecision(intent="control", reason="rule:state", confidence=1.0)
     m_focus = re.match(r"^/focus\s+(\d{1,2})\s*$", text.lower())
     if m_focus:
-        return RouteDecision(intent="control", reason="rule:focus", target_index=int(m_focus.group(1)), confidence=1.0)
+        return RouteDecision(intent="control", reason="rule:focus", target_indices=[int(m_focus.group(1))], confidence=1.0)
 
     # After command parsing, route by LLM only.
     if not has_listings:
