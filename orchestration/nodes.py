@@ -1127,15 +1127,17 @@ def area_compare_node(state: GraphState) -> GraphState:
     # is like-for-like; if absent we compare all property types and note it in the output.
     base_constraints = dict(agent_state.constraints or {})
 
-    # If user_in mentions a layout (e.g. "2 bed"), try to extract and layer it on top.
-    if user_in and not _has_layout_constraints(base_constraints):
+    # Always try to extract layout from the current turn, using empty existing_constraints
+    # so only what the user explicitly states in this message is captured. This means
+    # "for 1b1b" in the current message always overrides any inherited session layout.
+    if user_in:
         try:
-            plan = build_refinement_plan(user_text=user_in, existing_constraints=agent_state.constraints)
-            old_snap = snapshot_from_constraints(agent_state.constraints or {}, results=[])
+            plan = build_refinement_plan(user_text=user_in, existing_constraints={})
+            old_snap = snapshot_from_constraints({}, results=[])
             new_snap = derive_snapshot(old_snap, plan.set_fields, plan.clear_fields, plan.is_reset)
             extracted = snapshot_to_constraints(new_snap) or {}
             if _has_layout_constraints(extracted):
-                base_constraints = extracted
+                base_constraints["layout_options"] = extracted["layout_options"]
         except Exception:
             pass
 
