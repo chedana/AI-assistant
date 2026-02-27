@@ -118,3 +118,28 @@ body,
   color: #7dd3fc;
   text-decoration: underline;
 }
+
+/* --- Compare table --- */
+
+.compare-table-wrapper {
+  -webkit-overflow-scrolling: touch;
+}
+
+.compare-table {
+  border-collapse: collapse;
+  min-width: 100%;
+}
+
+.compare-table th,
+.compare-table td {
+  border-bottom: 1px solid #333;
+  white-space: nowrap;
+}
+
+.compare-table thead tr {
+  border-bottom: 2px solid #404040;
+}
+
+.compare-table tbody tr:last-child td {
+  border-bottom: none;
+}

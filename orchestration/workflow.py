@@ -196,6 +196,7 @@ def process_turn(user_in: str, state: AgentState, runtime, router_debug: bool = 
         router_debug=router_debug,
     )
     out = _GRAPH_RUNNER.invoke(graph_state)
+    state.last_intent = str((out or {}).get("intent") or "")
     return str((out or {}).get("reply_text") or "")
 
 

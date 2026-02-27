@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { ChatSession, SessionMetadata } from "../types/chat";
+import CompareTable from "./CompareTable";
 import ConstraintTags from "./ConstraintTags";
 import ListingCard from "./ListingCard";
 import MessageBubble from "./MessageBubble";
@@ -20,7 +21,8 @@ export default function ChatArea({ session, isGenerating, metadata, onQuickReply
   }, [session?.messages.length, isGenerating, metadata]);
 
   const showConstraints = metadata?.constraints && Object.keys(metadata.constraints).length > 0;
-  const showListings = metadata?.search_results && metadata.search_results.listings.length > 0;
+  const showCompare = metadata?.compare_data && metadata.compare_data.listings.length >= 2;
+  const showListings = !showCompare && metadata?.search_results && metadata.search_results.listings.length > 0;
   const showQuickReplies = !isGenerating && metadata?.quick_replies && metadata.quick_replies.length > 0;
 
   return (
@@ -43,6 +45,10 @@ export default function ChatArea({ session, isGenerating, metadata, onQuickReply
                   isGenerating={isGenerating}
                 />
               ))}
+
+              {showCompare && (
+                <CompareTable data={metadata!.compare_data!} />
+              )}
 
               {showListings && (
                 <div className="space-y-3">
