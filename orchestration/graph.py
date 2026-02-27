@@ -5,6 +5,7 @@ from typing import Any
 from orchestration.evaluate_node import evaluate_node
 from orchestration.nodes import (
     apply_suggestion_node,
+    compare_node,
     direct_reply_node,
     domain_branch,
     domain_router_node,
@@ -49,6 +50,7 @@ def build_graph() -> Any:
     graph.add_node("qa_plan", qa_plan_node)
     graph.add_node("qa_execute", qa_execute_node)
     graph.add_node("paginate", paginate_node)
+    graph.add_node("compare", compare_node)
     graph.add_node("explain", explain_node)
     graph.add_node("direct_reply", direct_reply_node)
     graph.add_node("fallback", fallback_node)
@@ -75,6 +77,7 @@ def build_graph() -> Any:
             "Search": "search",
             "AcceptSuggestion": "apply_suggestion",
             "Specific_QA": "qa_plan",
+            "Compare": "compare",
             "Explain": "explain",
             "DirectReply": "direct_reply",
             "Page_Nav": "paginate",
@@ -97,6 +100,7 @@ def build_graph() -> Any:
     graph.add_edge("qa_plan", "qa_execute")
     graph.add_edge("qa_execute", "finalize")
     graph.add_edge("paginate", "finalize")
+    graph.add_edge("compare", "finalize")
     graph.add_edge("explain", "finalize")
     graph.add_edge("direct_reply", "finalize")
     graph.add_edge("fallback", "finalize")
