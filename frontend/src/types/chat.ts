@@ -62,9 +62,15 @@ export type CompareData = {
   listings: CompareListingData[];
 };
 
+export type ShortlistMeta = {
+  count: number;
+  saved_ids: string[];
+};
+
 export type SessionMetadata = {
   search_results?: SearchResultsMeta;
   constraints?: ConstraintsMeta;
   quick_replies?: QuickReply[];
   compare_data?: CompareData;
+  shortlist?: ShortlistMeta;
 };

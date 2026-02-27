@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { ChatSession, SessionMetadata } from "../types/chat";
 import CompareTable from "./CompareTable";
 import ConstraintTags from "./ConstraintTags";
@@ -11,14 +11,20 @@ type Props = {
   isGenerating: boolean;
   metadata: SessionMetadata | null;
   onQuickReply: (text: string) => void;
+  onSaveListing?: (pageIndex: number) => void;
 };
 
-export default function ChatArea({ session, isGenerating, metadata, onQuickReply }: Props) {
+export default function ChatArea({ session, isGenerating, metadata, onQuickReply, onSaveListing }: Props) {
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [session?.messages.length, isGenerating, metadata]);
+
+  const savedIds = useMemo(
+    () => new Set(metadata?.shortlist?.saved_ids ?? []),
+    [metadata?.shortlist?.saved_ids],
+  );
 
   const showConstraints = metadata?.constraints && Object.keys(metadata.constraints).length > 0;
   const showCompare = metadata?.compare_data && metadata.compare_data.listings.length >= 2;
@@ -53,7 +59,12 @@ export default function ChatArea({ session, isGenerating, metadata, onQuickReply
               {showListings && (
                 <div className="space-y-3">
                   {metadata!.search_results!.listings.map((listing, idx) => (
-                    <ListingCard key={listing.url || idx} listing={listing} />
+                    <ListingCard
+                      key={listing.url || idx}
+                      listing={listing}
+                      isSaved={savedIds.has(listing.url)}
+                      onSave={onSaveListing ? () => onSaveListing(idx + 1) : undefined}
+                    />
                   ))}
                   {metadata!.search_results!.has_more && (
                     <button
