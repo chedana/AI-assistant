@@ -134,13 +134,33 @@ def build_metadata(state: AgentState) -> dict | None:
         if display:
             meta["constraints"] = display
 
+    # Compare data — structured comparison table
+    if state.last_intent == "Compare" and state.last_results:
+        compare_listings = []
+        for i, r in enumerate(state.last_results):
+            compare_listings.append({
+                "index": i + 1,
+                "title": str(r.get("title", "")),
+                "url": str(r.get("url", "")),
+                "price_pcm": _num(r.get("price_pcm")),
+                "bedrooms": _num(r.get("bedrooms")),
+                "bathrooms": _num(r.get("bathrooms")),
+                "deposit": _num(r.get("deposit")),
+                "available_from": str(r.get("available_from", "")),
+                "size_sqm": _num(r.get("size_sqm")),
+                "furnish_type": str(r.get("furnish_type") or ""),
+                "property_type": str(r.get("property_type") or ""),
+            })
+        meta["compare_data"] = {"listings": compare_listings}
+
     # Quick replies — contextual suggestions
     quick: list[dict] = []
     if state.last_results:
-        if state.has_more:
-            quick.append({"label": "Show more", "text": "show me more"})
-        quick.append({"label": "Lower budget", "text": "find cheaper options"})
-        quick.append({"label": "Compare all", "text": "compare these listings"})
+        if state.last_intent != "Compare":
+            if state.has_more:
+                quick.append({"label": "Show more", "text": "show me more"})
+            quick.append({"label": "Lower budget", "text": "find cheaper options"})
+            quick.append({"label": "Compare all", "text": "compare these listings"})
     if quick:
         meta["quick_replies"] = quick
 

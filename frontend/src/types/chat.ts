@@ -44,8 +44,27 @@ export type QuickReply = {
   text: string;
 };
 
+export type CompareListingData = {
+  index: number;
+  title: string;
+  url: string;
+  price_pcm: number;
+  bedrooms: number;
+  bathrooms: number;
+  deposit: number;
+  available_from: string;
+  size_sqm: number;
+  furnish_type: string;
+  property_type: string;
+};
+
+export type CompareData = {
+  listings: CompareListingData[];
+};
+
 export type SessionMetadata = {
   search_results?: SearchResultsMeta;
   constraints?: ConstraintsMeta;
   quick_replies?: QuickReply[];
+  compare_data?: CompareData;
 };
