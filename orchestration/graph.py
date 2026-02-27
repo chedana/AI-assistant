@@ -20,6 +20,7 @@ from orchestration.nodes import (
     route_branch,
     route_node,
     search_node,
+    shortlist_node,
 )
 from orchestration.relax_node import relax_node
 from orchestration.state import GraphState
@@ -53,6 +54,7 @@ def build_graph() -> Any:
     graph.add_node("paginate", paginate_node)
     graph.add_node("compare", compare_node)
     graph.add_node("area_compare", area_compare_node)
+    graph.add_node("shortlist", shortlist_node)
     graph.add_node("explain", explain_node)
     graph.add_node("direct_reply", direct_reply_node)
     graph.add_node("fallback", fallback_node)
@@ -81,6 +83,7 @@ def build_graph() -> Any:
             "Specific_QA": "qa_plan",
             "Compare": "compare",
             "AreaCompare": "area_compare",
+            "Shortlist": "shortlist",
             "Explain": "explain",
             "DirectReply": "direct_reply",
             "Page_Nav": "paginate",
@@ -105,6 +108,7 @@ def build_graph() -> Any:
     graph.add_edge("paginate", "finalize")
     graph.add_edge("compare", "finalize")
     graph.add_edge("area_compare", "finalize")
+    graph.add_edge("shortlist", "finalize")
     graph.add_edge("explain", "finalize")
     graph.add_edge("direct_reply", "finalize")
     graph.add_edge("fallback", "finalize")

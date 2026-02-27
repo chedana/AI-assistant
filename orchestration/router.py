@@ -12,6 +12,7 @@ class RouteDecision:
     reason: str
     target_indices: List[int] = field(default_factory=list)
     target_areas: List[str] = field(default_factory=list)
+    shortlist_action: Optional[str] = None
     refinement_type: Optional[str] = None
     confidence: float = 0.0
     need_clarify: bool = False
@@ -19,7 +20,7 @@ class RouteDecision:
     page_action: Optional[str] = None
 
 
-_INTENTS = {"Search", "Specific_QA", "Compare", "AreaCompare", "Chitchat", "Page_Nav", "AcceptSuggestion", "Explain"}
+_INTENTS = {"Search", "Specific_QA", "Compare", "AreaCompare", "Shortlist", "Chitchat", "Page_Nav", "AcceptSuggestion", "Explain"}
 
 
 def _extract_first_json_obj(raw_text: str) -> Optional[Dict[str, Any]]:
@@ -61,7 +62,7 @@ def _classify_with_llm_no_listings(
         "You are a router for a rental assistant.\n"
         "Current state always has_listings=false and has_focus=false.\n"
         "Return STRICT JSON only with schema:\n"
-        '{"intent":"Search|Specific_QA|Chitchat|Page_Nav|AreaCompare","target_areas":[],"confidence":0.0,"reason":"...",'
+        '{"intent":"Search|Specific_QA|Chitchat|Page_Nav|AreaCompare|Shortlist","shortlist_action":null,"target_areas":[],"confidence":0.0,"reason":"...",'
         '"need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Policy:\n"
         "- Without listings, Specific_QA is invalid and should generally map to Search.\n"
@@ -71,20 +72,22 @@ def _classify_with_llm_no_listings(
         "- Use AreaCompare when user wants to compare rental prices or availability across multiple areas "
         "(e.g. 'Is Hackney cheaper than Peckham?', 'compare rents in zone 2 vs zone 3'). "
         "Set target_areas to the list of area names mentioned.\n"
+        "- Use Shortlist when user manages saved listings: shortlist_action='show' (show my shortlist/saved), "
+        "'clear' (clear all saved). shortlist_action='add'/'remove' are valid only when listings exist.\n"
         "\n"
         "Few-shot:\n"
         "Query: 'How r you'\n"
-        'Output: {"intent":"Chitchat","target_areas":[],"confidence":0.92,"reason":"small_talk","need_clarify":false,"clarify_question":null,"refinement_type":null}\n'
+        'Output: {"intent":"Chitchat","shortlist_action":null,"target_areas":[],"confidence":0.92,"reason":"small_talk","need_clarify":false,"clarify_question":null,"refinement_type":null}\n'
         "Query: 'Find 1 bed near Waterloo under 2500'\n"
-        'Output: {"intent":"Search","target_areas":[],"confidence":0.96,"reason":"search_request","need_clarify":false,"clarify_question":null,"refinement_type":null}\n'
-        "Query: 'Is it close to the station?'\n"
-        'Output: {"intent":"Search","target_areas":[],"confidence":0.84,"reason":"no_listing_context_for_qa","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        'Output: {"intent":"Search","shortlist_action":null,"target_areas":[],"confidence":0.96,"reason":"search_request","need_clarify":false,"clarify_question":null,"refinement_type":null}\n'
         "Query: 'show more'\n"
-        'Output: {"intent":"Page_Nav","target_areas":[],"confidence":0.95,"reason":"next_page_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":"next"}\n'
+        'Output: {"intent":"Page_Nav","shortlist_action":null,"target_areas":[],"confidence":0.95,"reason":"next_page_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":"next"}\n'
         "Query: 'Is Hackney cheaper than Peckham?'\n"
-        'Output: {"intent":"AreaCompare","target_areas":["Hackney","Peckham"],"confidence":0.95,"reason":"area_price_comparison","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-        "Query: 'compare rents in zone 2 vs zone 3'\n"
-        'Output: {"intent":"AreaCompare","target_areas":["zone 2","zone 3"],"confidence":0.93,"reason":"area_price_comparison","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}'
+        'Output: {"intent":"AreaCompare","shortlist_action":null,"target_areas":["Hackney","Peckham"],"confidence":0.95,"reason":"area_price_comparison","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        "Query: 'show my shortlist'\n"
+        'Output: {"intent":"Shortlist","shortlist_action":"show","target_areas":[],"confidence":0.97,"reason":"show_saved_listings","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        "Query: 'clear my saved listings'\n"
+        'Output: {"intent":"Shortlist","shortlist_action":"clear","target_areas":[],"confidence":0.96,"reason":"clear_shortlist","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}'
     )
     user_payload = f"Conversation summary:\n{history_hint or '(none)'}\n\nUser input:\n{text}"
     try:
@@ -140,6 +143,14 @@ def _classify_with_llm_no_listings(
         target_areas = []
     if intent != "AreaCompare":
         target_areas = []
+    shortlist_action = obj.get("shortlist_action")
+    shortlist_action = str(shortlist_action).strip().lower() if shortlist_action is not None else None
+    if shortlist_action in {"", "none", "null"}:
+        shortlist_action = None
+    if shortlist_action not in {"add", "remove", "show", "clear"}:
+        shortlist_action = None
+    if intent != "Shortlist":
+        shortlist_action = None
     if intent != "Search":
         refinement_type = None
     if intent != "Page_Nav":
@@ -150,6 +161,7 @@ def _classify_with_llm_no_listings(
         intent=intent,
         reason=f"llm_no_listings:{reason}",
         target_areas=target_areas,
+        shortlist_action=shortlist_action,
         refinement_type=refinement_type,
         confidence=conf,
         need_clarify=need_clarify,
@@ -193,7 +205,7 @@ def _classify_with_llm_for_listings(
         "You are a router for a rental assistant.\n"
         f"Current state: has_listings=true, has_focus={'true' if has_focus else 'false'}.\n"
         "Return STRICT JSON only with schema:\n"
-        '{"intent":"Search|Specific_QA|Compare|AreaCompare|Chitchat|Page_Nav|AcceptSuggestion|Explain","target_indices":[],"target_areas":[],"confidence":0.0,"reason":"...",'
+        '{"intent":"Search|Specific_QA|Compare|AreaCompare|Shortlist|Chitchat|Page_Nav|AcceptSuggestion|Explain","shortlist_action":null,"target_indices":[],"target_areas":[],"confidence":0.0,"reason":"...",'
         '"need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Interpretation policy:\n"
         "- Search includes both new-search and refinement/reset actions.\n"
@@ -212,6 +224,9 @@ def _classify_with_llm_for_listings(
         "- If has_focus=false and QA target is ambiguous, set need_clarify=true.\n"
         "- If refinement request is underspecified (e.g., 'too expensive' without a target budget), set need_clarify=true.\n"
         "- For clear price reduction requests, set intent=Search and refinement_type='price_down'.\n"
+        "- Use Shortlist when user manages saved listings: shortlist_action='add' (save/bookmark listing N — set target_indices=[N]), "
+        "'remove' (remove shortlist item N — set target_indices=[N]), "
+        "'show' (show my shortlist/saved), 'clear' (clear all saved).\n"
         + suggestion_policy
         + "\n"
         "Few-shot:\n"
@@ -246,10 +261,24 @@ def _classify_with_llm_for_listings(
         '{"intent":"Compare","target_indices":[],"confidence":0.92,"reason":"structured_comparison_all","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Query: 'do listing 1 and 2 allow pets?'\n"
         '{"intent":"Specific_QA","target_indices":[1,2],"confidence":0.92,"reason":"multi_listing_qa","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        "Query: 'do the first and second allow pets?'\n"
+        '{"intent":"Specific_QA","target_indices":[1,2],"confidence":0.91,"reason":"multi_listing_qa_ordinal","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        "Query: 'does the third one have a garden?'\n"
+        '{"intent":"Specific_QA","target_indices":[3],"confidence":0.93,"reason":"explicit_result_reference_ordinal","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Query: 'Is Hackney cheaper than Peckham for a 2 bed?'\n"
         '{"intent":"AreaCompare","target_indices":[],"target_areas":["Hackney","Peckham"],"confidence":0.96,"reason":"area_price_comparison","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
         "Query: 'which area is more affordable, Brixton or Clapham?'\n"
-        '{"intent":"AreaCompare","target_indices":[],"target_areas":["Brixton","Clapham"],"confidence":0.94,"reason":"area_price_comparison","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}'
+        '{"intent":"AreaCompare","target_indices":[],"target_areas":["Brixton","Clapham"],"confidence":0.94,"reason":"area_price_comparison","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        "Query: 'save listing 2'\n"
+        '{"intent":"Shortlist","shortlist_action":"add","target_indices":[2],"target_areas":[],"confidence":0.97,"reason":"save_listing","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        "Query: 'bookmark listing 1 and 3'\n"
+        '{"intent":"Shortlist","shortlist_action":"add","target_indices":[1,3],"target_areas":[],"confidence":0.95,"reason":"save_listings","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        "Query: 'show my shortlist'\n"
+        '{"intent":"Shortlist","shortlist_action":"show","target_indices":[],"target_areas":[],"confidence":0.97,"reason":"show_saved","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        "Query: 'remove shortlist 2'\n"
+        '{"intent":"Shortlist","shortlist_action":"remove","target_indices":[2],"target_areas":[],"confidence":0.95,"reason":"remove_saved","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+        "Query: 'clear my shortlist'\n"
+        '{"intent":"Shortlist","shortlist_action":"clear","target_indices":[],"target_areas":[],"confidence":0.96,"reason":"clear_shortlist","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}'
     )
     user_payload = f"Conversation summary:\n{history_hint or '(none)'}\n\nUser input:\n{text}"
     try:
@@ -295,7 +324,7 @@ def _classify_with_llm_for_listings(
         target_indices = [int(x) for x in raw_indices if isinstance(x, (int, float)) and int(x) >= 1]
     except Exception:
         target_indices = []
-    if intent not in {"Compare", "Specific_QA"}:
+    if intent not in {"Compare", "Specific_QA", "Shortlist"}:
         target_indices = []
     raw_areas = obj.get("target_areas") or []
     try:
@@ -304,6 +333,14 @@ def _classify_with_llm_for_listings(
         target_areas = []
     if intent != "AreaCompare":
         target_areas = []
+    shortlist_action = obj.get("shortlist_action")
+    shortlist_action = str(shortlist_action).strip().lower() if shortlist_action is not None else None
+    if shortlist_action in {"", "none", "null"}:
+        shortlist_action = None
+    if shortlist_action not in {"add", "remove", "show", "clear"}:
+        shortlist_action = None
+    if intent != "Shortlist":
+        shortlist_action = None
     if intent != "Search":
         refinement_type = None
     if intent != "Page_Nav":
@@ -320,6 +357,7 @@ def _classify_with_llm_for_listings(
         reason=f"llm:{reason}",
         target_indices=target_indices,
         target_areas=target_areas,
+        shortlist_action=shortlist_action,
         refinement_type=refinement_type,
         confidence=conf,
         need_clarify=need_clarify,

@@ -26,7 +26,7 @@ from skills.search.handler import format_listing_row
 
 from orchestration.state import GraphState
 
-IntentName = Literal["Search", "Specific_QA", "Compare", "AreaCompare", "Chitchat", "DirectReply", "Page_Nav", "Fallback", "Explain"]
+IntentName = Literal["Search", "Specific_QA", "Compare", "AreaCompare", "Shortlist", "Chitchat", "DirectReply", "Page_Nav", "Fallback", "Explain"]
 
 
 def _auto_focus_first(agent_state) -> None:
@@ -106,6 +106,7 @@ def route_node(state: GraphState) -> GraphState:
     state["clarify_question"] = decision.clarify_question
     state["target_indices"] = list(decision.target_indices or [])
     state["target_areas"] = list(decision.target_areas or [])
+    state["shortlist_action"] = decision.shortlist_action
     state["refinement_type"] = decision.refinement_type
     state["page_action"] = getattr(decision, "page_action", None)
 
@@ -497,9 +498,14 @@ def qa_plan_node(state: GraphState) -> GraphState:
     state["qa_semantic_terms"] = dict((qa_ctx or {}).get("semantic_terms") or {})
     state["qa_signals"] = dict((qa_ctx or {}).get("signals") or {})
 
-    if len(state.get("target_indices") or []) == 1:
+    target_indices = list(state.get("target_indices") or [])
+    if len(target_indices) > 1:
+        # Explicit multi-index from router (e.g. "do listing 1 and 2 have pets?") — scope is unambiguous.
+        target_scope = "list"
+    elif len(target_indices) == 1:
         target_scope = "single"
     else:
+        # No explicit indices — let classify_qa_scope decide (single / list / clarify).
         scope = classify_qa_scope(
             question=user_in,
             has_focus=bool(agent_state.current_focus_listing_payload),
@@ -1146,6 +1152,99 @@ def area_compare_node(state: GraphState) -> GraphState:
     return state
 
 
+def shortlist_node(state: GraphState) -> GraphState:
+    """Manage the user's saved (shortlisted) listings."""
+    agent_state = state["agent_state"]
+    action = str(state.get("shortlist_action") or "show").strip().lower()
+    target_indices = [i for i in (state.get("target_indices") or []) if isinstance(i, int)]
+
+    if action == "show":
+        if not agent_state.shortlist:
+            state["reply_text"] = (
+                "Your shortlist is empty. "
+                "Save listings by saying 'save listing 2' or clicking the bookmark icon on a listing card."
+            )
+        else:
+            n = len(agent_state.shortlist)
+            lines = [f"**Your shortlist ({n} listing{'s' if n != 1 else ''}):**", ""]
+            for i, r in enumerate(agent_state.shortlist, start=1):
+                lines.append(format_listing_row(r, i, view_mode="summary"))
+            lines += ["", "Say 'remove shortlist 2' to remove an entry, or 'compare my shortlist' to compare them."]
+            state["reply_text"] = "\n".join(lines)
+        return state
+
+    if action == "clear":
+        count = len(agent_state.shortlist)
+        agent_state.shortlist = []
+        state["reply_text"] = (
+            f"Cleared your shortlist ({count} listing{'s' if count != 1 else ''} removed)."
+            if count else "Your shortlist was already empty."
+        )
+        return state
+
+    if action == "add":
+        listings = list(agent_state.last_results or [])
+        if not listings:
+            state["reply_text"] = "No listings on the current page to save. Run a search first."
+            return state
+        if not target_indices:
+            state["reply_text"] = "Which listing would you like to save? (e.g. 'save listing 2')"
+            return state
+        existing_ids = {str(r.get("listing_id") or r.get("url") or "") for r in agent_state.shortlist}
+        added, already = [], []
+        for idx in target_indices:
+            if idx < 1 or idx > len(listings):
+                continue
+            r = listings[idx - 1]
+            lid = str(r.get("listing_id") or r.get("url") or f"row_{idx}")
+            if lid in existing_ids:
+                already.append(idx)
+            else:
+                agent_state.shortlist.append(r)
+                existing_ids.add(lid)
+                added.append(idx)
+        parts = []
+        if added:
+            label = ", ".join(f"#{i}" for i in added)
+            parts.append(f"Saved listing {label} to your shortlist ({len(agent_state.shortlist)} total).")
+        if already:
+            label = ", ".join(f"#{i}" for i in already)
+            parts.append(f"Listing {label} was already in your shortlist.")
+        state["reply_text"] = " ".join(parts) or "Nothing to save."
+        return state
+
+    if action == "remove":
+        if not agent_state.shortlist:
+            state["reply_text"] = "Your shortlist is empty."
+            return state
+        if not target_indices:
+            state["reply_text"] = (
+                "Which shortlist entry to remove? "
+                "Say 'show my shortlist' to see positions, then 'remove shortlist 2'."
+            )
+            return state
+        # target_indices = 1-based positions in shortlist
+        valid = sorted([i for i in target_indices if 1 <= i <= len(agent_state.shortlist)], reverse=True)
+        invalid = [i for i in target_indices if i < 1 or i > len(agent_state.shortlist)]
+        for idx in valid:
+            agent_state.shortlist.pop(idx - 1)
+        parts = []
+        if valid:
+            label = ", ".join(f"#{i}" for i in sorted(valid))
+            parts.append(f"Removed shortlist item {label} ({len(agent_state.shortlist)} remaining).")
+        if invalid:
+            label = ", ".join(f"#{i}" for i in invalid)
+            parts.append(f"Index {label} out of range.")
+        state["reply_text"] = " ".join(parts) or "Nothing removed."
+        return state
+
+    state["reply_text"] = (
+        "Shortlist commands: 'show my shortlist', 'save listing 2', "
+        "'remove shortlist 1', 'clear shortlist'."
+    )
+    return state
+
+
 def finalize_node(state: GraphState) -> GraphState:
     state["attempt_count"] = int(state.get("attempt_count") or 0) + 1
     agent_state = state["agent_state"]
@@ -1165,6 +1264,8 @@ def route_branch(state: GraphState) -> IntentName:
         return "Compare"
     if intent == "AreaCompare":
         return "AreaCompare"
+    if intent == "Shortlist":
+        return "Shortlist"
     if intent == "AcceptSuggestion":
         return "AcceptSuggestion"
     if intent == "Explain":
