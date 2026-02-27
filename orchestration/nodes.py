@@ -920,12 +920,16 @@ def compare_node(state: GraphState) -> GraphState:
     agent_state = state["agent_state"]
     user_in = str(state.get("user_input") or "")
 
-    # Detect shortlist compare: user mentions "shortlist"/"saved"/"bookmark" and has saved items.
-    use_shortlist = bool(agent_state.shortlist) and any(
-        kw in user_in.lower() for kw in ("shortlist", "saved", "bookmark")
-    )
+    # Detect whether the user intends to compare their shortlist.
+    wants_shortlist = any(kw in user_in.lower() for kw in ("shortlist", "saved", "bookmark"))
 
-    if use_shortlist:
+    if wants_shortlist:
+        if not agent_state.shortlist:
+            state["reply_text"] = (
+                "Your shortlist is empty. "
+                "Save listings first with 'save listing 2', then compare them."
+            )
+            return state
         listings = list(agent_state.shortlist)
         source_label = "shortlist"
     else:
@@ -933,16 +937,10 @@ def compare_node(state: GraphState) -> GraphState:
         source_label = "search results"
 
     if not listings:
-        if use_shortlist or any(kw in user_in.lower() for kw in ("shortlist", "saved", "bookmark")):
-            state["reply_text"] = (
-                "Your shortlist is empty. "
-                "Save listings first with 'save listing 2', then compare them."
-            )
-        else:
-            state["reply_text"] = (
-                "I don't have any listings to compare yet. "
-                "Tell me your search requirements first and I'll find some options."
-            )
+        state["reply_text"] = (
+            "I don't have any listings to compare yet. "
+            "Tell me your search requirements first and I'll find some options."
+        )
         return state
 
     raw_indices = [i for i in (state.get("target_indices") or []) if isinstance(i, int)]
