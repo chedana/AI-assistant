@@ -945,7 +945,7 @@ def compare_node(state: GraphState) -> GraphState:
 
     raw_indices = [i for i in (state.get("target_indices") or []) if isinstance(i, int)]
 
-    if not use_shortlist and len(raw_indices) >= 2:
+    if not wants_shortlist and len(raw_indices) >= 2:
         # Specific indices — only valid when comparing search results (not shortlist).
         rows, bad = [], []
         for idx in raw_indices:
