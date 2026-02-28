@@ -940,6 +940,8 @@ def compare_node(state: GraphState) -> GraphState:
         listings = list(agent_state.last_results or [])
         source_label = "search results"
 
+    agent_state.last_compare_source = "shortlist" if wants_shortlist else "results"
+
     if not listings:
         state["reply_text"] = (
             "I don't have any listings to compare yet. "
