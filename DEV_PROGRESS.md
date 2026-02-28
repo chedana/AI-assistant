@@ -210,10 +210,12 @@ _Covers: `crawler/`, `artifacts/`, Qdrant collection, embedding scripts_
 ## Changelog
 
 ### Phase 12 · Shortlist Compare (Feb 27)
-> Branch: `restructure` | 3 commits
+> Branch: `restructure` | 5 commits
 
 | Hash | Date | Type | Description |
 |------|------|------|-------------|
+| `6d7036e` | 2026-02-27 | fix | Deposit compare formatter handles string values (£1,600, Ask agent) |
+| `d34f3be` | 2026-02-27 | fix | NameError use_shortlist → wants_shortlist in compare_node |
 | `830258d` | 2026-02-27 | fix | Update empty-shortlist compare message wording |
 | `c530102` | 2026-02-27 | fix | Empty shortlist shows correct message immediately (not silent fallthrough) |
 | `0fa71e8` | 2026-02-27 | feat | Shortlist compare — "compare my shortlist" uses saved listings |
@@ -226,19 +228,11 @@ _Covers: `crawler/`, `artifacts/`, Qdrant collection, embedding scripts_
 - Router: 2 new few-shot examples for shortlist-compare queries
 - Existing search-result compare behaviour unchanged
 
-**Frontend note — no changes required.** The shortlist compare reply is plain markdown text (same format as regular compare). The `CompareTable` component already renders it from `metadata.compare_data` when `last_intent == "Compare"`. However, `compare_data` in the SSE metadata is currently built from `last_results`, **not** from the shortlist. If the frontend session wants to render a styled `CompareTable` for shortlist comparisons, the backend `build_metadata()` in `backend/api_server.py` needs updating:
+**Bug fixes in this phase:**
+- `NameError` on `use_shortlist` (renamed to `wants_shortlist` but missed one reference) — crashed every shortlist compare attempt
+- Deposit showed "—" in compare table because the field is stored as a string (`"£1,600"`) not a number. Fixed formatter to strip `£`/`,` before parsing; also displays "Ask agent" as-is rather than "—"
 
-```python
-# Current (only works for search-result compare):
-if state.last_intent == "Compare" and state.last_results:
-    compare_listings = [...]
-
-# Needed for shortlist compare:
-# Detect if reply_text mentions shortlist (or add a last_compare_source field to AgentState)
-# and use state.shortlist as the source instead of state.last_results
-```
-
-Simplest frontend workaround: the markdown table in the text reply renders correctly as-is (the `---` separator bug is already fixed). The `CompareTable` component enhancement is optional polish.
+**Frontend note:** `AgentState.last_compare_source: Optional[str]` added (`"shortlist"` | `"results"`). Backend `build_metadata()` can use this to emit `compare_data` from `state.shortlist` when it's a shortlist compare, enabling the styled `CompareTable` component. Without this, the markdown table in the text reply renders correctly as-is.
 
 ---
 
