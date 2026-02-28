@@ -80,6 +80,7 @@ class AgentState:
     pending_area_compare: Optional[Dict[str, Any]] = None  # pending area compare awaiting layout info
     # Structure: {"areas": List[str]}
     shortlist: List[Dict[str, Any]] = field(default_factory=list)  # user-saved listings
+    last_compare_source: Optional[str] = None  # "shortlist" | "results" — set by compare_node
 
 
 class GraphState(TypedDict, total=False):
