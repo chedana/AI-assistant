@@ -32,6 +32,7 @@ class ChatStreamRequest(BaseModel):
     session_id: str = Field(min_length=1)
     user_text: str | None = None
     messages: list[ChatMessage] = Field(default_factory=list)
+    route_hint: dict | None = None
 
 
 app = FastAPI(title="AI Assistant Backend Proxy", version="0.1.0")
@@ -175,14 +176,31 @@ def build_metadata(state: AgentState) -> dict | None:
             meta["compare_data"] = {"listings": compare_listings}
 
     # Shortlist — always included so frontend can show saved/unsaved state on cards
+    shortlist_items = list(state.shortlist or [])
     saved_ids = [
         str(r.get("listing_id") or r.get("url") or "")
-        for r in (state.shortlist or [])
+        for r in shortlist_items
         if r.get("listing_id") or r.get("url")
     ]
+    shortlist_listings = [
+        {
+            "title": str(r.get("title", "")),
+            "url": str(r.get("url", "")),
+            "address": str(r.get("address") or ""),
+            "price_pcm": _num(r.get("price_pcm")),
+            "bedrooms": _num(r.get("bedrooms")),
+            "bathrooms": _num(r.get("bathrooms")),
+            "available_from": str(r.get("available_from") or ""),
+            "final_score": _num(r.get("final_score")),
+            "penalty_reasons": [p for p in _to_list(r.get("penalty_reasons")) if not p.startswith("unknown_hard(")],
+            "preference_hits": _to_list(r.get("preference_hits")),
+        }
+        for r in shortlist_items
+    ]
     meta["shortlist"] = {
-        "count": len(state.shortlist or []),
+        "count": len(shortlist_items),
         "saved_ids": saved_ids,
+        "listings": shortlist_listings,
     }
 
     # Quick replies — contextual suggestions
@@ -190,11 +208,11 @@ def build_metadata(state: AgentState) -> dict | None:
     if state.last_results:
         if state.last_intent != "Compare":
             if state.has_more:
-                quick.append({"label": "Show more", "text": "show me more"})
-            quick.append({"label": "Lower budget", "text": "find cheaper options"})
-            quick.append({"label": "Compare all", "text": "compare these listings"})
+                quick.append({"label": "Show more", "text": "show me more", "route_hint": {"intent": "Page_Nav", "page_action": "next"}})
+            quick.append({"label": "Lower budget", "text": "find cheaper options", "route_hint": {"intent": "Search"}})
+            quick.append({"label": "Compare all", "text": "compare these listings", "route_hint": {"intent": "Compare"}})
     if state.shortlist:
-        quick.append({"label": "My shortlist", "text": "show my shortlist"})
+        quick.append({"label": "My shortlist", "text": "show my shortlist", "route_hint": {"intent": "Shortlist", "shortlist_action": "show"}})
     if quick:
         meta["quick_replies"] = quick
 
@@ -237,9 +255,9 @@ def get_session_lock(session_id: str) -> Lock:
         return SESSION_LOCKS[session_id]
 
 
-def _run_locked(lock: Lock, user_in: str, state: AgentState, runtime, router_debug: bool) -> str:
+def _run_locked(lock: Lock, user_in: str, state: AgentState, runtime, router_debug: bool, route_hint: dict | None = None) -> str:
     with lock:
-        return process_turn(user_in, state, runtime, router_debug)
+        return process_turn(user_in, state, runtime, router_debug, route_hint=route_hint)
 
 
 @app.get("/healthz")
@@ -268,6 +286,7 @@ async def chat_stream(req: ChatStreamRequest, request: Request) -> StreamingResp
                 state,
                 RUNTIME,
                 ROUTER_DEBUG,
+                req.route_hint,
             )
 
             for chunk in split_chunks(reply, size=8):
