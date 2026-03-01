@@ -16,7 +16,7 @@ Multi-turn conversational rental search assistant. Users describe rental require
 
 | Branch | Role | Tip commit |
 |--------|------|-----------|
-| `restructure` | **Active dev (default commit target)** | `a607f49` 2026-03-01 |
+| `restructure` | **Active dev (default commit target)** | `aef3e62` 2026-03-01 |
 | `feature/rental` | Previous dev branch (behind restructure) | `b12fe96` 2026-02-25 |
 | `main` | Stable baseline | `7355f5d` 2026-02-24 |
 | `codex/initial-modular-structure` | Archived Codex bootstrap | — |
@@ -25,7 +25,7 @@ Multi-turn conversational rental search assistant. Users describe rental require
 
 ## Current State
 
-_Last updated: 2026-03-01 · Branch: `restructure` · Tip: `a607f49`_
+_Last updated: 2026-03-01 · Branch: `restructure` · Tip: `aef3e62`_
 
 ### Architecture
 
@@ -128,7 +128,8 @@ frontend/src/
 - Domain router — separates Rental from General conversation paths
 - Near-miss listings — shown in `ask_user` replies when strict search returns 0; display shows title + reason with actual listing value
 - **CompareTable UI** — structured side-by-side comparison table rendered from `metadata.compare_data`; best-value green highlighting, clickable listing links, sticky field column; mutually exclusive with listing cards
-- **Shortlist UI** — bookmark icon on each listing card (filled/outline driven by `metadata.shortlist.saved_ids`); click injects "save listing N" as chat message; clickable "Saved (N)" badge in header sends "show my shortlist"
+- **Shortlist UI** — bookmark icon on each listing card (filled/outline driven by `metadata.shortlist.saved_ids`); click injects "save listing N" as chat message; "Saved (N)" badge in header toggles ShortlistPanel right drawer; drawer shows saved cards with per-item remove button; auto-closes when empty
+- **Message suppression** — assistant text bubble for a search turn is hidden once listing cards are shown (tracked via `metadataForId`); cards persist across subsequent messages; metadata only resets on session switch
 - Frontend Phase 1 — component split (10 components, 2 hooks), hand-written markdown renderer, listing cards with preference/penalty tags, sticky constraint filter bar with ×-to-remove, quick-reply buttons, CSS thinking animation, backend metadata SSE event (search_results + constraints + quick_replies + compare_data + shortlist)
 - SSE streaming — backend → frontend with stop-generation button
 - Session persistence — localStorage + server-side TTL
@@ -179,7 +180,8 @@ frontend/src/
 - `5122ce3` feat: shortlist side panel — saved listings in a right drawer
 - `6bd7cf3` fix: auto-expanding textarea in ChatInput
 - `159fbc1` fix: human-friendly constraint tags with correct remove phrases
-- `a607f49` feat: route_hint optimization + shortlist panel polish
+- `a607f49` feat: shortlist panel, message suppression, auto-expand input, constraint tag labels
+- `aef3e62` docs: update DEV_PROGRESS — Phase 15
 
 ---
 
@@ -202,10 +204,11 @@ frontend/src/
 
 | Hash | Date | Type | Description |
 |------|------|------|-------------|
-| `5122ce3` | 2026-03-01 | feat | Shortlist side panel — right-side drawer with saved listing cards |
-| `6bd7cf3` | 2026-03-01 | fix | Auto-expanding textarea in ChatInput |
 | `159fbc1` | 2026-03-01 | fix | Human-friendly constraint tag labels via FIELD_CONFIG |
-| `a607f49` | 2026-03-01 | feat | route_hint optimization + shortlist panel polish |
+| `6bd7cf3` | 2026-03-01 | fix | Auto-expanding textarea in ChatInput |
+| `5122ce3` | 2026-03-01 | feat | Shortlist side panel — right-side drawer with saved listing cards |
+| `a607f49` | 2026-03-01 | feat | Message suppression (metadataForId), panel toggle, metadata persist fix |
+| `aef3e62` | 2026-03-01 | docs | Update DEV_PROGRESS — Phase 15 |
 
 **Key deliverables this phase:**
 - **route_hint optimization** (`nodes.py`, `state.py`, `workflow.py`, `api_server.py`, frontend): Quick-reply buttons and listing-action buttons now attach a `route_hint` dict to the request. `domain_router_node` and `route_node` short-circuit immediately when the hint is present — no LLM calls for known intents. Cuts ~2 LLM round-trips per button click.
@@ -315,7 +318,7 @@ frontend/src/
 - Backend: `AgentState.last_intent` field + `build_metadata()` emits `compare_data` when intent is `Compare`; `CompareListingData` / `CompareData` types added to frontend
 - Compare table and listing cards are mutually exclusive per turn in `ChatArea`
 - **Shortlist UI**: bookmark SVG icon on each `ListingCard` (filled = saved, outline = not); state driven by `metadata.shortlist.saved_ids` set; click injects `"save listing N"` as user chat message (1-based page position)
-- **Header badge**: clickable "Saved (N)" pill in app header; sends `"show my shortlist"` on click; hidden when count is 0
+- **Header badge**: "Saved (N)" pill in app header toggles `ShortlistPanel` open/closed; hidden when count is 0
 - `ShortlistMeta` type added to `SessionMetadata`
 
 ---
@@ -514,5 +517,5 @@ frontend/src/
 |--------|-------|
 | Total commits (all branches) | ~140 |
 | Project start | 2026-02-17 |
-| Latest commit | 2026-03-01 (`a607f49`) |
+| Latest commit | 2026-03-01 (`aef3e62`) |
 | Days active | 13 |
