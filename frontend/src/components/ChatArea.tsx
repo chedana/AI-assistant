@@ -11,7 +11,7 @@ type Props = {
   isGenerating: boolean;
   metadata: SessionMetadata | null;
   metadataForId: string | null;
-  onQuickReply: (text: string) => void;
+  onQuickReply: (text: string, routeHint?: Record<string, unknown>) => void;
   onSaveListing?: (pageIndex: number) => void;
 };
 
@@ -76,7 +76,7 @@ export default function ChatArea({ session, isGenerating, metadata, metadataForI
                   ))}
                   {metadata!.search_results!.has_more && (
                     <button
-                      onClick={() => onQuickReply("show me more")}
+                      onClick={() => onQuickReply("show me more", { intent: "Page_Nav", page_action: "next" })}
                       className="w-full rounded-lg border border-border py-2 text-xs text-muted hover:bg-neutral-800 hover:text-text"
                     >
                       Show more results ({metadata!.search_results!.total - metadata!.search_results!.listings.length * (metadata!.search_results!.page_index + 1)} remaining)

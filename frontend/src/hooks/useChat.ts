@@ -25,7 +25,7 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
     setMetadataForId(null);
   }, [activeSession?.id]);
 
-  async function sendMessage(input: string) {
+  async function sendMessage(input: string, routeHint?: Record<string, unknown>) {
     if (!activeSession || isGenerating) return;
     const prompt = input.trim();
     if (!prompt) return;
@@ -58,6 +58,7 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
     try {
       await streamChat(activeSession.id, prompt, {
         signal: controller.signal,
+        routeHint,
         onChunk: (chunk) => {
           updateSession(activeSession.id, (session) => {
             const messages = session.messages.map((m) =>

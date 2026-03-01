@@ -89,6 +89,21 @@ def _is_cross_candidate_query(text: str) -> bool:
 
 
 def route_node(state: GraphState) -> GraphState:
+    hint = state.get("route_hint")
+    if hint:
+        state["intent"] = str(hint.get("intent") or "Search")
+        state["page_action"] = hint.get("page_action")
+        state["shortlist_action"] = hint.get("shortlist_action")
+        state["refinement_type"] = hint.get("refinement_type")
+        state["need_clarify"] = False
+        state["clarify_question"] = None
+        state["target_indices"] = []
+        state["target_areas"] = []
+        state["route_reason"] = "route_hint"
+        if state.get("router_debug"):
+            _debug_print(True, {"phase": "turn_start", "source": "route_hint", "intent": state["intent"], "hint": hint})
+        return state
+
     text = str(state.get("user_input") or "").strip()
     agent_state = state["agent_state"]
     if not text:
@@ -674,6 +689,9 @@ def apply_suggestion_node(state: GraphState) -> GraphState:
 
 
 def domain_router_node(state: GraphState) -> GraphState:
+    if state.get("route_hint"):
+        state["domain"] = "Rental"
+        return state
     agent_state = state["agent_state"]
     text = str(state.get("user_input") or "").strip()
     decision = domain_route_turn(
