@@ -99,6 +99,8 @@ def route_node(state: GraphState) -> GraphState:
         state["clarify_question"] = None
         state["target_indices"] = [int(i) for i in (hint.get("target_indices") or [])]
         state["target_areas"] = []
+        state["explicit_set_constraints"] = dict(hint.get("set_constraints") or {})
+        state["explicit_clear_fields"] = list(hint.get("clear_fields") or [])
         state["route_reason"] = "route_hint"
         if state.get("router_debug"):
             _debug_print(True, {"phase": "turn_start", "source": "route_hint", "intent": state["intent"], "hint": hint})
@@ -280,15 +282,30 @@ def search_node(state: GraphState) -> GraphState:
     state["stage_a_prefilter_count"] = -1
     agent_state.pending_suggestion = None
 
-    # Build merge plan from current user turn before running physical search.
-    plan = build_refinement_plan(
-        user_text=str(state.get("user_input") or ""),
-        existing_constraints=agent_state.constraints,
-    )
+    # Determine constraint changes: explicit (button action) or extracted (text input).
+    explicit_set = state.get("explicit_set_constraints") or {}
+    explicit_clear = state.get("explicit_clear_fields") or []
+    if explicit_set or explicit_clear:
+        # Button action — skip regex/LLM extraction; apply params directly.
+        set_fields: dict = explicit_set
+        clear_fields: list = explicit_clear
+        semantic_terms: dict = {}
+        is_reset = False
+        plan_source = "explicit_action"
+    else:
+        # Text input — run refinement plan extraction as normal.
+        plan = build_refinement_plan(
+            user_text=str(state.get("user_input") or ""),
+            existing_constraints=agent_state.constraints,
+        )
+        set_fields = plan.set_fields
+        clear_fields = plan.clear_fields
+        semantic_terms = plan.semantic_terms or {}
+        is_reset = plan.is_reset
+        plan_source = plan.source
 
-    # If the user explicitly sets a new budget (or resets entirely), clear the
-    # stored original_budget so ★ markup reflects the new intent.
-    if "max_rent_pcm" in plan.set_fields or plan.is_reset:
+    # If a new budget is being set (or full reset), clear stored original_budget.
+    if "max_rent_pcm" in set_fields or is_reset:
         agent_state.original_budget = None
 
     old_snapshot = snapshot_from_constraints(
@@ -297,9 +314,9 @@ def search_node(state: GraphState) -> GraphState:
     )
     target_snapshot = derive_snapshot(
         old_snapshot=old_snapshot,
-        set_fields=plan.set_fields,
-        clear_fields=plan.clear_fields,
-        is_reset=plan.is_reset,
+        set_fields=set_fields,
+        clear_fields=clear_fields,
+        is_reset=is_reset,
     )
     target_constraints = snapshot_to_constraints(target_snapshot)
     _debug_print(
@@ -309,10 +326,10 @@ def search_node(state: GraphState) -> GraphState:
             "intent": "Search",
             "constraints_old": agent_state.constraints or {},
             "constraints_new": target_constraints or {},
-            "set_fields": plan.set_fields or {},
-            "clear_fields": plan.clear_fields or [],
-            "is_reset": bool(plan.is_reset),
-            "plan_source": plan.source,
+            "set_fields": set_fields or {},
+            "clear_fields": clear_fields or [],
+            "is_reset": bool(is_reset),
+            "plan_source": plan_source,
         },
     )
     target_hash = target_snapshot.get_hash()
@@ -371,7 +388,7 @@ def search_node(state: GraphState) -> GraphState:
             runtime=runtime,
             refinement_type=None,
             override_constraints=target_constraints,
-            precomputed_semantic_terms=plan.semantic_terms or {},
+            precomputed_semantic_terms=semantic_terms,
         )
     except Exception:
         _logger.exception("search_node: run_search_skill failed — rolling back state")

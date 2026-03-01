@@ -91,6 +91,11 @@ class GraphState(TypedDict, total=False):
     # ── Domain (per-turn, set by domain_router_node) ─────────────────────────
     domain: str                  # "Rental" | "General"
 
+    # ── Explicit action params (set by route_node from route_hint) ───────────
+    # Present only for button actions; search_node skips regex extraction when set.
+    explicit_set_constraints: Dict[str, Any]   # e.g. {"max_rent_pcm": 1280}
+    explicit_clear_fields: List[str]            # e.g. ["max_rent_pcm"]
+
     # ── Routing (per-turn, set by route_node) ────────────────────────────────
     intent: str
     route_reason: str
@@ -139,6 +144,9 @@ def make_graph_state(user_input: str, *, agent_state: Any, runtime: Any, router_
         # Input
         user_input=str(user_input or "").strip(),
         route_hint=route_hint,
+        # Explicit action params — overwritten by route_node when route_hint is present
+        explicit_set_constraints={},
+        explicit_clear_fields=[],
         # Domain default — overwritten by domain_router_node
         domain="Rental",
         # Routing defaults — overwritten by route_node

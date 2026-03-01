@@ -206,10 +206,15 @@ def build_metadata(state: AgentState) -> dict | None:
     # Quick replies — contextual suggestions
     quick: list[dict] = []
     if state.last_results:
-        if state.last_intent != "Compare":
-            if state.has_more:
-                quick.append({"label": "Show more", "text": "show me more", "route_hint": {"intent": "Page_Nav", "page_action": "next"}})
+        if state.has_more:
+            quick.append({"label": "Show more", "text": "show me more", "route_hint": {"intent": "Page_Nav", "page_action": "next"}})
+        max_rent = (state.constraints or {}).get("max_rent_pcm")
+        if max_rent:
+            lower = int(max_rent * 0.8)
+            quick.append({"label": "Lower budget", "text": f"lower budget to £{lower}/month", "route_hint": {"intent": "Search", "set_constraints": {"max_rent_pcm": lower}}})
+        else:
             quick.append({"label": "Lower budget", "text": "find cheaper options", "route_hint": {"intent": "Search"}})
+        if state.last_intent != "Compare":
             quick.append({"label": "Compare all", "text": "compare these listings", "route_hint": {"intent": "Compare"}})
     if quick:
         meta["quick_replies"] = quick
