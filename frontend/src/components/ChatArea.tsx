@@ -35,7 +35,7 @@ export default function ChatArea({ session, isGenerating, metadata, metadataForI
 
   // When listing cards are shown, hide the specific assistant message the cards belong to.
   // Using metadataForId (the exact message ID) avoids hiding the thinking bubble of new messages.
-  const hideMessageId = showListings ? metadataForId : null;
+  const hideMessageId = (showListings || showCompare) ? metadataForId : null;
 
   return (
     <section className="relative flex-1 overflow-y-auto">

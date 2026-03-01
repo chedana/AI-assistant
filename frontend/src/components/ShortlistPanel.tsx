@@ -5,9 +5,10 @@ type Props = {
   listings: ListingData[];
   onClose: () => void;
   onRemove: (position: number) => void;
+  onCompare: () => void;
 };
 
-export default function ShortlistPanel({ listings, onClose, onRemove }: Props) {
+export default function ShortlistPanel({ listings, onClose, onRemove, onCompare }: Props) {
   return (
     <div className="flex h-full w-80 shrink-0 flex-col border-l border-border bg-panel">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
@@ -23,6 +24,18 @@ export default function ShortlistPanel({ listings, onClose, onRemove }: Props) {
           ✕
         </button>
       </div>
+
+      {listings.length >= 2 && (
+        <div className="border-b border-border px-3 py-2">
+          <button
+            type="button"
+            onClick={onCompare}
+            className="w-full rounded-lg bg-accent/20 py-1.5 text-xs font-medium text-accent hover:bg-accent/30 transition-colors"
+          >
+            Compare shortlist
+          </button>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {listings.length === 0 ? (

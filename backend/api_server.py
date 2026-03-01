@@ -211,8 +211,6 @@ def build_metadata(state: AgentState) -> dict | None:
                 quick.append({"label": "Show more", "text": "show me more", "route_hint": {"intent": "Page_Nav", "page_action": "next"}})
             quick.append({"label": "Lower budget", "text": "find cheaper options", "route_hint": {"intent": "Search"}})
             quick.append({"label": "Compare all", "text": "compare these listings", "route_hint": {"intent": "Compare"}})
-    if state.shortlist:
-        quick.append({"label": "My shortlist", "text": "show my shortlist", "route_hint": {"intent": "Shortlist", "shortlist_action": "show"}})
     if quick:
         meta["quick_replies"] = quick
 

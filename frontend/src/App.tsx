@@ -90,6 +90,10 @@ export default function App() {
           listings={shortlistListings}
           onClose={() => setShortlistOpen(false)}
           onRemove={handleRemoveFromShortlist}
+          onCompare={() => {
+            setShortlistOpen(false);
+            void sendSilentAction("compare my shortlist", { intent: "Compare" });
+          }}
         />
       )}
     </div>
