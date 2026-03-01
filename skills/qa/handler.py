@@ -311,37 +311,41 @@ def _retrieve_evidence(
 def classify_qa_scope(
     question: str,
     has_focus: bool,
-    has_listings: bool,
     last_qa_scope: Optional[str] = None,
 ) -> Dict[str, Any]:
+    """Classify QA scope as 'single' (answer about focused listing) or 'list' (compare all).
+    'clarify' is no longer a valid output — no-listing guard is handled upstream.
+    """
     prompt = (
-        "You classify QA scope for rental listings.\n"
+        "You classify whether a rental QA question targets a single listing or all listings.\n"
         "Return STRICT JSON only:\n"
-        '{"target_scope":"single|list|clarify","confidence":0.0,"reason":"..."}\n'
+        '{"target_scope":"single|list","confidence":0.0,"reason":"..."}\n'
         "Policy:\n"
-        "- Default behavior with has_focus=true is single-listing QA continuity.\n"
-        "- Use list ONLY when user explicitly asks cross-candidate comparison/selection (e.g., 'which one', 'which listing', 'which property').\n"
-        "- If user asks about current listing with explicit deixis (it/this/this listing/this property), target_scope=single.\n"
-        "- If has_focus=false and user uses unresolved deixis (it/this/that one), target_scope=clarify.\n"
-        "- If previous QA scope was single and current question has no explicit cross-candidate wording, keep target_scope=single.\n"
-        "- When unsure and has_focus=true, prefer single.\n"
+        "- Default is single — follow the current focused listing.\n"
+        "- Use list ONLY when user explicitly asks to compare or select across all listings\n"
+        "  (e.g., 'which one', 'which listing', 'which has', 'which is best for').\n"
+        "- Deixis (it/this/this one/this listing) always means single.\n"
+        "- QA continuity: if last_qa_scope=single and no cross-listing wording, keep single.\n"
+        "- When unsure, prefer single.\n"
         "Few-shot:\n"
-        "State: has_focus=true, has_listings=true, last_qa_scope=single; Q: How about transportation\n"
-        'Output: {"target_scope":"single","confidence":0.90,"reason":"qa_continuity_single"}\n'
-        "State: has_focus=true, has_listings=true, last_qa_scope=single; Q: How about schools\n"
-        'Output: {"target_scope":"single","confidence":0.90,"reason":"qa_continuity_single"}\n'
-        "State: has_focus=true, has_listings=true; Q: Does it have a gym?\n"
-        'Output: {"target_scope":"single","confidence":0.78,"reason":"default_focus_continuity"}\n'
-        "State: has_focus=true, has_listings=true; Q: Does this listing have a gym?\n"
-        'Output: {"target_scope":"single","confidence":0.90,"reason":"explicit_deixis_current_listing"}\n'
-        "State: has_focus=false, has_listings=true; Q: Does this one have a gym?\n"
-        'Output: {"target_scope":"clarify","confidence":0.92,"reason":"deixis_without_target"}\n'
-        "State: has_focus=true, has_listings=true; Q: Which one has a gym?\n"
-        'Output: {"target_scope":"list","confidence":0.94,"reason":"which_one_over_candidates"}\n'
+        "last_qa_scope=single; Q: How about transportation?\n"
+        '{"target_scope":"single","confidence":0.90,"reason":"qa_continuity"}\n'
+        "last_qa_scope=single; Q: What about schools nearby?\n"
+        '{"target_scope":"single","confidence":0.90,"reason":"qa_continuity"}\n'
+        "Q: Does it have a gym?\n"
+        '{"target_scope":"single","confidence":0.85,"reason":"deixis_it"}\n'
+        "Q: Does this listing have parking?\n"
+        '{"target_scope":"single","confidence":0.92,"reason":"explicit_this_listing"}\n'
+        "Q: Is it pet friendly and near good transport?\n"
+        '{"target_scope":"single","confidence":0.88,"reason":"multi_topic_single"}\n'
+        "Q: Which one has a gym?\n"
+        '{"target_scope":"list","confidence":0.94,"reason":"which_one"}\n'
+        "Q: Which listing is best for commuting?\n"
+        '{"target_scope":"list","confidence":0.95,"reason":"which_listing_compare"}\n'
+        "Q: Which of these allows pets?\n"
+        '{"target_scope":"list","confidence":0.93,"reason":"which_of_these"}\n'
     )
     user_payload = (
-        f"State: has_focus={'true' if has_focus else 'false'}, "
-        f"has_listings={'true' if has_listings else 'false'}, "
         f"last_qa_scope={str(last_qa_scope or 'none').strip().lower()}\n"
         f"Question: {str(question or '').strip()}"
     )
@@ -356,7 +360,7 @@ def classify_qa_scope(
         obj = _extract_first_json_obj(raw)
         if isinstance(obj, dict):
             scope = str(obj.get("target_scope") or "").strip().lower()
-            if scope in {"single", "list", "clarify"}:
+            if scope in {"single", "list"}:
                 return {
                     "target_scope": scope,
                     "confidence": float(obj.get("confidence", 0.0) or 0.0),
@@ -365,12 +369,10 @@ def classify_qa_scope(
     except Exception:
         pass
 
-    # Fallback: use focus state and prior scope rather than always clarifying.
-    if has_focus:
-        return {"target_scope": "single", "confidence": 0.0, "reason": "fallback:has_focus"}
+    # Fallback: single is always safe — focus is guaranteed set upstream.
     if last_qa_scope == "list":
         return {"target_scope": "list", "confidence": 0.0, "reason": "fallback:last_scope_list"}
-    return {"target_scope": "clarify", "confidence": 0.0, "reason": "fallback:llm_unavailable"}
+    return {"target_scope": "single", "confidence": 0.0, "reason": "fallback:default_single"}
 
 
 # ── Single listing QA ─────────────────────────────────────────────────────────

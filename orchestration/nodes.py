@@ -498,6 +498,35 @@ def paginate_node(state: GraphState) -> GraphState:
 def qa_plan_node(state: GraphState) -> GraphState:
     agent_state = state["agent_state"]
     user_in = str(state.get("user_input") or "")
+
+    # ── Guard: no listings at all — skip all LLM calls ────────────────────────
+    if not agent_state.last_results:
+        state["qa_target_scope"] = "no_listings"
+        state["qa_extraction_input"] = user_in
+        state["qa_plan_source"] = "guard_no_listings"
+        state["qa_llm_extract_all_error"] = {}
+        state["qa_target_constraints"] = {}
+        state["qa_semantic_terms"] = {}
+        state["qa_signals"] = {}
+        return state
+
+    # ── Scope: explicit indices from router take priority ──────────────────────
+    target_indices = list(state.get("target_indices") or [])
+    if len(target_indices) > 1:
+        target_scope = "list"
+    elif len(target_indices) == 1:
+        target_scope = "single"
+    else:
+        # No explicit indices — classify single vs list (clarify no longer exists).
+        scope = classify_qa_scope(
+            question=user_in,
+            has_focus=bool(agent_state.current_focus_listing_payload),
+            last_qa_scope=agent_state.last_qa_scope,
+        )
+        target_scope = str(scope.get("target_scope") or "single").strip().lower()
+    state["qa_target_scope"] = target_scope
+
+    # ── Extract only after scope is confirmed ─────────────────────────────────
     qa_ctx = build_qa_context(user_in)
     state["qa_extraction_input"] = str((qa_ctx or {}).get("extraction_input") or user_in)
     state["qa_plan_source"] = str((qa_ctx or {}).get("plan_source") or "fallback_split_calls")
@@ -505,23 +534,6 @@ def qa_plan_node(state: GraphState) -> GraphState:
     state["qa_target_constraints"] = dict((qa_ctx or {}).get("final_constraints") or {})
     state["qa_semantic_terms"] = dict((qa_ctx or {}).get("semantic_terms") or {})
     state["qa_signals"] = dict((qa_ctx or {}).get("signals") or {})
-
-    target_indices = list(state.get("target_indices") or [])
-    if len(target_indices) > 1:
-        # Explicit multi-index from router (e.g. "do listing 1 and 2 have pets?") — scope is unambiguous.
-        target_scope = "list"
-    elif len(target_indices) == 1:
-        target_scope = "single"
-    else:
-        # No explicit indices — let classify_qa_scope decide (single / list / clarify).
-        scope = classify_qa_scope(
-            question=user_in,
-            has_focus=bool(agent_state.current_focus_listing_payload),
-            has_listings=bool(agent_state.last_results),
-            last_qa_scope=agent_state.last_qa_scope,
-        )
-        target_scope = str(scope.get("target_scope") or "").strip().lower() or "clarify"
-    state["qa_target_scope"] = target_scope
 
     signals = state.get("qa_signals") or {}
     _debug_print(
@@ -586,27 +598,21 @@ def qa_execute_node(state: GraphState) -> GraphState:
         )
         return state
 
-    if target_scope == "clarify":
-        agent_state.last_qa_scope = "clarify"
-        state["reply_text"] = "Please specify which listing you mean (for example: listing 2), or ask 'which one has ...'."
+    if target_scope == "no_listings":
+        state["reply_text"] = (
+            "I don't have any listings yet. "
+            "Tell me your budget, location, and layout and I'll search for you."
+        )
+        return state
     elif target_scope == "list":
         agent_state.last_qa_scope = "list"
         listings = get_current_context_houses(agent_state, "list")
-        if not listings:
-            state["reply_text"] = (
-                "I don't have active listings yet. "
-                "Tell me your budget/location/layout first, and I'll search."
-            )
-            return state
         state["reply_text"] = answer_multi_listing_question(
             question=user_in,
             listings=listings,
             embedder=runtime.embedder,
             qa_ctx=qa_ctx,
         )
-    elif not get_focus_listing(agent_state):
-        agent_state.last_qa_scope = "clarify"
-        state["reply_text"] = "Which listing do you mean? Say 'tell me about listing 1' or 'tell me about listing 2' to select one."
     else:
         agent_state.last_qa_scope = "single"
         focus_listing = get_focus_listing(agent_state)
