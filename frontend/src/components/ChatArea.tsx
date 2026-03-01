@@ -14,6 +14,7 @@ type Props = {
   metadataForId: string | null;
   activeAssistantId: string | null;
   onQuickReply: (text: string, routeHint?: Record<string, unknown>) => void;
+  onRemoveConstraint: (clearFields: string[], actionLabel: string) => void;
   onSaveListing?: (pageIndex: number) => void;
 };
 
@@ -25,6 +26,7 @@ export default function ChatArea({
   metadataForId,
   activeAssistantId,
   onQuickReply,
+  onRemoveConstraint,
   onSaveListing,
 }: Props) {
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -48,7 +50,7 @@ export default function ChatArea({
       {showConstraints && (
         <ConstraintTags
           constraints={metadata!.constraints!}
-          onRemove={onQuickReply}
+          onRemove={onRemoveConstraint}
         />
       )}
 

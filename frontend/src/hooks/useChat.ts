@@ -110,12 +110,28 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
     }
   }
 
-  // Silent action: calls the backend and updates metadata without adding any
-  // messages to the chat session. Used for save/remove/compare shortlist actions.
-  async function sendSilentAction(input: string, routeHint?: Record<string, unknown>) {
+  // Silent action: calls the backend and updates metadata without adding a user
+  // message. An optional actionLabel adds a brief assistant acknowledgment so
+  // the user knows what is happening (e.g. "Lowering budget to £1,280/month…").
+  async function sendSilentAction(input: string, routeHint?: Record<string, unknown>, actionLabel?: string) {
     if (!activeSession || isGenerating) return;
     const prompt = input.trim();
     if (!prompt) return;
+
+    if (actionLabel) {
+      const now = Date.now();
+      const ackMessage: Message = {
+        id: createId(),
+        role: "assistant",
+        content: actionLabel,
+        createdAt: now,
+      };
+      updateSession(activeSession.id, (session) => ({
+        ...session,
+        updatedAt: now,
+        messages: [...session.messages, ackMessage],
+      }));
+    }
 
     setIsGenerating(true);
     const controller = new AbortController();

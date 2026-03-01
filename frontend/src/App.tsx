@@ -24,8 +24,25 @@ export default function App() {
 
   const [shortlistOpen, setShortlistOpen] = useState(false);
 
+  function resolveActionLabel(routeHint?: Record<string, unknown>): string | undefined {
+    if (!routeHint) return undefined;
+    const intent = routeHint.intent as string | undefined;
+    if (intent === "Page_Nav") return "Loading more listings…";
+    if (intent === "Compare") return "Comparing listings…";
+    if (intent === "Search") {
+      const set = routeHint.set_constraints as Record<string, unknown> | undefined;
+      if (set?.max_rent_pcm != null) return `Lowering budget to £${set.max_rent_pcm}/month…`;
+      return "Refining search…";
+    }
+    return undefined;
+  }
+
   function handleQuickReply(text: string, routeHint?: Record<string, unknown>) {
-    void sendMessage(text, routeHint);
+    void sendSilentAction(text, routeHint, resolveActionLabel(routeHint));
+  }
+
+  function handleRemoveConstraint(clearFields: string[], actionLabel: string) {
+    void sendSilentAction("clear constraint", { intent: "Search", clear_fields: clearFields }, actionLabel);
   }
 
   function handleSaveListing(pageIndex: number) {
@@ -78,6 +95,7 @@ export default function App() {
           metadataForId={metadataForId}
           activeAssistantId={activeAssistantId}
           onQuickReply={handleQuickReply}
+          onRemoveConstraint={handleRemoveConstraint}
           onSaveListing={handleSaveListing}
         />
         <ChatInput

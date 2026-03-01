@@ -25,7 +25,7 @@ Multi-turn conversational rental search assistant. Users describe rental require
 
 ## Current State
 
-_Last updated: 2026-03-01 · Branch: `restructure` · Tip: `bbb22ac`_
+_Last updated: 2026-03-01 · Branch: `restructure` · Tip: (pending commit)_
 
 ### Architecture
 
@@ -99,8 +99,8 @@ frontend/src/
     ThinkingIndicator.tsx  # CSS-only 3-dot pulse animation
     ListingCard.tsx     # structured listing: title, price, bed/bath, address, preference hits (green), penalties (amber), bookmark button
     CompareTable.tsx    # side-by-side comparison table with best-value highlighting
-    ConstraintTags.tsx  # sticky filter bar; click × sends "remove X filter" via chat
-    QuickReplies.tsx    # contextual buttons (Show more / Lower budget / Compare) → inject as user input
+    ConstraintTags.tsx  # sticky filter bar; click × sends explicit clear_fields route_hint (no text parsing)
+    QuickReplies.tsx    # contextual buttons (Show more / Lower budget / Compare) → silent actions with assistant acknowledgment
   hooks/
     useSessions.ts      # session CRUD + localStorage sync
     useChat.ts          # sendMessage / stopGenerating / streaming + metadata state
@@ -133,6 +133,7 @@ frontend/src/
 - **No text flash** — while an assistant message is actively streaming (`activeAssistantId`), `MessageBubble` shows ThinkingIndicator instead of partial text; after generation, the message is either hidden by cards or shown in full — no flash either way
 - **Silent shortlist actions** — save/remove are `sendSilentAction` calls: backend is updated, metadata (shortlist count/saved_ids/listings) refreshes, but no user or assistant message is added to the chat
 - **Bookmark toggles in sidebar** — filled bookmark in `ShortlistPanel` calls `onRemove`; `ListingCard` accepts both `onSave` and `onRemove`; hover turns red when saved to signal destructive action
+- **Explicit button actions** — all quick-reply and constraint-removal buttons are fully explicit: no LLM extraction, no user message, no regex parsing. `route_hint` carries `set_constraints` or `clear_fields` directly; `search_node` skips `build_refinement_plan()` when these are present. `sendSilentAction` accepts `actionLabel` → brief assistant acknowledgment appears immediately ("Lowering budget to £1,280/month…", "Removing budget filter…", etc.)
 - Frontend Phase 1 — component split (10 components, 2 hooks), hand-written markdown renderer, listing cards with preference/penalty tags, sticky constraint filter bar with ×-to-remove, quick-reply buttons, CSS thinking animation, backend metadata SSE event (search_results + constraints + quick_replies + compare_data + shortlist)
 - SSE streaming — backend → frontend with stop-generation button
 - Session persistence — localStorage + server-side TTL
@@ -186,6 +187,7 @@ frontend/src/
 - `a607f49` feat: shortlist panel, message suppression, auto-expand input, constraint tag labels
 - `aef3e62` docs: update DEV_PROGRESS — Phase 15
 - `bbb22ac` fix: silent save/remove, no text flash, bookmark removes from shortlist
+- (pending) feat: explicit button actions — set_constraints/clear_fields in route_hint, skip extraction, action labels
 
 ---
 
@@ -202,6 +204,22 @@ frontend/src/
 ---
 
 ## Changelog
+
+### Phase 17 · Explicit button actions — bypass LLM extraction, assistant acknowledgments (Mar 1)
+> Branch: `restructure` | 1 commit
+
+| Hash | Date | Type | Description |
+|------|------|------|-------------|
+| (pending) | 2026-03-01 | feat | Explicit button actions: set_constraints/clear_fields in route_hint, skip extraction, action labels |
+
+**Key deliverables this phase:**
+- **Three action types formalised** — button actions are classified as: (1) new search/compare (needs backend data), (2) show more (backend already has data), (3) shortlist save/remove (no LLM). None go through LLM query extraction.
+- **Explicit constraint params in route_hint** (`state.py`, `nodes.py`, `api_server.py`): `route_hint` now supports `set_constraints: {field: value}` and `clear_fields: [field, ...]`. `route_node` extracts them into `GraphState.explicit_set_constraints` / `explicit_clear_fields`. `search_node` checks for these first — if present, skips `build_refinement_plan()` entirely and calls `derive_snapshot()` with the explicit params. "Lower budget" quick reply carries `set_constraints: {max_rent_pcm: <80% of current>}`.
+- **Constraint tag removal via explicit params** (`ConstraintTags.tsx`, `ChatArea.tsx`, `App.tsx`): `ConstraintTags` now stores `clearFields` (backend field names) and `actionLabel` per constraint key. `onRemove` passes these directly; `App.tsx` builds `route_hint: {intent: Search, clear_fields: [...]}`. No regex matching needed — the correct field is always cleared.
+- **Assistant acknowledgment for all button actions** (`useChat.ts`, `App.tsx`): `sendSilentAction` accepts optional `actionLabel`. If set, a brief assistant message is immediately added to the chat before the backend call ("Loading more listings…", "Lowering budget to £1,280/month…", "Comparing listings…", "Removing budget filter…", etc.). No user message is ever shown for button actions.
+- **Quick reply fix** (`api_server.py`): "Show more" and "Lower budget" no longer gated on `last_intent != Compare`. "Lower budget" uses specific computed amount (`int(max_rent * 0.8)`). "Compare all" still hides when already in Compare intent.
+
+---
 
 ### Phase 16 · Frontend UX fixes — silent actions, no text flash, bookmark remove (Mar 1)
 > Branch: `restructure` | 1 commit
