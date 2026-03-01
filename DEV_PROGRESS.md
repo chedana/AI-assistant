@@ -16,7 +16,7 @@ Multi-turn conversational rental search assistant. Users describe rental require
 
 | Branch | Role | Tip commit |
 |--------|------|-----------|
-| `restructure` | **Active dev (default commit target)** | `b0f98d8` 2026-02-27 |
+| `restructure` | **Active dev (default commit target)** | `a607f49` 2026-03-01 |
 | `feature/rental` | Previous dev branch (behind restructure) | `b12fe96` 2026-02-25 |
 | `main` | Stable baseline | `7355f5d` 2026-02-24 |
 | `codex/initial-modular-structure` | Archived Codex bootstrap | — |
@@ -25,7 +25,7 @@ Multi-turn conversational rental search assistant. Users describe rental require
 
 ## Current State
 
-_Last updated: 2026-03-01 · Branch: `restructure`_
+_Last updated: 2026-03-01 · Branch: `restructure` · Tip: `a607f49`_
 
 ### Architecture
 
@@ -176,6 +176,10 @@ frontend/src/
 
 - `627abf9` feat: structured CompareTable UI component for compare intent
 - `b0f98d8` feat: shortlist UI — bookmark button on listing cards + header badge
+- `5122ce3` feat: shortlist side panel — saved listings in a right drawer
+- `6bd7cf3` fix: auto-expanding textarea in ChatInput
+- `159fbc1` fix: human-friendly constraint tags with correct remove phrases
+- `a607f49` feat: route_hint optimization + shortlist panel polish
 
 ---
 
@@ -192,6 +196,29 @@ frontend/src/
 ---
 
 ## Changelog
+
+### Phase 15 · route_hint optimization + shortlist panel UI (Mar 1)
+> Branch: `restructure` | 4 commits
+
+| Hash | Date | Type | Description |
+|------|------|------|-------------|
+| `5122ce3` | 2026-03-01 | feat | Shortlist side panel — right-side drawer with saved listing cards |
+| `6bd7cf3` | 2026-03-01 | fix | Auto-expanding textarea in ChatInput |
+| `159fbc1` | 2026-03-01 | fix | Human-friendly constraint tag labels via FIELD_CONFIG |
+| `a607f49` | 2026-03-01 | feat | route_hint optimization + shortlist panel polish |
+
+**Key deliverables this phase:**
+- **route_hint optimization** (`nodes.py`, `state.py`, `workflow.py`, `api_server.py`, frontend): Quick-reply buttons and listing-action buttons now attach a `route_hint` dict to the request. `domain_router_node` and `route_node` short-circuit immediately when the hint is present — no LLM calls for known intents. Cuts ~2 LLM round-trips per button click.
+  - Backend quick replies include hints: `{intent:Page_Nav, page_action:next}`, `{intent:Search}`, `{intent:Compare}`, `{intent:Shortlist, shortlist_action:show}`
+  - Frontend `handleSaveListing` / `handleRemoveFromShortlist` send `{intent:Shortlist, shortlist_action:save/remove}`
+  - `GraphState.route_hint` field added; `make_graph_state` accepts it as a kwarg
+- **Shortlist side panel** (`ShortlistPanel.tsx`): right-side drawer toggled by "Saved (N)" badge in app header; shows saved `ListingCard`s with per-item "Remove" button; auto-closes when shortlist empties
+- Shortlist badge moved from Sidebar to app header (always visible, not buried in sidebar); `Sidebar` props simplified (removed `shortlistCount` + `onOpenShortlist`)
+- Backend `metadata.shortlist` now includes full `listings` array for the panel to render without a chat round-trip
+- Auto-expanding textarea: `ChatInput` grows from 48 px to 160 px as user types
+- Human-friendly constraint tag labels: `budget`, `location`, `bedrooms` etc. via `FIELD_CONFIG`; correct NL removal phrases
+
+---
 
 ### Phase 14 · Search pipeline fixes — S1/S3–S6/S8 (Mar 1)
 > Branch: `restructure` | 2 commits
@@ -485,7 +512,7 @@ frontend/src/
 
 | Metric | Value |
 |--------|-------|
-| Total commits (all branches) | ~135 |
+| Total commits (all branches) | ~140 |
 | Project start | 2026-02-17 |
-| Latest commit | 2026-03-01 (`7fc86f9`) |
+| Latest commit | 2026-03-01 (`a607f49`) |
 | Days active | 13 |
