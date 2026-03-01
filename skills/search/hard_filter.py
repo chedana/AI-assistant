@@ -29,6 +29,20 @@ def _is_available_now(v: Any) -> bool:
     return s in {"now", "available now", "immediately", "immediate"}
 
 
+def _parse_months(v: Any) -> Optional[float]:
+    """Parse a tenancy string like '6 months' or '12' → float months, or None."""
+    s = _safe_text(v).lower()
+    if not s:
+        return None
+    m = re.search(r"(\d+(?:\.\d+)?)", s)
+    if not m:
+        return None
+    try:
+        return float(m.group(1))
+    except Exception:
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Main hard-filter function
 # ---------------------------------------------------------------------------
@@ -56,18 +70,6 @@ def apply_hard_filters_with_audit(df: pd.DataFrame, c: Dict[str, Any]) -> Tuple[
 
         def _norm_furnish(v: Any) -> str:
             return _norm_furnish_value(v)
-
-        def _parse_months(v: Any) -> Optional[float]:
-            s = _safe_text(v).lower()
-            if not s:
-                return None
-            m = re.search(r"(\d+(?:\.\d+)?)", s)
-            if not m:
-                return None
-            try:
-                return float(m.group(1))
-            except Exception:
-                return None
 
         layout_options = c.get("layout_options") or []
         use_layout_options = isinstance(layout_options, list) and len(layout_options) > 0
@@ -196,16 +198,21 @@ def apply_hard_filters_with_audit(df: pd.DataFrame, c: Dict[str, Any]) -> Tuple[
             if let_val and let_val != let_req:
                 reasons.append(f"let_type '{let_val}' != '{let_req}'")
 
+        # min_tenancy_months: user will commit to at most N months.
+        # A listing whose required minimum tenancy exceeds N is rejected —
+        # the user cannot fulfil the listing's commitment requirement.
         tenancy_req = c.get("min_tenancy_months")
         if tenancy_req is not None:
-            tenancy_val = _parse_months(r.get("min_tenancy"))
+            listing_min = _parse_months(r.get("min_tenancy"))
             checks["min_tenancy_months"] = {
-                "actual": tenancy_val,
+                "actual": listing_min,
                 "required": float(tenancy_req),
-                "op": "ge",
+                "op": "lte",
             }
-            if tenancy_val is not None and tenancy_val > float(tenancy_req):
-                reasons.append(f"min_tenancy_months {tenancy_val:g} > {float(tenancy_req):g}")
+            if listing_min is not None and listing_min > float(tenancy_req):
+                reasons.append(
+                    f"listing requires {listing_min:g}-month min tenancy; user can commit {float(tenancy_req):g} months max"
+                )
 
         size_req = c.get("min_size_sqm")
         if size_req is not None:
