@@ -16,7 +16,7 @@ Multi-turn conversational rental search assistant. Users describe rental require
 
 | Branch | Role | Tip commit |
 |--------|------|-----------|
-| `restructure` | **Active dev (default commit target)** | `bbb22ac` 2026-03-01 |
+| `restructure` | **Active dev (default commit target)** | `f1597ae` 2026-03-01 |
 | `feature/rental` | Previous dev branch (behind restructure) | `b12fe96` 2026-02-25 |
 | `main` | Stable baseline | `7355f5d` 2026-02-24 |
 | `codex/initial-modular-structure` | Archived Codex bootstrap | — |
@@ -25,7 +25,7 @@ Multi-turn conversational rental search assistant. Users describe rental require
 
 ## Current State
 
-_Last updated: 2026-03-01 · Branch: `restructure` · Tip: (pending commit)_
+_Last updated: 2026-03-01 · Branch: `restructure` · Tip: `f1597ae`_
 
 ### Architecture
 
@@ -187,7 +187,7 @@ frontend/src/
 - `a607f49` feat: shortlist panel, message suppression, auto-expand input, constraint tag labels
 - `aef3e62` docs: update DEV_PROGRESS — Phase 15
 - `bbb22ac` fix: silent save/remove, no text flash, bookmark removes from shortlist
-- (pending) feat: explicit button actions — set_constraints/clear_fields in route_hint, skip extraction, action labels
+- `f1597ae` feat: explicit button actions — set_constraints/clear_fields in route_hint, skip extraction, action labels
 
 ---
 
@@ -210,7 +210,7 @@ frontend/src/
 
 | Hash | Date | Type | Description |
 |------|------|------|-------------|
-| (pending) | 2026-03-01 | feat | Explicit button actions: set_constraints/clear_fields in route_hint, skip extraction, action labels |
+| `f1597ae` | 2026-03-01 | feat | Explicit button actions: set_constraints/clear_fields in route_hint, skip extraction, action labels |
 
 **Key deliverables this phase:**
 - **Three action types formalised** — button actions are classified as: (1) new search/compare (needs backend data), (2) show more (backend already has data), (3) shortlist save/remove (no LLM). None go through LLM query extraction.
