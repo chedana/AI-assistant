@@ -155,6 +155,10 @@ frontend/src/
 - `06ff89f` refactor: QA pipeline — hybrid BM25+embedding retrieval, LLM reasons over evidence; fix B3 classify_qa_scope fallback
 - `a61d471` refactor: rename EXTRACT_ALL_SYSTEM → SEARCH_EXTRACT_ALL_SYSTEM; fix QA_EXTRACT_ALL_SYSTEM (drop pipeline fields, fix transit terms, add 8 examples)
 - `afde2b4` fix: QA answering prompts — natural language output, multi-topic coverage, 3 examples per prompt
+- `191e0f1` fix: replace /focus N CLI references with natural language chat instructions (B4)
+- `5f1ddb8` fix: out-of-range index messages — clear range, recovery hint, paginate suggestion (B5)
+- `f6d68a3` refactor: remove clarify scope from QA — guard upstream, simplify classify_qa_scope (B7)
+- `(next)` chore: remove dead files lookup.py and slot_extractor.py (B8 moot)
 
 ---
 
