@@ -164,3 +164,34 @@ All tunable parameters are env vars (see `run.sh` for defaults, `core/settings.p
 
 - Do **not** add `Co-Authored-By` trailers to commit messages.
 - Always commit to the **`restructure`** branch (worktree at `.claude/worktrees/gracious-clarke`).
+
+---
+
+## Progress Tracking
+
+Two files manage work across sessions:
+
+| File | Purpose |
+|------|---------|
+| `TODO.md` | What needs to be done — tasks assigned per session by the lead. **Read this to know what to work on.** |
+| `DEV_PROGRESS.md` | What has been done — append-only commit log per session. |
+
+### After every commit (mandatory)
+
+1. **Remove the completed task from `TODO.md`** (your session's section).
+2. **Append a done line to `DEV_PROGRESS.md`** under your session (format: `` - `<hash>` <type>: <description> ``).
+3. If working in a **worktree**, commit both file changes and ensure they reach `restructure`:
+   ```bash
+   git add TODO.md DEV_PROGRESS.md
+   git commit -m "docs: update TODO + DEV_PROGRESS after <short hash>"
+   ```
+
+### Session Identity
+
+| Session | Domain | Covers |
+|---------|--------|--------|
+| `backend-1` | Orchestration & search pipeline | `orchestration/`, `agent_graph/`, `agent/`, `skills/`, `core/` |
+| `backend-2` | API & infrastructure | `backend/api_server.py`, FastAPI endpoints, SSE streaming |
+| `frontend` | UI | `frontend/src/` — components, hooks, types, lib |
+| `test` | Testing | `test/`, test datasets, test scripts |
+| `data` | Data & embeddings | `crawler/`, `artifacts/`, Qdrant collection, embedding scripts |
