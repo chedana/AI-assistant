@@ -162,7 +162,7 @@ frontend/src/
 - `cfad3d9` docs: update CLAUDE.md — progress tracking section + session identity table
 - `da9580b` fix: suppress assistant text bubble when listing cards are shown
 - `dae333e` fix: cards persist during generation; S1 tenancy redesign, S3/S4 null-safe rank
-- `(next)` fix: search pipeline S5/S6/S8 — dead signals removed, unified normalize, clause boundary fix
+- `7fc86f9` fix: search pipeline S5/S6/S8 — dead signals removed, unified normalize, clause boundary fix
 
 ---
 
@@ -199,7 +199,7 @@ frontend/src/
 | Hash | Date | Type | Description |
 |------|------|------|-------------|
 | `dae333e` | 2026-03-01 | fix | S1/S3/S4 — tenancy filter redesign, rank_stage_c null safety, agentic null guard |
-| `(next)` | 2026-03-01 | fix | S5/S6/S8 — remove dead signals, unify normalize, fix clause boundaries |
+| `7fc86f9` | 2026-03-01 | fix | S5/S6/S8 — remove dead signals, unify normalize, fix clause boundaries |
 
 **Key fixes this phase:**
 - **S1 — tenancy filter redesign** (`hard_filter.py`): extracted `_parse_months` from per-row loop to module level; corrected `op` label from `"ge"` to `"lte"` (listing's min tenancy ≤ user's max commitment); renamed check key to `required` (consistent with budget check); rewrote fail message to be human-readable.
@@ -487,5 +487,5 @@ frontend/src/
 |--------|-------|
 | Total commits (all branches) | ~135 |
 | Project start | 2026-02-17 |
-| Latest commit | 2026-03-01 (`(next)`) |
+| Latest commit | 2026-03-01 (`7fc86f9`) |
 | Days active | 13 |
