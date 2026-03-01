@@ -17,7 +17,7 @@ export default function App() {
     removeChat,
   } = useSessions();
 
-  const { isGenerating, metadata, metadataForId, sendMessage, stopGenerating } = useChat({
+  const { isGenerating, metadata, metadataForId, activeAssistantId, sendMessage, sendSilentAction, stopGenerating } = useChat({
     activeSession,
     updateSession,
   });
@@ -29,11 +29,11 @@ export default function App() {
   }
 
   function handleSaveListing(pageIndex: number) {
-    void sendMessage(`save listing ${pageIndex}`, { intent: "Shortlist", shortlist_action: "add", target_indices: [pageIndex] });
+    void sendSilentAction(`save listing ${pageIndex}`, { intent: "Shortlist", shortlist_action: "add" });
   }
 
   function handleRemoveFromShortlist(position: number) {
-    void sendMessage(`remove shortlist ${position}`, { intent: "Shortlist", shortlist_action: "remove" });
+    void sendSilentAction(`remove shortlist ${position}`, { intent: "Shortlist", shortlist_action: "remove" });
   }
 
   const shortlistCount = metadata?.shortlist?.count ?? 0;
@@ -75,6 +75,7 @@ export default function App() {
           isGenerating={isGenerating}
           metadata={metadata}
           metadataForId={metadataForId}
+          activeAssistantId={activeAssistantId}
           onQuickReply={handleQuickReply}
           onSaveListing={handleSaveListing}
         />

@@ -11,11 +11,12 @@ type Props = {
   isGenerating: boolean;
   metadata: SessionMetadata | null;
   metadataForId: string | null;
+  activeAssistantId: string | null;
   onQuickReply: (text: string, routeHint?: Record<string, unknown>) => void;
   onSaveListing?: (pageIndex: number) => void;
 };
 
-export default function ChatArea({ session, isGenerating, metadata, metadataForId, onQuickReply, onSaveListing }: Props) {
+export default function ChatArea({ session, isGenerating, metadata, metadataForId, activeAssistantId, onQuickReply, onSaveListing }: Props) {
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -56,6 +57,7 @@ export default function ChatArea({ session, isGenerating, metadata, metadataForI
                     key={message.id}
                     message={message}
                     isGenerating={isGenerating}
+                    isActive={message.id === activeAssistantId}
                   />
                 );
               })}
