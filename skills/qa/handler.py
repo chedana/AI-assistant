@@ -728,13 +728,32 @@ def answer_multi_listing_question(
     extraction_input = ctx["extraction_input"]
     signals = ctx["signals"]
     final_constraints = ctx.get("final_constraints") or {}
+
+    # Deposit inquiry — just show the actual value per listing, no pass/fail logic.
+    if final_constraints.get("deposit") is not None:
+        lines = []
+        for idx, payload in enumerate(rows, start=1):
+            distilled = _distill_listing_payload(payload)
+            title = str(distilled.get("title") or f"Listing {idx}")
+            dep = _parse_deposit_amount(distilled.get("deposit"))
+            if dep.get("state") != "known":
+                lines.append(f"- Listing {idx} ({title}): not provided — ask agent")
+            else:
+                amount = float(dep.get("amount") or 0.0)
+                txt = str(int(amount)) if float(amount).is_integer() else f"{amount:g}"
+                if amount == 0.0:
+                    lines.append(f"- Listing {idx} ({title}): no deposit (£0)")
+                else:
+                    lines.append(f"- Listing {idx} ({title}): £{txt}")
+        lines.append("\nPlease confirm deposit details with the listing agent.")
+        return "\n".join(lines)
+
     requested_fields = _mentioned_structured_fields(extraction_input, final_constraints)
     allowed_fields = _semantic_allowed_fields(signals)
     rows_eval: List[Dict[str, Any]] = []
     for idx, payload in enumerate(rows, start=1):
         distilled = _distill_listing_payload(payload)
         structured_eval = _structured_match_eval(distilled, final_constraints)
-        deposit_mode = final_constraints.get("deposit") is not None
         vec = None
         sem = None
         score = None
@@ -745,20 +764,6 @@ def answer_multi_listing_question(
                 "label": "confirmed" if structured_eval.get("hard_pass") else "not_found",
             }
             label = str(decision.get("label") or "not_found")
-        elif deposit_mode:
-            # Deposit list-QA uses structured listing field only.
-            dep = _parse_deposit_amount(distilled.get("deposit"))
-            if dep.get("state") == "known":
-                amount = float(dep.get("amount") or 0.0)
-                if amount > 0.0:
-                    decision = {"source": "structured_deposit", "label": "confirmed"}
-                    label = "confirmed"
-                else:
-                    decision = {"source": "structured_deposit", "label": "not_found"}
-                    label = "not_found"
-            else:
-                decision = {"source": "structured_deposit_unknown", "label": "not_found"}
-                label = "not_found"
         else:
             if embedder is not None:
                 vec = semantic_vector_lookup(
@@ -792,14 +797,6 @@ def answer_multi_listing_question(
         if structured_eval.get("active") and structured_eval.get("decisive"):
             status = "match" if structured_eval.get("hard_pass") else "not_match"
             source = "structured"
-        elif deposit_mode:
-            dep = _parse_deposit_amount(distilled.get("deposit"))
-            if dep.get("state") != "known":
-                status = "unknown"
-            else:
-                amt = float(dep.get("amount") or 0.0)
-                status = "match" if amt > 0.0 else "not_match"
-            source = "structured_deposit"
         elif missing_structured:
             # For fields missing in structured payload, defer decision to semantic/LLM.
             status = "unknown"
