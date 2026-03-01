@@ -25,7 +25,7 @@ Multi-turn conversational rental search assistant. Users describe rental require
 
 ## Current State
 
-_Last updated: 2026-02-27 · Branch: `restructure`_
+_Last updated: 2026-03-01 · Branch: `restructure`_
 
 ### Architecture
 
@@ -145,69 +145,65 @@ frontend/src/
 
 ## Session Progress
 
-> Each Claude Code session updates only its own section below after every commit.
-> Format: **Done** (append per commit) · **Remaining** (edit in place) · **Deferred** (edit in place).
+> Append a line here after every commit. Tasks live in `TODO.md` — not here.
 
 ---
 
-### Session: backend-1 — Orchestration & Search Pipeline
-_Covers: `orchestration/`, `agent_graph/`, `agent/`, `skills/`, `core/`_
+### backend-1 — Orchestration & Search Pipeline
 
-**Done**
-- _(no commits recorded yet — append here with commit hash)_
-
-**Remaining**
-- _(list outstanding tasks)_
-
-**Deferred**
-- _(items pushed out of scope — add reason)_
+- `6ce8ef9` fix: deposit QA returns actual deposit value (0/amount/ask-agent) for single + multi listing — removed `__ASKED__` fail path
+- `06ff89f` refactor: QA pipeline — hybrid BM25+embedding retrieval, LLM reasons over evidence; fix B3 classify_qa_scope fallback
 
 ---
 
-### Session: backend-2 — API & Infrastructure
-_Covers: `backend/api_server.py`, FastAPI endpoints, SSE streaming_
+### backend-2 — API & Infrastructure
 
-**Done**
-- _(no commits recorded yet — append here with commit hash)_
-
-**Remaining**
-- _(list outstanding tasks)_
-
-**Deferred**
-- _(items pushed out of scope — add reason)_
+- _(no commits recorded yet)_
 
 ---
 
-### Session: frontend — UI
-_Covers: `frontend/src/` — components, hooks, types, lib_
+### frontend — UI
 
-**Done**
 - `627abf9` feat: structured CompareTable UI component for compare intent
 - `b0f98d8` feat: shortlist UI — bookmark button on listing cards + header badge
 
-**Remaining**
-- UI Phase 2: map view
+---
 
-**Deferred**
-- _(items pushed out of scope — add reason)_
+### test — Testing
+
+- _(no commits recorded yet)_
 
 ---
 
-### Session: data — Data & Embeddings
-_Covers: `crawler/`, `artifacts/`, Qdrant collection, embedding scripts_
+### data — Data & Embeddings
 
-**Done**
-- _(no commits recorded yet — append here with commit hash)_
-
-**Remaining**
-- _(list outstanding tasks)_
-
-**Deferred**
-- P2-B: location expansion when `prefilter_count == 0` — requires lat/lon data not yet available
+- _(no commits recorded yet)_
 
 ---
 
 ## Changelog
+
+### Phase 13 · QA pipeline rewrite — hybrid retrieval + LLM reasoning (Mar 1)
+> Branch: `restructure` | 2 commits
+
+| Hash | Date | Type | Description |
+|------|------|------|-------------|
+| `06ff89f` | 2026-03-01 | refactor | QA pipeline — hybrid BM25+embedding retrieval, LLM reasons over evidence |
+| `6ce8ef9` | 2026-03-01 | fix | Deposit QA returns actual deposit value for single + multi listing |
+
+**Key deliverables this phase:**
+- **Deposit QA fix (B1)**: `answer_single_listing_question` and `answer_multi_listing_question` now return the actual deposit value (£0 / £amount / "ask agent") directly. Removed `__ASKED__` sentinel path that was incorrectly failing listings.
+- **QA pipeline refactor**: Replaced `structured_lookup` + `semantic_vector_lookup` pre-labelling chain with:
+  1. LLM structures question into need categories (`school_terms`, `transit_terms`, `general_semantic_phrases`) via `build_qa_context`
+  2. Per-category hybrid retrieval: BM25 (TF-IDF, normalized 0–1) + embedding cosine similarity, combined with `max()` per chunk
+  3. Category routing: school → `{schools, description}`, transit → `{stations, description}`, amenity → `{features, description}`
+  4. LLM receives raw `listing_fields` + `evidence_by_category` and reasons to produce answer — no pre-labelling
+- **B3 fixed**: `classify_qa_scope` fallback now uses `has_focus` / `last_qa_scope` instead of always returning `"clarify"`
+- **Removed**: `pandas`, `_pick_decision_label`, `_structured_match_eval`, `_semantic_allowed_fields`, `_has_active_structured_constraints`, `SEMANTIC_HIGH_THRESHOLD`, `SEMANTIC_LOW_THRESHOLD` — 626 lines of pre-labelling code replaced by 266 lines of hybrid retrieval + LLM reasoning
+
+**Architecture note:** `lookup.py` and `slot_extractor.py` remain on disk but are no longer imported by `handler.py`. Structured fast paths for deposit / furnish_type / let_type are preserved.
+
+---
 
 ### Phase 12 · Shortlist Compare (Feb 27)
 > Branch: `restructure` | 5 commits
@@ -463,5 +459,5 @@ _Covers: `crawler/`, `artifacts/`, Qdrant collection, embedding scripts_
 |--------|-------|
 | Total commits (all branches) | ~128 |
 | Project start | 2026-02-17 |
-| Latest commit | 2026-02-27 (`b0f98d8`) |
+| Latest commit | 2026-03-01 (`06ff89f`) |
 | Days active | 11 |
