@@ -16,11 +16,13 @@ type UseChatOptions = {
 export function useChat({ activeSession, updateSession }: UseChatOptions) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [metadata, setMetadata] = useState<SessionMetadata | null>(null);
+  const [metadataForId, setMetadataForId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   // Reset metadata when switching sessions, not on every message send.
   useEffect(() => {
     setMetadata(null);
+    setMetadataForId(null);
   }, [activeSession?.id]);
 
   async function sendMessage(input: string) {
@@ -66,6 +68,7 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
         },
         onMetadata: (meta) => {
           setMetadata(meta);
+          setMetadataForId(assistantMessage.id);
         },
       });
     } catch (error) {
@@ -89,5 +92,5 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
     abortRef.current?.abort();
   }
 
-  return { isGenerating, metadata, sendMessage, stopGenerating };
+  return { isGenerating, metadata, metadataForId, sendMessage, stopGenerating };
 }
