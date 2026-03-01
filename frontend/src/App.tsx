@@ -33,7 +33,7 @@ export default function App() {
   }
 
   function handleRemoveFromShortlist(position: number) {
-    void sendSilentAction(`remove shortlist ${position}`, { intent: "Shortlist", shortlist_action: "remove" });
+    void sendSilentAction(`remove shortlist ${position}`, { intent: "Shortlist", shortlist_action: "remove", target_indices: [position] });
   }
 
   const shortlistCount = metadata?.shortlist?.count ?? 0;
