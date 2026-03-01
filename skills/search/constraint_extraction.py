@@ -244,18 +244,10 @@ def _extract_layout_options_candidates(text: Any) -> List[Dict[str, Any]]:
         re.compile(r"\b([0-9][0-9,]*(?:\.\d+)?)\s*(?:pcm|per\s*month|p/?m|pm)\b", re.I),
     ]
 
-    clause_boundaries: List[Tuple[int, int]] = []
-    cut_points = [0]
-    for sep in re.finditer(r"\b(?:and|or)\b|[,;]", src, flags=re.I):
-        cut_points.append(sep.start())
-        cut_points.append(sep.end())
-    cut_points.append(len(src))
-    cut_points = sorted(set(x for x in cut_points if 0 <= x <= len(src)))
-    for i in range(0, len(cut_points) - 1, 2):
-        a = cut_points[i]
-        b = cut_points[i + 1]
-        if a < b:
-            clause_boundaries.append((a, b))
+    separators = list(re.finditer(r"\b(?:and|or)\b|[,;]", src, flags=re.I))
+    clause_starts = [0] + [s.end() for s in separators]
+    clause_ends = [s.start() for s in separators] + [len(src)]
+    clause_boundaries = [(a, b) for a, b in zip(clause_starts, clause_ends) if a < b]
     if not clause_boundaries:
         clause_boundaries = [(0, len(src))]
 

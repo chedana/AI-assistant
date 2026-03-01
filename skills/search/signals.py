@@ -39,13 +39,6 @@ def split_query_signals(
             school_terms.append(s)
 
     general_semantic = [str(x).strip().lower() for x in model_terms.get("general_semantic_phrases", []) if str(x).strip()]
-    keyword_fallback_used = {
-        "transit_terms": False,
-        "school_terms": False,
-        "general_semantic": False,
-    }
-    # Keyword fallback is intentionally disabled for now.
-    # Semantic intent comes from LLM structured output only.
     general_semantic = list(dict.fromkeys(general_semantic))
     transit_terms = list(dict.fromkeys([x for x in transit_terms if str(x).strip()]))
     school_terms = list(dict.fromkeys([x for x in school_terms if str(x).strip()]))
@@ -69,10 +62,6 @@ def split_query_signals(
         "semantic_debug": {
             "parse_source": semantic_parse_source,
             "model_terms": model_terms,
-            "keyword_fallback_used": keyword_fallback_used,
-            "keyword_transit_candidates": [],
-            "keyword_school_candidates": [],
-            "fallback_tokens": [],
             "final_general_semantic": general_semantic,
         },
     }

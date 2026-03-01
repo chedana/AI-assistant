@@ -25,7 +25,6 @@ class ExtractDeps:
     append_structured_conflict_log: Callable[..., Any]
     append_structured_training_samples: Callable[..., Any]
     merge_constraints: Callable[..., Any]
-    normalize_budget_to_pcm: Callable[..., Any]
     normalize_constraints: Callable[..., Any]
     summarize_constraint_changes: Callable[..., Any]
     compact_constraints_view: Callable[..., Any]
@@ -94,10 +93,6 @@ class PipelineDeps:
     @property
     def merge_constraints(self) -> Callable[..., Any]:
         return self.extract.merge_constraints
-
-    @property
-    def normalize_budget_to_pcm(self) -> Callable[..., Any]:
-        return self.extract.normalize_budget_to_pcm
 
     @property
     def normalize_constraints(self) -> Callable[..., Any]:
@@ -237,8 +232,6 @@ def run_normal_query(
         audit=structured_audit,
     )
     state["constraints"] = deps.merge_constraints(state["constraints"], extracted)
-    state["constraints"] = deps.normalize_budget_to_pcm(state["constraints"])
-    state["constraints"] = deps.normalize_constraints(state["constraints"])
 
     changes_line = deps.summarize_constraint_changes(prev_constraints, state["constraints"])
     active_line = deps.compact_constraints_view(state["constraints"])

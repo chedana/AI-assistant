@@ -48,7 +48,6 @@ from skills.search.engine import load_stage_a_resources, stage_a_search
 from skills.search.extractors import (
     compact_constraints_view,
     merge_constraints,
-    normalize_budget_to_pcm,
     normalize_constraints,
     repair_extracted_constraints,
     summarize_constraint_changes,
@@ -127,7 +126,6 @@ def build_pipeline_deps(stage_note):
             append_structured_conflict_log=append_structured_conflict_log,
             append_structured_training_samples=append_structured_training_samples,
             merge_constraints=merge_constraints,
-            normalize_budget_to_pcm=normalize_budget_to_pcm,
             normalize_constraints=normalize_constraints,
             summarize_constraint_changes=summarize_constraint_changes,
             compact_constraints_view=compact_constraints_view,
