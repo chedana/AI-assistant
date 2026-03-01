@@ -97,7 +97,7 @@ def route_node(state: GraphState) -> GraphState:
         state["refinement_type"] = hint.get("refinement_type")
         state["need_clarify"] = False
         state["clarify_question"] = None
-        state["target_indices"] = []
+        state["target_indices"] = [int(i) for i in (hint.get("target_indices") or [])]
         state["target_areas"] = []
         state["route_reason"] = "route_hint"
         if state.get("router_debug"):
