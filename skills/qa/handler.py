@@ -1,26 +1,23 @@
 import json
+import math
 import re
 from typing import Any, Dict, List, Optional
 
-import pandas as pd
+import numpy as np
 
 from core.llm_client import qwen_chat
+from core.internal_helpers import _collect_value_candidates, _embed_texts_cached
 from skills.qa.plan import build_qa_plan
-from skills.qa.lookup import semantic_lookup, semantic_vector_lookup, structured_lookup
-from skills.search.extractors import _norm_furnish_value, parse_jsonish_items
-from skills.search.hard_filter import apply_hard_filters_with_audit
+from skills.search.extractors import _norm_furnish_value
 from skills.search.signals import split_query_signals
 
 
-SEMANTIC_HIGH_THRESHOLD = 0.75
-SEMANTIC_LOW_THRESHOLD = 0.60
-
+# ── Text utilities ────────────────────────────────────────────────────────────
 
 def _strip_think_blocks(text: str) -> str:
     s = str(text or "")
     if not s:
         return s
-    # Remove reasoning tags if model emits them.
     s = re.sub(r"<think>.*?</think>", "", s, flags=re.IGNORECASE | re.DOTALL)
     s = re.sub(r"^\s*\n+", "", s)
     s = re.sub(r"\n{3,}", "\n\n", s)
@@ -112,11 +109,39 @@ def _distill_listing_payload(listing_payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _parse_deposit_amount(v: Any) -> Dict[str, Any]:
+    raw = str(v or "").strip()
+    low = raw.lower()
+    if not raw or low in {"unknown", "not provided", "ask agent", "n/a", "na", "none", "null"}:
+        return {"state": "unknown", "amount": None, "raw": raw}
+    if re.search(r"\b(zero|no)\s+deposit\b", low):
+        return {"state": "known", "amount": 0.0, "raw": raw}
+    m = re.search(r"(\d+(?:\.\d+)?)", raw.replace(",", ""))
+    if not m:
+        return {"state": "unknown", "amount": None, "raw": raw}
+    try:
+        return {"state": "known", "amount": float(m.group(1)), "raw": raw}
+    except Exception:
+        return {"state": "unknown", "amount": None, "raw": raw}
+
+
+def _norm_let_type_value(v: Any) -> str:
+    s = str(v or "").strip().lower()
+    if not s:
+        return ""
+    s = s.replace("_", " ").replace("-", " ")
+    s = re.sub(r"\s+", " ", s).strip()
+    if s in {"ask agent", "unknown", "not provided", "n/a", "na"}:
+        return "unknown"
+    return s
+
+
+# ── Question context ──────────────────────────────────────────────────────────
+
 def build_qa_context(question: str) -> Dict[str, Any]:
     question_text = str(question or "").strip()
     sanitized_question = _sanitize_question_for_qa(question_text)
     extraction_input = sanitized_question or question_text
-
     plan = build_qa_plan(extraction_input)
     final_constraints = dict(plan.hard_constraints or {})
     semantic_terms = dict(plan.semantic_terms or {})
@@ -138,199 +163,150 @@ def build_qa_context(question: str) -> Dict[str, Any]:
 
 
 def _build_qa_signals(question: str) -> Dict[str, Any]:
-    # Backward-compatible alias.
     return build_qa_context(question)
 
 
-def _semantic_allowed_fields(signals: Dict[str, Any]) -> set:
+# ── BM25 retrieval ────────────────────────────────────────────────────────────
+
+def _tokenize_bm25(text: str) -> List[str]:
+    return re.findall(r"[a-z0-9]+", str(text or "").lower())
+
+
+def _bm25_scores(query_terms: List[str], texts: List[str], k1: float = 1.5, b: float = 0.75) -> List[float]:
+    if not texts or not query_terms:
+        return [0.0] * len(texts)
+    tokenized = [_tokenize_bm25(t) for t in texts]
+    N = len(tokenized)
+    avg_len = sum(len(t) for t in tokenized) / N
+    scores = []
+    for tokens in tokenized:
+        doc_len = len(tokens)
+        score = 0.0
+        for term in set(query_terms):
+            tf = tokens.count(term)
+            if tf == 0:
+                continue
+            df = sum(1 for t in tokenized if term in t)
+            idf = math.log((N - df + 0.5) / (df + 0.5) + 1)
+            tf_norm = (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * doc_len / (avg_len or 1)))
+            score += idf * tf_norm
+        scores.append(score)
+    return scores
+
+
+# ── Embedding retrieval ───────────────────────────────────────────────────────
+
+def _embedding_scores(query: str, texts: List[str], embedder) -> List[float]:
+    if not embedder or not texts or not (query or "").strip():
+        return [0.0] * len(texts)
+    cache: Dict[str, np.ndarray] = {}
+    vecs = _embed_texts_cached(embedder, [query] + texts, cache)
+    q_vec = vecs[0]
+    return [float(max(0.0, min(1.0, float(np.dot(q_vec, tv))))) for tv in vecs[1:]]
+
+
+# ── Chunk extraction per category ─────────────────────────────────────────────
+
+# Maps each need category to the listing fields that are relevant.
+_CATEGORY_FIELDS: Dict[str, set] = {
+    "school":      {"schools", "description"},
+    "transit":     {"stations", "description"},
+    "amenity":     {"features", "description"},
+    "general":     {"features", "description", "schools", "stations"},
+}
+
+
+def _get_category_chunks(distilled: Dict[str, Any], category: str) -> List[Dict[str, str]]:
+    allowed = _CATEGORY_FIELDS.get(category, _CATEGORY_FIELDS["general"])
+    chunks = [c for c in _collect_value_candidates(distilled) if c.get("field") in allowed]
+    # Prepend nearest_station as a synthetic transit chunk when relevant.
+    if category in ("transit", "general"):
+        ns = str(distilled.get("nearest_station") or "").strip()
+        dist = distilled.get("distance_to_station_m")
+        if ns:
+            text = f"{ns} ({dist}m away)" if dist is not None else ns
+            if text not in {c["text"] for c in chunks}:
+                chunks.insert(0, {"field": "nearest_station", "text": text})
+    return chunks
+
+
+# ── Hybrid BM25 + embedding retrieval ────────────────────────────────────────
+
+def _hybrid_retrieve(
+    query_terms: List[str],
+    chunks: List[Dict[str, str]],
+    embedder,
+    top_k: int = 4,
+) -> List[Dict[str, Any]]:
+    if not chunks:
+        return []
+    texts = [c["text"] for c in chunks]
+
+    bm25 = _bm25_scores(query_terms, texts)
+    bm25_max = max(bm25) if any(s > 0 for s in bm25) else 1.0
+    bm25_norm = [s / (bm25_max + 1e-8) for s in bm25]
+
+    query_str = " ".join(query_terms)
+    emb = _embedding_scores(query_str, texts, embedder)
+
+    seen: set = set()
+    results: List[Dict[str, Any]] = []
+    for i, chunk in enumerate(chunks):
+        text = chunk["text"]
+        if text in seen:
+            continue
+        seen.add(text)
+        results.append({
+            "field": chunk["field"],
+            "text": text,
+            "score": round(max(bm25_norm[i], emb[i]), 4),
+        })
+
+    results.sort(key=lambda x: x["score"], reverse=True)
+    return results[:top_k]
+
+
+# ── Evidence retrieval across all need categories ─────────────────────────────
+
+def _retrieve_evidence(
+    signals: Dict[str, Any],
+    distilled: Dict[str, Any],
+    embedder,
+    top_k: int = 4,
+) -> Dict[str, List[Dict[str, Any]]]:
     topic_pref = (signals or {}).get("topic_preferences") or {}
-    has_school = bool(topic_pref.get("school_terms"))
-    has_transit = bool(topic_pref.get("transit_terms"))
-    if has_school and has_transit:
-        return {"schools", "stations", "description"}
-    if has_school:
-        return {"schools", "description"}
-    if has_transit:
-        return {"stations", "description"}
-    return {"features", "description"}
+    school_terms  = [str(x) for x in (topic_pref.get("school_terms")  or []) if str(x).strip()]
+    transit_terms = [str(x) for x in (topic_pref.get("transit_terms") or []) if str(x).strip()]
+    general_terms = [str(x) for x in ((signals or {}).get("general_semantic") or []) if str(x).strip()]
+
+    evidence: Dict[str, List[Dict[str, Any]]] = {}
+
+    if school_terms:
+        hits = _hybrid_retrieve(school_terms, _get_category_chunks(distilled, "school"), embedder, top_k)
+        if hits:
+            evidence["school"] = hits
+
+    if transit_terms:
+        hits = _hybrid_retrieve(transit_terms, _get_category_chunks(distilled, "transit"), embedder, top_k)
+        if hits:
+            evidence["transportation"] = hits
+
+    if general_terms:
+        hits = _hybrid_retrieve(general_terms, _get_category_chunks(distilled, "amenity"), embedder, top_k)
+        if hits:
+            evidence["amenity"] = hits
+
+    # Fallback: no categories extracted — search all text fields
+    if not evidence:
+        all_terms = school_terms + transit_terms + general_terms
+        hits = _hybrid_retrieve(all_terms, _get_category_chunks(distilled, "general"), embedder, top_k)
+        if hits:
+            evidence["general"] = hits
+
+    return evidence
 
 
-def _is_unknown_value(v: Any) -> bool:
-    if v is None:
-        return True
-    s = str(v).strip().lower()
-    if s in {"", "none", "null", "unknown", "not provided", "ask agent", "n/a", "na"}:
-        return True
-    return False
-
-
-def _parse_deposit_amount(v: Any) -> Dict[str, Any]:
-    raw = str(v or "").strip()
-    low = raw.lower()
-    if not raw or low in {"unknown", "not provided", "ask agent", "n/a", "na", "none", "null"}:
-        return {"state": "unknown", "amount": None, "raw": raw}
-    if re.search(r"\b(zero|no)\s+deposit\b", low):
-        return {"state": "known", "amount": 0.0, "raw": raw}
-    m = re.search(r"(\d+(?:\.\d+)?)", raw.replace(",", ""))
-    if not m:
-        return {"state": "unknown", "amount": None, "raw": raw}
-    try:
-        return {"state": "known", "amount": float(m.group(1)), "raw": raw}
-    except Exception:
-        return {"state": "unknown", "amount": None, "raw": raw}
-
-
-def _mentioned_structured_fields(question: str, final_constraints: Dict[str, Any]) -> List[str]:
-    q = str(question or "").lower()
-    c = final_constraints or {}
-    out: List[str] = []
-
-    # Constraint-derived mentions (preferred).
-    if c.get("max_rent_pcm") is not None:
-        out.append("price_pcm")
-    if c.get("available_from") is not None:
-        out.append("available_from")
-    if c.get("furnish_type"):
-        out.append("furnish_type")
-    if c.get("let_type"):
-        out.append("let_type")
-    if c.get("deposit") is not None:
-        out.append("deposit")
-    if c.get("min_tenancy_months") is not None:
-        out.append("min_tenancy")
-    if c.get("min_size_sqm") is not None:
-        out.extend(["size_sqm", "size_sqft"])
-    if c.get("layout_options"):
-        out.extend(["bedrooms", "bathrooms", "property_type", "layout_tag"])
-
-    # Query mention fallback (for fields extractor may miss, e.g. deposit).
-    mention_map = [
-        (r"\bdeposit\b", ["deposit"]),
-        (r"\bfurnish|furnished|unfurnished|part[- ]?furnished\b", ["furnish_type"]),
-        (r"\blet\b|\bshort term\b|\blong term\b", ["let_type"]),
-        (r"\bprice\b|\brent\b|\bbudget\b|\bpcm\b", ["price_pcm"]),
-        (r"\bbed(room)?s?\b|\b\d+\s*bed\b", ["bedrooms"]),
-        (r"\bbath(room)?s?\b|\b\d+\s*bath\b", ["bathrooms"]),
-        (r"\bavailable\b|\bmove[- ]?in\b", ["available_from"]),
-        (r"\btenancy\b|\bmonth\b", ["min_tenancy"]),
-        (r"\bsize\b|\bsqm\b|\bsqft\b", ["size_sqm", "size_sqft"]),
-        (r"\bflat\b|\bapartment\b|\bhouse\b|\bstudio\b", ["property_type"]),
-        (r"\bpostcode\b", ["postcode"]),
-        (r"\blayout\b", ["layout_tag"]),
-        (r"\bschool\b", ["schools"]),
-        (r"\bstation\b|\btransport\b|\btube\b", ["stations", "nearest_station", "distance_to_station_m"]),
-    ]
-    for pat, keys in mention_map:
-        if re.search(pat, q):
-            out.extend(keys)
-
-    dedup: List[str] = []
-    seen = set()
-    for k in out:
-        if k in seen:
-            continue
-        seen.add(k)
-        dedup.append(k)
-    return dedup
-
-
-def _has_active_structured_constraints(constraints: Dict[str, Any]) -> bool:
-    c = constraints or {}
-    return any(
-        [
-            c.get("deposit") is not None,
-            c.get("max_rent_pcm") is not None,
-            c.get("available_from") is not None,
-            bool(c.get("furnish_type")),
-            bool(c.get("let_type")),
-            c.get("min_tenancy_months") is not None,
-            c.get("min_size_sqm") is not None,
-            bool(c.get("layout_options")),
-        ]
-    )
-
-
-def _structured_match_eval(listing_payload: Dict[str, Any], constraints: Dict[str, Any]) -> Dict[str, Any]:
-    if not _has_active_structured_constraints(constraints):
-        return {
-            "active": False,
-            "decisive": False,
-            "hard_pass": None,
-            "unknown_fields": [],
-            "fail_reasons": [],
-            "checks": {},
-        }
-    df = pd.DataFrame([dict(listing_payload or {})])
-    _filtered, audits = apply_hard_filters_with_audit(df, constraints or {})
-    audit = (audits or [{}])[0]
-    checks: Dict[str, Any] = (audit or {}).get("hard_checks") or {}
-    fail_reasons: List[str] = list(audit.get("hard_fail_reasons") or [])
-    dep_req = (constraints or {}).get("deposit")
-    if dep_req is not None:
-        dep = _parse_deposit_amount(listing_payload.get("deposit"))
-        dep_state = dep.get("state")
-        dep_amount = dep.get("amount")
-        checks["deposit"] = {
-            "actual": dep_amount,
-            "required": dep_req,
-            "op": "deposit_rule",
-        }
-        if dep_state == "known":
-            # For deposit-related questions, "has deposit" means amount > 0.
-            if isinstance(dep_req, (int, float)) and float(dep_req) == 0.0:
-                if float(dep_amount or 0.0) != 0.0:
-                    fail_reasons.append(f"deposit {float(dep_amount):g} != 0")
-            else:
-                if float(dep_amount or 0.0) <= 0.0:
-                    fail_reasons.append(f"deposit {float(dep_amount):g} <= 0")
-
-    unknown_fields: List[str] = []
-    for k, v in checks.items():
-        if not isinstance(v, dict):
-            continue
-        req = v.get("required")
-        actual = v.get("actual")
-        if req is None:
-            continue
-        if actual is None or (isinstance(actual, str) and not actual.strip()):
-            unknown_fields.append(str(k))
-    hard_pass = len(fail_reasons) == 0
-    return {
-        "active": True,
-        "decisive": len(unknown_fields) == 0,
-        "hard_pass": bool(hard_pass),
-        "unknown_fields": unknown_fields,
-        "fail_reasons": fail_reasons,
-        "checks": checks,
-    }
-
-
-def _pick_decision_label(structured_eval: Dict[str, Any], vector_eval: Optional[Dict[str, Any]], semantic_fallback) -> Dict[str, Any]:
-    if structured_eval.get("active") and structured_eval.get("decisive"):
-        return {
-            "source": "structured_hard",
-            "label": "confirmed" if structured_eval.get("hard_pass") else "not_found",
-        }
-    if vector_eval and vector_eval.get("found"):
-        return {
-            "source": "semantic_vector",
-            "label": str(vector_eval.get("summary_label") or "not_found"),
-        }
-    if semantic_fallback and semantic_fallback.found:
-        return {"source": "semantic_keyword", "label": "confirmed"}
-    return {"source": "none", "label": "not_found"}
-
-
-def _norm_let_type_value(v: Any) -> str:
-    s = str(v or "").strip().lower()
-    if not s:
-        return ""
-    s = s.replace("_", " ").replace("-", " ")
-    s = re.sub(r"\s+", " ", s).strip()
-    if s in {"ask agent", "unknown", "not provided", "n/a", "na"}:
-        return "unknown"
-    return s
-
+# ── QA scope classifier ───────────────────────────────────────────────────────
 
 def classify_qa_scope(
     question: str,
@@ -389,10 +365,15 @@ def classify_qa_scope(
     except Exception:
         pass
 
-    # No rule-based scope inference here: fallback is always clarify.
-    _ = question, has_focus, has_listings, last_qa_scope
+    # Fallback: use focus state and prior scope rather than always clarifying.
+    if has_focus:
+        return {"target_scope": "single", "confidence": 0.0, "reason": "fallback:has_focus"}
+    if last_qa_scope == "list":
+        return {"target_scope": "list", "confidence": 0.0, "reason": "fallback:last_scope_list"}
     return {"target_scope": "clarify", "confidence": 0.0, "reason": "fallback:llm_unavailable"}
 
+
+# ── Single listing QA ─────────────────────────────────────────────────────────
 
 def answer_single_listing_question(
     question: str,
@@ -402,14 +383,14 @@ def answer_single_listing_question(
 ) -> str:
     if not listing_payload:
         return "I don't have the selected listing details yet."
+
     ctx = qa_ctx or build_qa_context(question)
     extraction_input = ctx["extraction_input"]
     signals = ctx["signals"]
     final_constraints = ctx.get("final_constraints") or {}
-    allowed_fields = _semantic_allowed_fields(signals)
     distilled = _distill_listing_payload(listing_payload)
-    structured_eval = _structured_match_eval(distilled, final_constraints)
 
+    # ── Structured fast paths (exact field lookups, no retrieval needed) ───────
     dep_req = final_constraints.get("deposit")
     if dep_req is not None:
         dep = _parse_deposit_amount(distilled.get("deposit"))
@@ -419,300 +400,90 @@ def answer_single_listing_question(
         amount_txt = str(int(amount)) if float(amount).is_integer() else f"{amount:g}"
         if isinstance(dep_req, (int, float)) and float(dep_req) == 0.0:
             if amount == 0.0:
-                return "Yes. This listing has no deposit (0)."
-            return f"No. This listing has a deposit of {amount_txt}."
+                return "Yes. This listing has no deposit (£0)."
+            return f"No. This listing has a deposit of £{amount_txt}."
         if amount > 0.0:
-            return f"The deposit is {amount_txt}."
-        return "No. This listing has no deposit (0)."
+            return f"The deposit is £{amount_txt}."
+        return "No. This listing has no deposit (£0)."
 
-    # Structured-first short path for explicit categorical constraints.
     if final_constraints.get("furnish_type"):
         actual = _norm_furnish_value(distilled.get("furnish_type"))
         if actual and actual != "ask agent":
             req = _norm_furnish_value(final_constraints.get("furnish_type"))
             if actual == req:
-                return f"Yes. Listing is {actual}. Please confirm with the listing agent."
-            return f"No. Listing is {actual}, not {req}. Please confirm with the listing agent."
+                return f"Yes. This listing is {actual}. Please confirm with the listing agent."
+            return f"No. This listing is {actual}, not {req}. Please confirm with the listing agent."
+
     if final_constraints.get("let_type"):
         actual = _norm_let_type_value(distilled.get("let_type"))
         if actual and actual != "unknown":
             req = _norm_let_type_value(final_constraints.get("let_type"))
             if actual == req:
-                return f"Yes. Listing let type is {actual}. Please confirm with the listing agent."
-            return f"No. Listing let type is {actual}, not {req}. Please confirm with the listing agent."
-    if structured_eval.get("active") and structured_eval.get("decisive"):
-        checks = (structured_eval.get("checks") or {})
-        first_msg = ""
-        if isinstance(checks, dict):
-            for k, v in checks.items():
-                if not isinstance(v, dict):
-                    continue
-                if v.get("required") is None:
-                    continue
-                first_msg = f"{k}: required={v.get('required')}, actual={v.get('actual')}"
-                break
-        if structured_eval.get("hard_pass"):
-            if first_msg:
-                return f"Yes. Structured check matched ({first_msg}). Please confirm with the listing agent."
-            return "Yes. Structured check matched. Please confirm with the listing agent."
-        if first_msg:
-            return f"No. Structured check did not match ({first_msg}). Please confirm with the listing agent."
-        return "No. Structured check did not match. Please confirm with the listing agent."
+                return f"Yes. Let type is {actual}. Please confirm with the listing agent."
+            return f"No. Let type is {actual}, not {req}. Please confirm with the listing agent."
 
-    structured = structured_lookup(signals, distilled, raw_question=extraction_input)
-    semantic_fallback = semantic_lookup(
-        signals,
-        distilled,
-        raw_question="",
-        allowed_fields=allowed_fields,
+    # ── Hybrid retrieval: BM25 + embedding per need category ──────────────────
+    evidence_by_category = _retrieve_evidence(signals, distilled, embedder)
+
+    # ── LLM reasons over structured fields + retrieved evidence ───────────────
+    system_prompt = (
+        "You are a rental property assistant.\n"
+        "Answer the user's question using ONLY the listing_fields and evidence_by_category provided.\n"
+        "Be direct and concise. Quote specific evidence when helpful.\n"
+        "If evidence is absent, say: 'Not mentioned in listing data — please ask the agent.'\n"
+        "Return strict JSON only:\n"
+        '{"answer": "string", "evidence_quote": "string or empty string"}'
     )
-    vector_eval = (
-        semantic_vector_lookup(
-            signals,
-            distilled,
-            embedder=embedder,
-            raw_question="",
-            high_threshold=SEMANTIC_HIGH_THRESHOLD,
-            low_threshold=SEMANTIC_LOW_THRESHOLD,
-            allowed_fields=allowed_fields,
-        )
-        if embedder is not None
-        else None
-    )
-
-    decision = _pick_decision_label(structured_eval, vector_eval, semantic_fallback)
-    if decision["label"] == "not_found" and decision["source"] == "none":
-        return "Not found in listing data. Please ask the agent to confirm."
-
-    topic_pref = (signals or {}).get("topic_preferences") or {}
-    school_terms = [str(x).strip() for x in (topic_pref.get("school_terms") or []) if str(x).strip()]
-    transit_terms = [str(x).strip() for x in (topic_pref.get("transit_terms") or []) if str(x).strip()]
-    general_terms = [str(x).strip() for x in ((signals or {}).get("general_semantic") or []) if str(x).strip()]
-
-    active_channels: List[str] = []
-    if school_terms:
-        active_channels.append("school")
-    if transit_terms:
-        active_channels.append("transit")
-    if general_terms:
-        active_channels.append("amenity_general")
-
-    vector_term_matches = (vector_eval or {}).get("term_matches") or []
-    semantic_keyword_evidence = semantic_fallback.evidence or []
-
-    def _pick_top_match_by_field(target_field: str) -> Dict[str, Any]:
-        best = None
-        for x in vector_term_matches:
-            field = str(x.get("field") or "")
-            if field != target_field:
-                continue
-            try:
-                score = float(x.get("score") or 0.0)
-            except Exception:
-                score = 0.0
-            if best is None or score > float(best.get("score") or 0.0):
-                best = {
-                    "field": field,
-                    "text": str(x.get("text") or ""),
-                    "term": str(x.get("term") or ""),
-                    "score": score,
-                    "label": str(x.get("label") or ""),
-                }
-        if best is not None:
-            return best
-        # fallback to keyword evidence for the same field
-        for x in semantic_keyword_evidence:
-            field = str(x.get("field") or "")
-            if field == target_field and str(x.get("text") or "").strip():
-                return {
-                    "field": field,
-                    "text": str(x.get("text") or ""),
-                    "term": "",
-                    "score": None,
-                    "label": "keyword_hit",
-                }
-        return {}
-
-    evidence_payload: Dict[str, Any] = {}
-    if school_terms:
-        evidence_payload["school"] = {
-            "query_school_terms": school_terms,
-            "listing_schools": parse_jsonish_items(distilled.get("schools")),
-        }
-    if transit_terms:
-        evidence_payload["transit"] = {
-            "query_transit_terms": transit_terms,
-            "listing_stations": parse_jsonish_items(distilled.get("stations")),
-            "nearest_station": str(distilled.get("nearest_station") or ""),
-            "distance_to_station_m": distilled.get("distance_to_station_m"),
-        }
-    if general_terms:
-        keyword_hits = [
-            {
-                "field": str(x.get("field") or ""),
-                "text": str(x.get("text") or ""),
-            }
-            for x in semantic_keyword_evidence
-            if str(x.get("field") or "") in {"features", "description"} and str(x.get("text") or "").strip()
-        ]
-        feature_top = _pick_top_match_by_field("features")
-        description_top = _pick_top_match_by_field("description")
-
-        evidence_payload["amenity_general"] = {
-            "query_general_terms": general_terms,
-            "feature_top_match": feature_top,
-            "description_top_match": description_top,
-        }
-        if keyword_hits:
-            evidence_payload["amenity_general"]["keyword_hits"] = keyword_hits
-
-    query_structured: Dict[str, Any] = {}
-    for k, v in (final_constraints or {}).items():
-        if k.startswith("_"):
-            continue
-        if k in {"k", "update_scope", "location_update_mode", "layout_update_mode", "available_from_op"}:
-            continue
-        if v is None:
-            continue
-        if isinstance(v, list) and len(v) == 0:
-            continue
-        query_structured[k] = v
-
-    listing_structured: Dict[str, Any] = {}
-    if "max_rent_pcm" in query_structured:
-        listing_structured["max_rent_pcm"] = distilled.get("price_pcm")
-    if "available_from" in query_structured:
-        listing_structured["available_from"] = distilled.get("available_from")
-    if "furnish_type" in query_structured:
-        listing_structured["furnish_type"] = distilled.get("furnish_type")
-    if "let_type" in query_structured:
-        listing_structured["let_type"] = distilled.get("let_type")
-    if "deposit" in query_structured:
-        listing_structured["deposit"] = distilled.get("deposit")
-    if "min_tenancy_months" in query_structured:
-        listing_structured["min_tenancy_months"] = (
-            distilled.get("min_tenancy_months")
-            if distilled.get("min_tenancy_months") is not None
-            else distilled.get("min_tenancy")
-        )
-    if "min_size_sqm" in query_structured:
-        listing_structured["min_size_sqm"] = distilled.get("size_sqm")
-    if "layout_options" in query_structured:
-        listing_structured["layout_options"] = [
-            {
-                "bedrooms": distilled.get("bedrooms"),
-                "bathrooms": distilled.get("bathrooms"),
-                "property_type": distilled.get("property_type"),
-                "layout_tag": distilled.get("layout_tag"),
-            }
-        ]
-    if "location_keywords" in query_structured:
-        listing_structured["location_keywords"] = {
-            "address": distilled.get("address"),
-            "postcode": distilled.get("postcode"),
-        }
-
-    system_prompt = """You are a helpful Real Estate Assistant. Answer the user's question using ONLY the provided channels.
-
-Return STRICT JSON only (no markdown, no extra text):
-{
-  "label": "confirmed|contradicted|uncertain|not_found",
-  "answer": "string",
-  "evidence_quote": "string",
-  "reason": "string"
-}
-
-RULES
-1. Use ONLY fields provided in user message channels. Do NOT use priors, common sense, or external knowledge.
-2. constraints_compare: compare query_structured vs listing_structured as hard evidence.
-3. school/transit/amenity_general channels are semantic evidence channels.
-4. You may use semantic scoring metadata as relevance hints, but final judgment must be grounded in quoted evidence text from channels.
-5. Explicit Match:
-   - If evidence clearly confirms the asked item, use label="confirmed".
-6. Negative Match:
-   - If evidence clearly denies the asked item (e.g., "no gym", "without concierge"), use label="contradicted".
-7. Conflict Resolution:
-   - If evidence conflicts, prefer the most specific statement.
-   - If still conflicting, use label="uncertain".
-8. Missing Evidence:
-   - If no relevant evidence is found, use label="not_found".
-9. Evidence Quote:
-   - Must be an exact short quote from provided evidence.
-   - If label is "not_found", set evidence_quote to "".
-"""
-    qa_payload = {
-        "user_query": extraction_input,
-        "property_address_or_index": str(
-            distilled.get("address")
-            or distilled.get("title")
-            or distilled.get("listing_id")
-            or "current_focused_listing"
-        ),
-        "constraints_compare": {
-            "query_structured": query_structured,
-            "listing_structured": listing_structured,
+    payload = {
+        "question": extraction_input,
+        "listing_fields": {
+            k: v for k, v in {
+                "title":                distilled.get("title"),
+                "address":              distilled.get("address"),
+                "price_pcm":            distilled.get("price_pcm"),
+                "bedrooms":             distilled.get("bedrooms"),
+                "bathrooms":            distilled.get("bathrooms"),
+                "available_from":       distilled.get("available_from"),
+                "furnish_type":         distilled.get("furnish_type"),
+                "let_type":             distilled.get("let_type"),
+                "min_tenancy_months":   distilled.get("min_tenancy_months"),
+                "size_sqm":             distilled.get("size_sqm"),
+                "property_type":        distilled.get("property_type"),
+                "nearest_station":      distilled.get("nearest_station"),
+                "distance_to_station_m": distilled.get("distance_to_station_m"),
+            }.items() if v is not None
         },
-        "active_channels": active_channels,
-        "evidence_by_channel": evidence_payload,
-        "semantic_scoring": {
-            "vector_summary_label": (vector_eval or {}).get("summary_label"),
-            "vector_term_matches": vector_term_matches,
-            "vector_evidence": (vector_eval or {}).get("evidence") or [],
-            "keyword_found": bool(semantic_fallback.found),
-            "keyword_facts": semantic_fallback.facts or {},
-            "keyword_evidence": semantic_keyword_evidence,
+        "evidence_by_category": {
+            cat: [{"field": e["field"], "text": e["text"]} for e in chunks[:3]]
+            for cat, chunks in evidence_by_category.items()
+            if chunks
         },
     }
     try:
         raw = qwen_chat(
             [
                 {"role": "system", "content": system_prompt},
-                {
-                    "role": "user",
-                    "content": "Use this context and evidence:\n"
-                    + json.dumps(qa_payload, ensure_ascii=False),
-                },
+                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
             ],
             temperature=0.0,
         )
         cleaned = _strip_think_blocks(raw)
         obj = _extract_first_json_obj(cleaned)
-        if isinstance(obj, dict):
-            answer = str(obj.get("answer") or "").strip()
+        if obj and obj.get("answer"):
+            answer = str(obj["answer"]).strip()
             quote = str(obj.get("evidence_quote") or "").strip()
-            if not answer:
-                label = str(obj.get("label") or "not_found").strip().lower()
-                if label == "confirmed":
-                    answer = "Yes. Confirmed by listing evidence. Please confirm with the listing agent."
-                elif label == "contradicted":
-                    answer = "No. Listing evidence indicates it is not available. Please confirm with the listing agent."
-                elif label == "uncertain":
-                    answer = "Uncertain based on listing evidence. Please confirm with the listing agent."
-                else:
-                    answer = "Not provided in listing data. Please ask the listing agent to confirm."
             if quote:
-                return answer + f'\nEvidence Quote: "{quote}"'
+                return f'{answer}\n\nEvidence: "{quote}"'
             return answer
-        return "Not provided in listing data. Please ask the listing agent to confirm."
+        if cleaned:
+            return cleaned
     except Exception:
-        if decision["label"] == "confirmed":
-            return "Confirmed by listing data. Please confirm with the listing agent."
-        if decision["label"] == "uncertain":
-            return "Possibly matched, but not certain from listing data. Please confirm with the listing agent."
-        top_evidence = []
-        if vector_eval and vector_eval.get("evidence"):
-            top_evidence = vector_eval["evidence"][:2]
-        elif structured.evidence:
-            top_evidence = structured.evidence[:2]
-        elif semantic_fallback.evidence:
-            top_evidence = semantic_fallback.evidence[:2]
-        if not top_evidence:
-            return "Not provided in listing data. Please ask the agent to confirm."
-        bits = [f"{x.get('field')}: {x.get('text')}" for x in top_evidence if x.get("text")]
-        if not bits:
-            return "Not provided in listing data. Please ask the agent to confirm."
-        return "From listing details: " + "; ".join(bits) + ". Please confirm with the agent."
+        pass
 
+    return "Not provided in listing data. Please ask the listing agent to confirm."
+
+
+# ── Multi-listing QA ──────────────────────────────────────────────────────────
 
 def answer_multi_listing_question(
     question: str,
@@ -729,7 +500,7 @@ def answer_multi_listing_question(
     signals = ctx["signals"]
     final_constraints = ctx.get("final_constraints") or {}
 
-    # Deposit inquiry — just show the actual value per listing, no pass/fail logic.
+    # ── Deposit fast path — just show the actual value per listing ─────────────
     if final_constraints.get("deposit") is not None:
         lines = []
         for idx, payload in enumerate(rows, start=1):
@@ -748,198 +519,67 @@ def answer_multi_listing_question(
         lines.append("\nPlease confirm deposit details with the listing agent.")
         return "\n".join(lines)
 
-    requested_fields = _mentioned_structured_fields(extraction_input, final_constraints)
-    allowed_fields = _semantic_allowed_fields(signals)
-    rows_eval: List[Dict[str, Any]] = []
+    # ── Per-listing hybrid retrieval ───────────────────────────────────────────
+    listings_data = []
     for idx, payload in enumerate(rows, start=1):
         distilled = _distill_listing_payload(payload)
-        structured_eval = _structured_match_eval(distilled, final_constraints)
-        vec = None
-        sem = None
-        score = None
-        evidence = {}
-        if structured_eval.get("active") and structured_eval.get("decisive"):
-            decision = {
-                "source": "structured_hard",
-                "label": "confirmed" if structured_eval.get("hard_pass") else "not_found",
-            }
-            label = str(decision.get("label") or "not_found")
-        else:
-            if embedder is not None:
-                vec = semantic_vector_lookup(
-                    signals,
-                    distilled,
-                    embedder=embedder,
-                    raw_question="",
-                    high_threshold=SEMANTIC_HIGH_THRESHOLD,
-                    low_threshold=SEMANTIC_LOW_THRESHOLD,
-                    allowed_fields=allowed_fields,
-                )
-                label = str(vec.get("summary_label") or "not_found")
-                evidence = (vec.get("evidence") or [{}])[0]
-                term_matches = vec.get("term_matches") or []
-                if term_matches:
-                    score = term_matches[0].get("score")
-            else:
-                sem = semantic_lookup(
-                    signals,
-                    distilled,
-                    raw_question="",
-                    allowed_fields=allowed_fields,
-                )
-                label = "confirmed" if sem.found else "not_found"
-                evidence = (sem.evidence or [{}])[0]
-            decision = _pick_decision_label(structured_eval, vec, sem)
-            label = str(decision.get("label") or label)
-        field_values = {k: distilled.get(k) for k in requested_fields}
-        unknown_fields = [k for k, v in field_values.items() if _is_unknown_value(v)]
-        missing_structured = bool(requested_fields) and len(unknown_fields) > 0
-        if structured_eval.get("active") and structured_eval.get("decisive"):
-            status = "match" if structured_eval.get("hard_pass") else "not_match"
-            source = "structured"
-        elif missing_structured:
-            # For fields missing in structured payload, defer decision to semantic/LLM.
-            status = "unknown"
-            source = "structured_missing"
-        else:
-            if label == "confirmed":
-                status = "match"
-            elif label == "not_found":
-                status = "unknown"
-            else:
-                status = "unknown"
-            source = str(decision.get("source") or "semantic")
-
-        check_values: List[Dict[str, Any]] = []
-        for k, v in (structured_eval.get("checks") or {}).items():
-            if not isinstance(v, dict):
-                continue
-            if v.get("required") is None:
-                continue
-            check_values.append(
-                {
-                    "field": str(k),
-                    "required": v.get("required"),
-                    "actual": v.get("actual"),
-                    "op": v.get("op"),
-                }
-            )
-
-        rec = {
+        evidence_by_category = _retrieve_evidence(signals, distilled, embedder)
+        listings_data.append({
             "index": idx,
-            "title": str(distilled.get("title") or f"listing_{idx}"),
-            "status": status,
-            "source": source,
-            "decision_label": label,
-            "structured": {
-                "active": bool(structured_eval.get("active")),
-                "decisive": bool(structured_eval.get("decisive")),
-                "hard_pass": structured_eval.get("hard_pass"),
-                "fail_reasons": list(structured_eval.get("fail_reasons") or []),
-                "checks": check_values,
+            "title": str(distilled.get("title") or f"Listing {idx}"),
+            "listing_fields": {
+                k: v for k, v in {
+                    "price_pcm":             distilled.get("price_pcm"),
+                    "bedrooms":              distilled.get("bedrooms"),
+                    "bathrooms":             distilled.get("bathrooms"),
+                    "available_from":        distilled.get("available_from"),
+                    "furnish_type":          distilled.get("furnish_type"),
+                    "let_type":              distilled.get("let_type"),
+                    "nearest_station":       distilled.get("nearest_station"),
+                    "distance_to_station_m": distilled.get("distance_to_station_m"),
+                }.items() if v is not None
             },
-            "semantic": {
-                "top_evidence": str(evidence.get("text") or "").strip(),
-                "score": score,
+            "evidence_by_category": {
+                cat: [{"field": e["field"], "text": e["text"]} for e in chunks[:2]]
+                for cat, chunks in evidence_by_category.items()
+                if chunks
             },
-            "requested_fields": requested_fields,
-            "field_values": field_values,
-            "unknown_fields": unknown_fields,
-        }
-        rows_eval.append(rec)
+        })
 
-    # Program-owned grouping result: LLM can only verbalize this, not re-classify.
-    matched_rows = [x for x in rows_eval if x.get("status") == "match"]
-    not_matched_rows = [x for x in rows_eval if x.get("status") == "not_match"]
-    unknown_rows = [x for x in rows_eval if x.get("status") == "unknown"]
-
+    # ── LLM reasons over all listings' fields + evidence ──────────────────────
     system_prompt = (
         "You are a rental property QA assistant.\n"
-        "Answer using ONLY the provided grouped JSON.\n"
-        "Do not invent facts.\n"
-        "Use plain bullet lists only (lines starting with '-').\n"
-        "The groups are FINAL and already decided by backend: matched_rows / not_matched_rows / unknown_rows.\n"
-        "Do NOT move listings across groups, do NOT duplicate listing index, do NOT create new index.\n"
-        "Only explain each listing briefly using its provided evidence.\n"
-        "For not_matched_rows, prefer structured conflict evidence when available.\n"
-        "If a section has no items, omit that section entirely.\n"
-        "If all groups are empty, state that explicitly.\n"
-        "Always remind user to confirm with listing agent."
+        "For each listing, answer the question using ONLY its listing_fields and evidence_by_category.\n"
+        "Format: one bullet per listing:\n"
+        "  - Listing N (title): your answer, quoting specific evidence where helpful\n"
+        "If no evidence for a listing, write: 'not mentioned in listing data — ask agent'.\n"
+        "End with: 'Please confirm key details with the listing agent.'"
     )
-    def _primary_evidence(row: Dict[str, Any]) -> str:
-        checks = ((row.get("structured") or {}).get("checks") or [])
-        if checks:
-            for c in checks:
-                if not isinstance(c, dict):
-                    continue
-                field = str(c.get("field") or "").strip()
-                req = c.get("required")
-                actual = c.get("actual")
-                if field and (req is not None or actual is not None):
-                    return f"{field}: required={req}, actual={actual}"
-        return str(((row.get("semantic") or {}).get("top_evidence") or "")).strip()
-
-    qa_payload = {
-        "user_question": extraction_input,
+    payload = {
         "question": extraction_input,
-        "grouped_rows": {
-            "matched_rows": [
-                {
-                    "index": x.get("index"),
-                    "title": x.get("title"),
-                    "evidence": _primary_evidence(x),
-                    "structured_checks": (x.get("structured") or {}).get("checks") or [],
-                }
-                for x in matched_rows
-            ],
-            "not_matched_rows": [
-                {
-                    "index": x.get("index"),
-                    "title": x.get("title"),
-                    "evidence": _primary_evidence(x),
-                    "structured_checks": (x.get("structured") or {}).get("checks") or [],
-                }
-                for x in not_matched_rows
-            ],
-            "unknown_rows": [
-                {
-                    "index": x.get("index"),
-                    "title": x.get("title"),
-                    "evidence": _primary_evidence(x),
-                    "structured_checks": (x.get("structured") or {}).get("checks") or [],
-                }
-                for x in unknown_rows
-            ],
-        },
+        "listings": listings_data,
     }
     try:
-        out = qwen_chat(
+        raw = qwen_chat(
             [
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": "Answer from this JSON only:\n" + json.dumps(qa_payload, ensure_ascii=False)},
+                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
             ],
             temperature=0.0,
         )
-        cleaned = _sanitize_list_output(_strip_think_blocks(out))
+        cleaned = _sanitize_list_output(_strip_think_blocks(raw))
         if cleaned:
             return cleaned
     except Exception:
         pass
 
-    matched = [f"#{x['index']}" for x in matched_rows]
-    not_matched = [f"#{x['index']}" for x in not_matched_rows]
-    unknown = [f"#{x['index']}" for x in unknown_rows]
-    lines: List[str] = []
-    if matched:
-        lines.append("Matched:")
-        lines.extend([f"- {x}" for x in matched])
-    if not_matched:
-        lines.append("Not matched:")
-        lines.extend([f"- {x}" for x in not_matched])
-    if unknown:
-        lines.append("Unknown:")
-        lines.extend([f"- {x}" for x in unknown])
-    if not lines:
-        lines.append("No matched listings found.")
-    lines.append("Please confirm key details with the listing agent before final decision.")
+    # Fallback: plain listing of top evidence
+    lines = []
+    for d in listings_data:
+        all_ev = [e["text"] for chunks in d["evidence_by_category"].values() for e in chunks]
+        if all_ev:
+            lines.append(f"- Listing {d['index']} ({d['title']}): {all_ev[0]}")
+        else:
+            lines.append(f"- Listing {d['index']} ({d['title']}): not found in listing data")
+    lines.append("Please confirm with the listing agent.")
     return "\n".join(lines)
