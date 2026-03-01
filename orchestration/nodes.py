@@ -336,7 +336,7 @@ def search_node(state: GraphState) -> GraphState:
             )
             bot_text += (
                 f"\n\nNote: default focus is set to listing #1 ({focus_title}). "
-                "Use /focus N to switch target, or ask 'which one has ...' to compare all current listings."
+                "Say 'tell me about listing 2' to switch focus, or ask 'which one has ...' to compare all listings."
             )
         state["reply_text"] = bot_text
         return state
@@ -415,7 +415,7 @@ def search_node(state: GraphState) -> GraphState:
         )
         bot_text += (
             f"\n\nNote: default focus is set to listing #1 ({focus_title}). "
-            "Use /focus N to switch target, or ask 'which one has ...' to compare all current listings."
+            "Say 'tell me about listing 2' to switch focus, or ask 'which one has ...' to compare all listings."
         )
     state["reply_text"] = bot_text
     return state
@@ -466,7 +466,7 @@ def paginate_node(state: GraphState) -> GraphState:
         lines.append("")
         lines.append(
             f"Note: default focus is set to listing #1 ({focus_title}). "
-            "Use /focus N to switch target, or ask 'which one has ...' to compare all current listings."
+            "Say 'tell me about listing 2' to switch focus, or ask 'which one has ...' to compare all listings."
         )
 
     _debug_print(
@@ -567,7 +567,7 @@ def qa_execute_node(state: GraphState) -> GraphState:
     if len(state.get("target_indices") or []) == 1:
         focus_listing = get_focus_listing(agent_state)
         if not focus_listing:
-            state["reply_text"] = "Which listing do you mean? Use /focus 1 to select one first."
+            state["reply_text"] = "Which listing do you mean? Say 'tell me about listing 1' or 'tell me about listing 2' to select one."
             return state
         agent_state.last_qa_scope = "single"
         state["reply_text"] = answer_single_listing_question(
@@ -598,7 +598,7 @@ def qa_execute_node(state: GraphState) -> GraphState:
         )
     elif not get_focus_listing(agent_state):
         agent_state.last_qa_scope = "clarify"
-        state["reply_text"] = "Which listing do you mean? Use /focus 1 to select one first."
+        state["reply_text"] = "Which listing do you mean? Say 'tell me about listing 1' or 'tell me about listing 2' to select one."
     else:
         agent_state.last_qa_scope = "single"
         focus_listing = get_focus_listing(agent_state)
