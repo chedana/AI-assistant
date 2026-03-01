@@ -86,6 +86,7 @@ class AgentState:
 class GraphState(TypedDict, total=False):
     # ── Input ────────────────────────────────────────────────────────────────
     user_input: str
+    route_hint: Optional[Dict[str, Any]]   # set by frontend for quick-reply buttons
 
     # ── Domain (per-turn, set by domain_router_node) ─────────────────────────
     domain: str                  # "Rental" | "General"
@@ -133,10 +134,11 @@ class GraphState(TypedDict, total=False):
     relax_near_miss: List[Dict[str, Any]]   # listings that failed exactly 1 constraint
 
 
-def make_graph_state(user_input: str, *, agent_state: Any, runtime: Any, router_debug: bool = False) -> GraphState:
+def make_graph_state(user_input: str, *, agent_state: Any, runtime: Any, router_debug: bool = False, route_hint: Optional[Dict[str, Any]] = None) -> GraphState:
     return GraphState(
         # Input
         user_input=str(user_input or "").strip(),
+        route_hint=route_hint,
         # Domain default — overwritten by domain_router_node
         domain="Rental",
         # Routing defaults — overwritten by route_node

@@ -2,6 +2,7 @@ import type { SessionMetadata } from "../types/chat";
 
 type StreamOptions = {
   signal: AbortSignal;
+  routeHint?: Record<string, unknown>;
   onChunk: (chunk: string) => void;
   onMetadata?: (meta: SessionMetadata) => void;
 };
@@ -22,6 +23,7 @@ export async function streamChat(
     body: JSON.stringify({
       session_id: sessionId,
       user_text: userText,
+      ...(options.routeHint ? { route_hint: options.routeHint } : {}),
     }),
   });
 

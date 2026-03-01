@@ -2,7 +2,7 @@ import type { QuickReply } from "../types/chat";
 
 type Props = {
   replies: QuickReply[];
-  onSelect: (text: string) => void;
+  onSelect: (text: string, routeHint?: Record<string, unknown>) => void;
 };
 
 export default function QuickReplies({ replies, onSelect }: Props) {
@@ -13,7 +13,7 @@ export default function QuickReplies({ replies, onSelect }: Props) {
       {replies.map((reply) => (
         <button
           key={reply.text}
-          onClick={() => onSelect(reply.text)}
+          onClick={() => onSelect(reply.text, reply.route_hint)}
           className="rounded-lg border border-border px-3 py-1.5 text-xs text-muted hover:bg-neutral-700 hover:text-text"
         >
           {reply.label}
