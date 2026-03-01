@@ -429,10 +429,25 @@ def answer_single_listing_question(
     system_prompt = (
         "You are a rental property assistant.\n"
         "Answer the user's question using ONLY the listing_fields and evidence_by_category provided.\n"
-        "Be direct and concise. Quote specific evidence when helpful.\n"
-        "If evidence is absent, say: 'Not mentioned in listing data — please ask the agent.'\n"
-        "Return strict JSON only:\n"
-        '{"answer": "string", "evidence_quote": "string or empty string"}'
+        "If the question has multiple topics, address every topic in your answer.\n"
+        "Quote specific evidence from the listing where helpful.\n"
+        "If a topic has no evidence, say: 'not mentioned in listing data — please ask the agent.'\n"
+        "Be direct and conversational. Do NOT return JSON.\n"
+        "\n"
+        "Example — question: 'Is transport good and is it pet friendly?'\n"
+        "evidence: transportation: ['Brixton (Victoria line, 320m away)'], amenity: ['pets considered on request']\n"
+        "Answer: Transport looks good — Brixton station (Victoria line) is just 320m away. "
+        "On pets, the listing states 'pets considered on request', so worth confirming with the agent.\n"
+        "\n"
+        "Example — question: 'Is it near good schools and does it have a garden?'\n"
+        "evidence: school: ['Highbury Fields School 0.3 miles, rated Outstanding'], amenity: ['private rear garden']\n"
+        "Answer: Yes to both. Highbury Fields School is 0.3 miles away and rated Outstanding. "
+        "The listing also mentions a private rear garden.\n"
+        "\n"
+        "Example — question: 'Is it furnished, near good transport, and are pets allowed?'\n"
+        "listing_fields: {furnish_type: 'furnished'}, evidence: transportation: ['Oval (Northern line, 400m)'], amenity: []\n"
+        "Answer: Yes, the listing is furnished. Transport is convenient — Oval station (Northern line) is 400m away. "
+        "Pets are not mentioned in the listing data — please ask the agent."
     )
     payload = {
         "question": extraction_input,
@@ -468,13 +483,6 @@ def answer_single_listing_question(
             temperature=0.0,
         )
         cleaned = _strip_think_blocks(raw)
-        obj = _extract_first_json_obj(cleaned)
-        if obj and obj.get("answer"):
-            answer = str(obj["answer"]).strip()
-            quote = str(obj.get("evidence_quote") or "").strip()
-            if quote:
-                return f'{answer}\n\nEvidence: "{quote}"'
-            return answer
         if cleaned:
             return cleaned
     except Exception:
@@ -550,10 +558,26 @@ def answer_multi_listing_question(
     system_prompt = (
         "You are a rental property QA assistant.\n"
         "For each listing, answer the question using ONLY its listing_fields and evidence_by_category.\n"
-        "Format: one bullet per listing:\n"
-        "  - Listing N (title): your answer, quoting specific evidence where helpful\n"
-        "If no evidence for a listing, write: 'not mentioned in listing data — ask agent'.\n"
-        "End with: 'Please confirm key details with the listing agent.'"
+        "If the question has multiple topics, address every topic for each listing.\n"
+        "Format: one bullet per listing. Be direct and conversational. Do NOT return JSON.\n"
+        "If a topic has no evidence for a listing, say: 'not mentioned — ask agent'.\n"
+        "End with: 'Please confirm key details with the listing agent.'\n"
+        "\n"
+        "Example — question: 'Is transport good and are pets allowed?'\n"
+        "- Listing 1 (Flat in Brixton): Transport: Brixton station (Victoria line) is 320m away. "
+        "Pets: 'pets considered on request' per listing features.\n"
+        "- Listing 2 (Studio in Tooting): Transport: Tooting Bec (Northern line) is 180m away. "
+        "Pets: not mentioned — ask agent.\n"
+        "Please confirm key details with the listing agent.\n"
+        "\n"
+        "Example — question: 'Is it furnished, does it have a gym, and is the commute easy?'\n"
+        "- Listing 1 (Flat in Canary Wharf): Furnished: yes, listed as fully furnished. "
+        "Gym: residents' gym mentioned in building features. "
+        "Commute: Heron Quays DLR is 200m away.\n"
+        "- Listing 2 (Flat in Shoreditch): Furnished: unfurnished per listing. "
+        "Gym: not mentioned — ask agent. "
+        "Commute: Shoreditch High Street Overground is 350m away.\n"
+        "Please confirm key details with the listing agent."
     )
     payload = {
         "question": extraction_input,
