@@ -5,11 +5,17 @@ import ThinkingIndicator from "./ThinkingIndicator";
 type Props = {
   message: Message;
   isGenerating: boolean;
+  isActive?: boolean;
 };
 
-export default function MessageBubble({ message, isGenerating }: Props) {
+export default function MessageBubble({ message, isGenerating, isActive }: Props) {
   const isUser = message.role === "user";
   const isEmpty = !message.content;
+  // While this message is actively being streamed, show ThinkingIndicator instead
+  // of the partial text. This prevents search response text from flashing before
+  // the listing cards arrive. After streaming ends the message is either hidden
+  // (cards replace it) or shown in full (non-search responses).
+  const showThinking = isGenerating && (isEmpty || (!isUser && isActive));
 
   return (
     <article className="w-full">
@@ -23,7 +29,7 @@ export default function MessageBubble({ message, isGenerating }: Props) {
             : "max-w-full bg-[#262626]"
         }`}
       >
-        {isEmpty && isGenerating ? (
+        {showThinking ? (
           <ThinkingIndicator />
         ) : isEmpty ? null : (
           <MessageContent content={message.content} role={message.role} />

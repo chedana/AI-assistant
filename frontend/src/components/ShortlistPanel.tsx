@@ -33,16 +33,12 @@ export default function ShortlistPanel({ listings, onClose, onRemove }: Props) {
           </p>
         ) : (
           listings.map((listing, idx) => (
-            <div key={listing.url || idx}>
-              <ListingCard listing={listing} isSaved />
-              <button
-                type="button"
-                onClick={() => onRemove(idx + 1)}
-                className="mt-1 w-full rounded text-xs text-muted hover:text-red-400"
-              >
-                Remove from shortlist
-              </button>
-            </div>
+            <ListingCard
+              key={listing.url || idx}
+              listing={listing}
+              isSaved
+              onRemove={() => onRemove(idx + 1)}
+            />
           ))
         )}
       </div>
