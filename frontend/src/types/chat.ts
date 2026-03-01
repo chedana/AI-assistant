@@ -42,6 +42,7 @@ export type ConstraintsMeta = Record<string, unknown>;
 export type QuickReply = {
   label: string;
   text: string;
+  route_hint?: Record<string, unknown>;
 };
 
 export type CompareListingData = {
@@ -65,6 +66,7 @@ export type CompareData = {
 export type ShortlistMeta = {
   count: number;
   saved_ids: string[];
+  listings: ListingData[];
 };
 
 export type SessionMetadata = {
