@@ -15,7 +15,7 @@ export default function App() {
     removeChat,
   } = useSessions();
 
-  const { isGenerating, metadata, sendMessage, stopGenerating } = useChat({
+  const { isGenerating, metadata, metadataForId, sendMessage, stopGenerating } = useChat({
     activeSession,
     updateSession,
   });
@@ -60,6 +60,7 @@ export default function App() {
           session={activeSession}
           isGenerating={isGenerating}
           metadata={metadata}
+          metadataForId={metadataForId}
           onQuickReply={handleQuickReply}
           onSaveListing={handleSaveListing}
         />

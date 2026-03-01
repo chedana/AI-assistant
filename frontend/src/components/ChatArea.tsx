@@ -10,11 +10,12 @@ type Props = {
   session: ChatSession | undefined;
   isGenerating: boolean;
   metadata: SessionMetadata | null;
+  metadataForId: string | null;
   onQuickReply: (text: string) => void;
   onSaveListing?: (pageIndex: number) => void;
 };
 
-export default function ChatArea({ session, isGenerating, metadata, onQuickReply, onSaveListing }: Props) {
+export default function ChatArea({ session, isGenerating, metadata, metadataForId, onQuickReply, onSaveListing }: Props) {
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -31,9 +32,9 @@ export default function ChatArea({ session, isGenerating, metadata, onQuickReply
   const showListings = !showCompare && metadata?.search_results && metadata.search_results.listings.length > 0;
   const showQuickReplies = !isGenerating && metadata?.quick_replies && metadata.quick_replies.length > 0;
 
-  // When listing cards are shown, hide the last assistant message (cards replace the text summary).
-  const lastMsgIdx = (session?.messages.length ?? 0) - 1;
-  const hideLastMsg = !isGenerating && showListings;
+  // When listing cards are shown, hide the specific assistant message the cards belong to.
+  // Using metadataForId (the exact message ID) avoids hiding the thinking bubble of new messages.
+  const hideMessageId = showListings ? metadataForId : null;
 
   return (
     <section className="relative flex-1 overflow-y-auto">
@@ -48,8 +49,8 @@ export default function ChatArea({ session, isGenerating, metadata, onQuickReply
         <div className="mx-auto max-w-3xl space-y-4">
           {session?.messages.length ? (
             <>
-              {session.messages.map((message, idx) => {
-                if (hideLastMsg && idx === lastMsgIdx && message.role === "assistant") return null;
+              {session.messages.map((message) => {
+                if (hideMessageId && message.id === hideMessageId) return null;
                 return (
                   <MessageBubble
                     key={message.id}
