@@ -17,7 +17,6 @@ from skills.search.engine import load_stage_a_resources, stage_a_search
 from skills.search.extractors import (
     compact_constraints_view,
     merge_constraints,
-    normalize_budget_to_pcm,
     normalize_constraints,
     summarize_constraint_changes,
 )
@@ -89,7 +88,6 @@ def run_search_skill(
         semantic_terms = dict(precomputed_semantic_terms or {})
         semantic_source = "precomputed_plan"
 
-    merged = normalize_budget_to_pcm(merged)
     merged = normalize_constraints(merged)
     auto_refine_note: Optional[str] = None
     if str(refinement_type or "").strip().lower() == "price_down":

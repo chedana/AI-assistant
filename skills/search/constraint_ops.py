@@ -45,6 +45,7 @@ def normalize_budget_to_pcm(c: dict) -> dict:
 
     return c
 def normalize_constraints(c: dict) -> dict:
+    c = normalize_budget_to_pcm(c)
     if c.get("available_from") is not None:
         c["available_from"] = _parse_user_date_uk_first(c.get("available_from"))
     c["available_from_op"] = None
@@ -376,6 +377,5 @@ def _canon_for_structured_compare(v: Any) -> Any:
 def _normalize_for_structured_policy(obj: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     # Work on a deep copy so policy normalization never mutates raw LLM output.
     out = _normalize_constraint_extract(copy.deepcopy(obj or {}))
-    out = normalize_budget_to_pcm(out)
     out = normalize_constraints(out)
     return out

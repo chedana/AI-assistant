@@ -158,7 +158,11 @@ frontend/src/
 - `191e0f1` fix: replace /focus N CLI references with natural language chat instructions (B4)
 - `5f1ddb8` fix: out-of-range index messages — clear range, recovery hint, paginate suggestion (B5)
 - `f6d68a3` refactor: remove clarify scope from QA — guard upstream, simplify classify_qa_scope (B7)
-- `(next)` chore: remove dead files lookup.py and slot_extractor.py (B8 moot)
+- `027b39b` chore: remove dead QA files lookup.py and slot_extractor.py (B8 moot)
+- `cfad3d9` docs: update CLAUDE.md — progress tracking section + session identity table
+- `da9580b` fix: suppress assistant text bubble when listing cards are shown
+- `dae333e` fix: cards persist during generation; S1 tenancy redesign, S3/S4 null-safe rank
+- `(next)` fix: search pipeline S5/S6/S8 — dead signals removed, unified normalize, clause boundary fix
 
 ---
 
@@ -188,6 +192,24 @@ frontend/src/
 ---
 
 ## Changelog
+
+### Phase 14 · Search pipeline fixes — S1/S3–S6/S8 (Mar 1)
+> Branch: `restructure` | 2 commits
+
+| Hash | Date | Type | Description |
+|------|------|------|-------------|
+| `dae333e` | 2026-03-01 | fix | S1/S3/S4 — tenancy filter redesign, rank_stage_c null safety, agentic null guard |
+| `(next)` | 2026-03-01 | fix | S5/S6/S8 — remove dead signals, unify normalize, fix clause boundaries |
+
+**Key fixes this phase:**
+- **S1 — tenancy filter redesign** (`hard_filter.py`): extracted `_parse_months` from per-row loop to module level; corrected `op` label from `"ge"` to `"lte"` (listing's min tenancy ≤ user's max commitment); renamed check key to `required` (consistent with budget check); rewrote fail message to be human-readable.
+- **S3 — null-safe Stage C return** (`soft_rank.py`): `rank_stage_c` now always returns `pd.DataFrame()` instead of `None` when input is empty — consistent type contract for all callers.
+- **S4 — null guard in agentic** (`agentic.py`): `len(filtered)` gated behind `filtered is not None` check; `ranked_full` assignment simplified (never None after S3).
+- **S5 — dead signal flags removed** (`signals.py`): removed `keyword_fallback_used` dict (always `{...: False}`, never flipped) and three always-empty debug arrays (`keyword_transit_candidates`, `keyword_school_candidates`, `fallback_tokens`) from `semantic_debug`.
+- **S6 — unified normalization** (`constraint_ops.py` + callers): `normalize_budget_to_pcm` subsumed into `normalize_constraints` — one entry point handles all constraint normalization. Removed redundant post-merge normalize calls in `pipeline_service.py` and `agentic.py`; removed dead `normalize_budget_to_pcm` field from `ExtractDeps` and its property from `PipelineDeps`.
+- **S8 — clause boundary fix** (`constraint_extraction.py`): replaced fragile step-2 loop over `cut_points` (broken when separator start/end coincides with 0 or len(src), producing odd-length list and misaligned pairs) with direct `zip(clause_starts, clause_ends)` over separator match objects.
+
+---
 
 ### Phase 13 · QA pipeline rewrite — hybrid retrieval + LLM reasoning (Mar 1)
 > Branch: `restructure` | 2 commits
@@ -463,7 +485,7 @@ frontend/src/
 
 | Metric | Value |
 |--------|-------|
-| Total commits (all branches) | ~128 |
+| Total commits (all branches) | ~135 |
 | Project start | 2026-02-17 |
-| Latest commit | 2026-03-01 (`06ff89f`) |
-| Days active | 11 |
+| Latest commit | 2026-03-01 (`(next)`) |
+| Days active | 13 |
