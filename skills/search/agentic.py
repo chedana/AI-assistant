@@ -128,9 +128,10 @@ def run_search_skill(
     ) if hasattr(stage_a_df, "attrs") else 0
     filtered, stage_b_audits = apply_hard_filters_with_audit(stage_a_df, merged)
     ranked, _ = rank_stage_c(filtered, signals, embedder=runtime.embedder)
-    ranked_full = ranked.reset_index(drop=True) if ranked is not None else ranked
+    ranked_full = ranked.reset_index(drop=True)
 
-    if len(filtered) < int(k):
+    n_filtered = len(filtered) if filtered is not None else 0
+    if n_filtered < int(k):
         df = ranked.reset_index(drop=True)
     else:
         df = ranked.head(int(k)).reset_index(drop=True)

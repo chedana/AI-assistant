@@ -31,6 +31,10 @@ export default function ChatArea({ session, isGenerating, metadata, onQuickReply
   const showListings = !showCompare && metadata?.search_results && metadata.search_results.listings.length > 0;
   const showQuickReplies = !isGenerating && metadata?.quick_replies && metadata.quick_replies.length > 0;
 
+  // When listing cards are shown, hide the last assistant message (cards replace the text summary).
+  const lastMsgIdx = (session?.messages.length ?? 0) - 1;
+  const hideLastMsg = !isGenerating && showListings;
+
   return (
     <section className="relative flex-1 overflow-y-auto">
       {showConstraints && (
@@ -44,13 +48,16 @@ export default function ChatArea({ session, isGenerating, metadata, onQuickReply
         <div className="mx-auto max-w-3xl space-y-4">
           {session?.messages.length ? (
             <>
-              {session.messages.map((message) => (
-                <MessageBubble
-                  key={message.id}
-                  message={message}
-                  isGenerating={isGenerating}
-                />
-              ))}
+              {session.messages.map((message, idx) => {
+                if (hideLastMsg && idx === lastMsgIdx && message.role === "assistant") return null;
+                return (
+                  <MessageBubble
+                    key={message.id}
+                    message={message}
+                    isGenerating={isGenerating}
+                  />
+                );
+              })}
 
               {showCompare && (
                 <CompareTable data={metadata!.compare_data!} />

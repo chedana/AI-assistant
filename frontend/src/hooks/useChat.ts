@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { streamChat } from "../lib/mockStream";
 import type { ChatSession, Message, SessionMetadata } from "../types/chat";
 import { createId } from "./useSessions";
@@ -17,6 +17,11 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [metadata, setMetadata] = useState<SessionMetadata | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  // Reset metadata when switching sessions, not on every message send.
+  useEffect(() => {
+    setMetadata(null);
+  }, [activeSession?.id]);
 
   async function sendMessage(input: string) {
     if (!activeSession || isGenerating) return;
@@ -38,7 +43,6 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
     };
 
     setIsGenerating(true);
-    setMetadata(null);
     const controller = new AbortController();
     abortRef.current = controller;
 

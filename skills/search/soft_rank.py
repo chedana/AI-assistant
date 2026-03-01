@@ -367,7 +367,7 @@ def rank_stage_c(
     embedder: SentenceTransformer,
 ) -> Tuple[pd.DataFrame, Dict[str, float]]:
     if filtered is None or len(filtered) == 0:
-        return filtered, compute_stagec_weights(signals)
+        return pd.DataFrame(), compute_stagec_weights(signals)
 
     out = filtered.copy()
     weights = compute_stagec_weights(signals)
