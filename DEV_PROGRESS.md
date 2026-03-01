@@ -153,6 +153,8 @@ frontend/src/
 
 - `6ce8ef9` fix: deposit QA returns actual deposit value (0/amount/ask-agent) for single + multi listing — removed `__ASKED__` fail path
 - `06ff89f` refactor: QA pipeline — hybrid BM25+embedding retrieval, LLM reasons over evidence; fix B3 classify_qa_scope fallback
+- `a61d471` refactor: rename EXTRACT_ALL_SYSTEM → SEARCH_EXTRACT_ALL_SYSTEM; fix QA_EXTRACT_ALL_SYSTEM (drop pipeline fields, fix transit terms, add 8 examples)
+- `afde2b4` fix: QA answering prompts — natural language output, multi-topic coverage, 3 examples per prompt
 
 ---
 
