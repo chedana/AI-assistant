@@ -17,15 +17,17 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [metadata, setMetadata] = useState<SessionMetadata | null>(null);
   const [activeAssistantId, setActiveAssistantId] = useState<string | null>(null);
-  // suppressedIds: all assistant message IDs whose text has been replaced by structured
-  // UI (listing cards or compare table). Accumulated across paginations so old search
-  // text never reappears. Cleared only on session switch.
+  // metadataForId: the message ID where cards/compare are rendered inline (most recent).
+  const [metadataForId, setMetadataForId] = useState<string | null>(null);
+  // suppressedIds: ALL message IDs that produced structured UI — accumulated so old
+  // search text never reappears after pagination or compare.
   const [suppressedIds, setSuppressedIds] = useState<Set<string>>(new Set());
   const abortRef = useRef<AbortController | null>(null);
   const lastSearchSigRef = useRef<string>("");
 
   useEffect(() => {
     setMetadata(null);
+    setMetadataForId(null);
     setActiveAssistantId(null);
     setSuppressedIds(new Set());
     lastSearchSigRef.current = "";
@@ -81,10 +83,12 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
           const hasNewResults = sig !== "" && sig !== lastSearchSigRef.current;
           const hasCompare = (meta.compare_data?.listings?.length ?? 0) >= 2;
 
-          // Add to permanent suppressed set if this message produced structured UI
           if (hasNewResults || hasCompare) {
-            lastSearchSigRef.current = sig || lastSearchSigRef.current;
+            if (hasNewResults) lastSearchSigRef.current = sig;
+            // This message produced structured UI: suppress its text and render
+            // cards/compare inline at its position in the message flow.
             setSuppressedIds((prev) => new Set([...prev, assistantMessage.id]));
+            setMetadataForId(assistantMessage.id);
           }
         },
       });
@@ -121,10 +125,12 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
       await streamChat(activeSession.id, prompt, {
         signal: controller.signal,
         routeHint,
-        onChunk: () => {}, // discard streamed text — only metadata matters
+        onChunk: () => {},
         onMetadata: (meta) => {
           setMetadata(meta);
-          // Don't suppress anything — no assistant message was added
+          // metadataForId stays unchanged — silent actions update data in place
+          // at the existing inline position (e.g. shortlist compare updates the
+          // same slot as the search that produced the cards).
         },
       });
     } catch (error) {
@@ -141,5 +147,14 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
     abortRef.current?.abort();
   }
 
-  return { isGenerating, metadata, suppressedIds, activeAssistantId, sendMessage, sendSilentAction, stopGenerating };
+  return {
+    isGenerating,
+    metadata,
+    suppressedIds,
+    metadataForId,
+    activeAssistantId,
+    sendMessage,
+    sendSilentAction,
+    stopGenerating,
+  };
 }
