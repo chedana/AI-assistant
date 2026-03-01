@@ -42,8 +42,16 @@ def _auto_focus_first(agent_state) -> None:
 
 
 def _focus_by_index(agent_state, idx: int, source: str = "user_query") -> str | None:
-    if idx < 1 or idx > len(agent_state.last_results):
-        return f"Invalid index. Valid range: 1~{len(agent_state.last_results)}"
+    n = len(agent_state.last_results)
+    if idx < 1 or idx > n:
+        if n == 0:
+            return "No listings available. Please run a search first."
+        msg = f"Listing {idx} isn't on this page — I have {n} listing{'s' if n != 1 else ''} here (1 to {n})."
+        if agent_state.has_more:
+            msg += " Say 'next page' to see more, or ask about listings 1 to {n}.".format(n=n)
+        else:
+            msg += f" Say 'tell me about listing 1' to ask about a specific one."
+        return msg
     picked = agent_state.last_results[idx - 1]
     agent_state.current_focus_listing_id = str(picked.get("listing_id") or picked.get("url") or f"row_{idx}")
     agent_state.current_focus_listing_payload = picked
@@ -960,9 +968,11 @@ def compare_node(state: GraphState) -> GraphState:
             else:
                 bad.append(idx)
         if bad:
+            n = len(listings)
+            bad_label = bad[0] if len(bad) == 1 else bad
             state["reply_text"] = (
-                f"Listing {bad[0] if len(bad) == 1 else bad} out of range. "
-                f"I have {len(listings)} listing{'s' if len(listings) != 1 else ''} on this page."
+                f"Listing {bad_label} isn't on this page — I have {n} listing{'s' if n != 1 else ''} here (1 to {n}). "
+                f"Say 'next page' to see more, or try 'compare listing 1 and 2'."
             )
             return state
     else:
