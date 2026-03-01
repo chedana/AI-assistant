@@ -6,7 +6,7 @@ import pandas as pd
 from openai import OpenAI
 
 from core.chatbot_config import (
-    EXTRACT_ALL_SYSTEM,
+    SEARCH_EXTRACT_ALL_SYSTEM,
     EXTRACT_SYSTEM,
     GROUNDED_EXPLAIN_SYSTEM,
     QWEN_API_KEY,
@@ -69,7 +69,7 @@ def llm_extract_all_signals(user_text: str, existing_constraints: Optional[dict]
         prefix = "Existing constraints (JSON):\n" + json.dumps(existing_constraints, ensure_ascii=False) + "\n\n"
     txt = qwen_chat(
         [
-            {"role": "system", "content": EXTRACT_ALL_SYSTEM},
+            {"role": "system", "content": SEARCH_EXTRACT_ALL_SYSTEM},
             {"role": "user", "content": prefix + "User says:\n" + user_text},
         ],
         temperature=0.0,

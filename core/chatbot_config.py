@@ -59,7 +59,7 @@ Rules:
 - If no explicit update intent is present, set update_scope="patch", location_update_mode="replace", layout_update_mode="replace".
 """
 
-EXTRACT_ALL_SYSTEM = """You output STRICT JSON only (no markdown, no explanation).
+SEARCH_EXTRACT_ALL_SYSTEM = """You output STRICT JSON only (no markdown, no explanation).
 Schema:
 {
   "constraints": {

@@ -15,14 +15,14 @@ from skills.search.extractors import (
 QA_EXTRACT_ALL_SYSTEM = """You output STRICT JSON only (no markdown, no explanation).
 
 ### ROLE
-You are a specialist in parsing Real Estate search queries. Your task is to transform natural language into a structured schema for property filtering and Q&A.
+You are a specialist in parsing rental property Q&A questions. Extract structured constraints and identify what topics the user is asking about.
 
-### SCHEMA SPECIFICATION
+### OUTPUT SCHEMA
 {
   "constraints": {
     "deposit": string|number|null,
     "max_rent_pcm": number|null,
-    "available_from": string|null, 
+    "available_from": string|null,
     "furnish_type": string|null,
     "let_type": string|null,
     "layout_options": [{"bedrooms": int|null, "bathrooms": number|null, "property_type": string|null, "layout_tag": string|null}],
@@ -38,19 +38,44 @@ You are a specialist in parsing Real Estate search queries. Your task is to tran
   }
 }
 
-### EXTRACTION RULES (STRICT)
-1. **Layout vs. Semantic Separation**: 
-   - `layout_options` MUST ONLY contain physical room counts (bedrooms, bathrooms) and property types (Flat, House, Studio).
-   - Building features (e.g., "Gym", "Concierge", "Porter", "Lift", "Parking", "Balcony", "Garden") MUST be stored in `general_semantic_phrases`.
-   - NEVER put amenities (like Gym) into layout_options.
+### RULES
+constraints — only extract what is explicitly mentioned in the question:
+- deposit: "__ASKED__" if user asks about deposit; 0 if user asks for no deposit; else null.
+- furnish_type: "furnished" | "unfurnished" | "part-furnished" | null.
+- let_type: "short term" | "long term" | null.
+- location_keywords: verbatim place names from the question only. Do NOT correct spelling or expand.
+- layout_options: only if user asks about specific room counts or property type.
+- All other fields: extract only if explicitly mentioned. Default to null / [].
 
-2. **Semantic Categorization**:
-   - `transit_terms`: Only transport-related entities (Stations, Lines, DLR, Underground).
-   - `school_terms`: Only education-related entities (Schools, Universities, Academies).
-   - `general_semantic_phrases`: Subjective/lifestyle descriptors and amenities/services not covered by transit/school (e.g., "modern", "quiet", "near parks", "gym", "concierge").
-3. **Deposit Rule**:
-   - If the question is about deposit (e.g., "has deposit", "how much deposit"), set `constraints.deposit="__ASKED__"`.
-   - If the question explicitly asks for no deposit, set `constraints.deposit=0`.
+semantic_terms — extract the user's actual words/phrases. Do NOT expand or add synonyms:
+- transit_terms: ANY transport-related topic — station names, line names, AND general words like "transport", "commute", "bus links", "tube links", "public transport", "getting around".
+- school_terms: ANY education-related topic — school names, "good schools", "nurseries", "universities", "catchment area".
+- general_semantic_phrases: everything else — "pet friendly", "gym", "parking", "garden", "quiet", "balcony", "concierge", "modern".
+
+### EXAMPLES
+Q: "Is transport good and is it pet friendly?"
+{"constraints":{"deposit":null,"max_rent_pcm":null,"available_from":null,"furnish_type":null,"let_type":null,"layout_options":[],"min_tenancy_months":null,"min_size_sqm":null,"min_size_sqft":null,"location_keywords":[]},"semantic_terms":{"transit_terms":["transport"],"school_terms":[],"general_semantic_phrases":["pet friendly"]}}
+
+Q: "Does it have a deposit?"
+{"constraints":{"deposit":"__ASKED__","max_rent_pcm":null,"available_from":null,"furnish_type":null,"let_type":null,"layout_options":[],"min_tenancy_months":null,"min_size_sqm":null,"min_size_sqft":null,"location_keywords":[]},"semantic_terms":{"transit_terms":[],"school_terms":[],"general_semantic_phrases":[]}}
+
+Q: "Is it near the Victoria line and are there good schools?"
+{"constraints":{"deposit":null,"max_rent_pcm":null,"available_from":null,"furnish_type":null,"let_type":null,"layout_options":[],"min_tenancy_months":null,"min_size_sqm":null,"min_size_sqft":null,"location_keywords":[]},"semantic_terms":{"transit_terms":["Victoria line"],"school_terms":["good schools"],"general_semantic_phrases":[]}}
+
+Q: "Is it furnished and does it allow pets?"
+{"constraints":{"deposit":null,"max_rent_pcm":null,"available_from":null,"furnish_type":"furnished","let_type":null,"layout_options":[],"min_tenancy_months":null,"min_size_sqm":null,"min_size_sqft":null,"location_keywords":[]},"semantic_terms":{"transit_terms":[],"school_terms":[],"general_semantic_phrases":["pets allowed"]}}
+
+Q: "Is the commute to the City easy?"
+{"constraints":{"deposit":null,"max_rent_pcm":null,"available_from":null,"furnish_type":null,"let_type":null,"layout_options":[],"min_tenancy_months":null,"min_size_sqm":null,"min_size_sqft":null,"location_keywords":[]},"semantic_terms":{"transit_terms":["commute to the City"],"school_terms":[],"general_semantic_phrases":[]}}
+
+Q: "Does it have a gym and parking, and is it pet friendly?"
+{"constraints":{"deposit":null,"max_rent_pcm":null,"available_from":null,"furnish_type":null,"let_type":null,"layout_options":[],"min_tenancy_months":null,"min_size_sqm":null,"min_size_sqft":null,"location_keywords":[]},"semantic_terms":{"transit_terms":[],"school_terms":[],"general_semantic_phrases":["gym","parking","pet friendly"]}}
+
+Q: "Is it available from March and is it furnished?"
+{"constraints":{"deposit":null,"max_rent_pcm":null,"available_from":"2026-03-01","furnish_type":"furnished","let_type":null,"layout_options":[],"min_tenancy_months":null,"min_size_sqm":null,"min_size_sqft":null,"location_keywords":[]},"semantic_terms":{"transit_terms":[],"school_terms":[],"general_semantic_phrases":[]}}
+
+Q: "Is it near good bus links and nurseries, and does it have a balcony?"
+{"constraints":{"deposit":null,"max_rent_pcm":null,"available_from":null,"furnish_type":null,"let_type":null,"layout_options":[],"min_tenancy_months":null,"min_size_sqm":null,"min_size_sqft":null,"location_keywords":[]},"semantic_terms":{"transit_terms":["bus links"],"school_terms":["nurseries"],"general_semantic_phrases":["balcony"]}}
 """
 
 @dataclass
