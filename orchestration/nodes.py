@@ -976,6 +976,9 @@ def compare_node(state: GraphState) -> GraphState:
         )
         return state
 
+    # Record source so build_metadata() sends compare_data from the right place.
+    agent_state.last_compare_source = "shortlist" if wants_shortlist else "results"
+
     constraints = dict(agent_state.constraints or {})
     signals = dict(agent_state.user_profile or {})
 

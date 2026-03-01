@@ -84,6 +84,21 @@ def _num(val: object, default: float | int = 0, *, keep_zero: bool = True) -> fl
         return default
 
 
+def _parse_deposit(val: object) -> float | int | None:
+    """Parse deposit which may be a string like '£1,600' or 'Ask agent'."""
+    if val is None:
+        return None
+    import re as _re
+    m = _re.search(r'[\d,]+(?:\.\d+)?', str(val).replace(',', ''))
+    if m:
+        try:
+            f = float(m.group().replace(',', ''))
+            return int(f) if f == int(f) else round(f, 2)
+        except (ValueError, TypeError):
+            pass
+    return None
+
+
 def build_metadata(state: AgentState) -> dict | None:
     """Extract structured metadata from agent state for the frontend."""
     meta: dict = {}
@@ -151,7 +166,7 @@ def build_metadata(state: AgentState) -> dict | None:
                     "price_pcm": _num(r.get("price_pcm")),
                     "bedrooms": _num(r.get("bedrooms")),
                     "bathrooms": _num(r.get("bathrooms")),
-                    "deposit": _num(r.get("deposit")),
+                    "deposit": _parse_deposit(r.get("deposit")),
                     "available_from": str(r.get("available_from", "")),
                     "size_sqm": _num(r.get("size_sqm")),
                     "furnish_type": str(r.get("furnish_type") or ""),
