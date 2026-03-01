@@ -862,8 +862,8 @@ _COMPARE_FIELDS = [
     ("bedrooms",      "Beds",       lambda v: str(int(float(v))) if v is not None else "—"),
     ("bathrooms",     "Baths",      lambda v: str(v) if v is not None else "—"),
     ("deposit",       "Deposit",    lambda v: (
-        f"£{int(float(re.sub(r'[^\d.]', '', str(v).replace(',', '')))):,}"
-        if v is not None and re.search(r'\d', str(v))
+        f"£{int(float(re.sub('[^0-9.]', '', str(v).replace(',', '')))):,}"
+        if v is not None and re.search('[0-9]', str(v))
         else (str(v) if v not in (None, "", "none", "null") else "—")
     )),
     ("available_from","Available",  lambda v: str(v) if v else "—"),
