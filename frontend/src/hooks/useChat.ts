@@ -16,19 +16,18 @@ type UseChatOptions = {
 export function useChat({ activeSession, updateSession }: UseChatOptions) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [metadata, setMetadata] = useState<SessionMetadata | null>(null);
-  const [metadataForId, setMetadataForId] = useState<string | null>(null);
   const [activeAssistantId, setActiveAssistantId] = useState<string | null>(null);
+  // suppressedIds: all assistant message IDs whose text has been replaced by structured
+  // UI (listing cards or compare table). Accumulated across paginations so old search
+  // text never reappears. Cleared only on session switch.
+  const [suppressedIds, setSuppressedIds] = useState<Set<string>>(new Set());
   const abortRef = useRef<AbortController | null>(null);
-  // Track the URL signature of the last search results shown as cards.
-  // metadataForId only updates when the actual listings change, so saving/removing
-  // a listing (which re-sends the same search_results) won't move the hide pointer.
   const lastSearchSigRef = useRef<string>("");
 
-  // Reset metadata when switching sessions, not on every message send.
   useEffect(() => {
     setMetadata(null);
-    setMetadataForId(null);
     setActiveAssistantId(null);
+    setSuppressedIds(new Set());
     lastSearchSigRef.current = "";
   }, [activeSession?.id]);
 
@@ -77,13 +76,15 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
         },
         onMetadata: (meta) => {
           setMetadata(meta);
-          // Only update the "hide this message" pointer when search results actually change.
-          // This prevents the original search text from reappearing on save/remove actions
-          // that return the same search_results in metadata.
+
           const sig = (meta.search_results?.listings ?? []).map((l) => l.url).join(",");
-          if (sig !== lastSearchSigRef.current) {
-            lastSearchSigRef.current = sig;
-            setMetadataForId(assistantMessage.id);
+          const hasNewResults = sig !== "" && sig !== lastSearchSigRef.current;
+          const hasCompare = (meta.compare_data?.listings?.length ?? 0) >= 2;
+
+          // Add to permanent suppressed set if this message produced structured UI
+          if (hasNewResults || hasCompare) {
+            lastSearchSigRef.current = sig || lastSearchSigRef.current;
+            setSuppressedIds((prev) => new Set([...prev, assistantMessage.id]));
           }
         },
       });
@@ -106,7 +107,7 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
   }
 
   // Silent action: calls the backend and updates metadata without adding any
-  // messages to the chat session. Used for save/remove shortlist actions.
+  // messages to the chat session. Used for save/remove/compare shortlist actions.
   async function sendSilentAction(input: string, routeHint?: Record<string, unknown>) {
     if (!activeSession || isGenerating) return;
     const prompt = input.trim();
@@ -123,7 +124,7 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
         onChunk: () => {}, // discard streamed text — only metadata matters
         onMetadata: (meta) => {
           setMetadata(meta);
-          // Don't touch metadataForId or lastSearchSigRef — keep existing card hide state
+          // Don't suppress anything — no assistant message was added
         },
       });
     } catch (error) {
@@ -140,5 +141,5 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
     abortRef.current?.abort();
   }
 
-  return { isGenerating, metadata, metadataForId, activeAssistantId, sendMessage, sendSilentAction, stopGenerating };
+  return { isGenerating, metadata, suppressedIds, activeAssistantId, sendMessage, sendSilentAction, stopGenerating };
 }

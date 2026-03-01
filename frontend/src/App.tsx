@@ -17,7 +17,7 @@ export default function App() {
     removeChat,
   } = useSessions();
 
-  const { isGenerating, metadata, metadataForId, activeAssistantId, sendMessage, sendSilentAction, stopGenerating } = useChat({
+  const { isGenerating, metadata, suppressedIds, activeAssistantId, sendMessage, sendSilentAction, stopGenerating } = useChat({
     activeSession,
     updateSession,
   });
@@ -74,7 +74,7 @@ export default function App() {
           session={activeSession}
           isGenerating={isGenerating}
           metadata={metadata}
-          metadataForId={metadataForId}
+          suppressedIds={suppressedIds}
           activeAssistantId={activeAssistantId}
           onQuickReply={handleQuickReply}
           onSaveListing={handleSaveListing}

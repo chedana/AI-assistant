@@ -10,13 +10,13 @@ type Props = {
   session: ChatSession | undefined;
   isGenerating: boolean;
   metadata: SessionMetadata | null;
-  metadataForId: string | null;
+  suppressedIds: Set<string>;
   activeAssistantId: string | null;
   onQuickReply: (text: string, routeHint?: Record<string, unknown>) => void;
   onSaveListing?: (pageIndex: number) => void;
 };
 
-export default function ChatArea({ session, isGenerating, metadata, metadataForId, activeAssistantId, onQuickReply, onSaveListing }: Props) {
+export default function ChatArea({ session, isGenerating, metadata, suppressedIds, activeAssistantId, onQuickReply, onSaveListing }: Props) {
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -30,12 +30,12 @@ export default function ChatArea({ session, isGenerating, metadata, metadataForI
 
   const showConstraints = metadata?.constraints && Object.keys(metadata.constraints).length > 0;
   const showCompare = metadata?.compare_data && metadata.compare_data.listings.length >= 2;
-  const showListings = !showCompare && metadata?.search_results && metadata.search_results.listings.length > 0;
+  const showListings = !!(metadata?.search_results && metadata.search_results.listings.length > 0);
   const showQuickReplies = !isGenerating && metadata?.quick_replies && metadata.quick_replies.length > 0;
 
-  // When listing cards are shown, hide the specific assistant message the cards belong to.
-  // Using metadataForId (the exact message ID) avoids hiding the thinking bubble of new messages.
-  const hideMessageId = (showListings || showCompare) ? metadataForId : null;
+  // suppressedIds contains all assistant messages whose text has been replaced by
+  // structured UI (cards or compare table). Accumulated across paginations so old
+  // search text never reappears when the user pages or compares.
 
   return (
     <section className="relative flex-1 overflow-y-auto">
@@ -51,7 +51,7 @@ export default function ChatArea({ session, isGenerating, metadata, metadataForI
           {session?.messages.length ? (
             <>
               {session.messages.map((message) => {
-                if (hideMessageId && message.id === hideMessageId) return null;
+                if (suppressedIds.has(message.id)) return null;
                 return (
                   <MessageBubble
                     key={message.id}
