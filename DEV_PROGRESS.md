@@ -16,7 +16,7 @@ Multi-turn conversational rental search assistant. Users describe rental require
 
 | Branch | Role | Tip commit |
 |--------|------|-----------|
-| `restructure` | **Active dev (default commit target)** | `aef3e62` 2026-03-01 |
+| `restructure` | **Active dev (default commit target)** | `bbb22ac` 2026-03-01 |
 | `feature/rental` | Previous dev branch (behind restructure) | `b12fe96` 2026-02-25 |
 | `main` | Stable baseline | `7355f5d` 2026-02-24 |
 | `codex/initial-modular-structure` | Archived Codex bootstrap | — |
@@ -25,7 +25,7 @@ Multi-turn conversational rental search assistant. Users describe rental require
 
 ## Current State
 
-_Last updated: 2026-03-01 · Branch: `restructure` · Tip: `aef3e62`_
+_Last updated: 2026-03-01 · Branch: `restructure` · Tip: `bbb22ac`_
 
 ### Architecture
 
@@ -129,7 +129,10 @@ frontend/src/
 - Near-miss listings — shown in `ask_user` replies when strict search returns 0; display shows title + reason with actual listing value
 - **CompareTable UI** — structured side-by-side comparison table rendered from `metadata.compare_data`; best-value green highlighting, clickable listing links, sticky field column; mutually exclusive with listing cards
 - **Shortlist UI** — bookmark icon on each listing card (filled/outline driven by `metadata.shortlist.saved_ids`); click injects "save listing N" as chat message; "Saved (N)" badge in header toggles ShortlistPanel right drawer; drawer shows saved cards with per-item remove button; auto-closes when empty
-- **Message suppression** — assistant text bubble for a search turn is hidden once listing cards are shown (tracked via `metadataForId`); cards persist across subsequent messages; metadata only resets on session switch
+- **Message suppression** — assistant text bubble for a search turn is hidden once listing cards are shown (tracked via `metadataForId`); `metadataForId` only advances when search results actually change (URL signature), so save/remove actions don't expose the original search text; cards persist across subsequent messages; metadata resets only on session switch
+- **No text flash** — while an assistant message is actively streaming (`activeAssistantId`), `MessageBubble` shows ThinkingIndicator instead of partial text; after generation, the message is either hidden by cards or shown in full — no flash either way
+- **Silent shortlist actions** — save/remove are `sendSilentAction` calls: backend is updated, metadata (shortlist count/saved_ids/listings) refreshes, but no user or assistant message is added to the chat
+- **Bookmark toggles in sidebar** — filled bookmark in `ShortlistPanel` calls `onRemove`; `ListingCard` accepts both `onSave` and `onRemove`; hover turns red when saved to signal destructive action
 - Frontend Phase 1 — component split (10 components, 2 hooks), hand-written markdown renderer, listing cards with preference/penalty tags, sticky constraint filter bar with ×-to-remove, quick-reply buttons, CSS thinking animation, backend metadata SSE event (search_results + constraints + quick_replies + compare_data + shortlist)
 - SSE streaming — backend → frontend with stop-generation button
 - Session persistence — localStorage + server-side TTL
@@ -182,6 +185,7 @@ frontend/src/
 - `159fbc1` fix: human-friendly constraint tags with correct remove phrases
 - `a607f49` feat: shortlist panel, message suppression, auto-expand input, constraint tag labels
 - `aef3e62` docs: update DEV_PROGRESS — Phase 15
+- `bbb22ac` fix: silent save/remove, no text flash, bookmark removes from shortlist
 
 ---
 
@@ -198,6 +202,21 @@ frontend/src/
 ---
 
 ## Changelog
+
+### Phase 16 · Frontend UX fixes — silent actions, no text flash, bookmark remove (Mar 1)
+> Branch: `restructure` | 1 commit
+
+| Hash | Date | Type | Description |
+|------|------|------|-------------|
+| `bbb22ac` | 2026-03-01 | fix | Silent save/remove, no text flash, bookmark removes from shortlist |
+
+**Key fixes this phase:**
+- **No text flash on search** (`MessageBubble.tsx`, `useChat.ts`): While a message is actively streaming, `MessageBubble` shows `ThinkingIndicator` instead of partial text (`isActive` prop driven by `activeAssistantId` state). After generation, the message is either hidden by cards (search response) or shown in full (other responses). Zero flash in both cases.
+- **Search text no longer reappears after save/remove** (`useChat.ts`): `metadataForId` (the "hide this message" pointer) only advances when the search results URL signature actually changes. Save/remove actions return the same `search_results` in metadata → same signature → hide pointer stays on the original search message.
+- **Silent shortlist actions** (`useChat.ts`, `App.tsx`): New `sendSilentAction()` calls the backend and refreshes metadata without adding any user or assistant message to the chat session. Save listing and remove from shortlist are now completely invisible in the conversation.
+- **Bookmark click removes from shortlist** (`ListingCard.tsx`, `ShortlistPanel.tsx`): `ListingCard` now accepts `onRemove` prop. In `ShortlistPanel`, the filled bookmark calls `onRemove(idx + 1)`. Bookmark hover turns red when saved to signal it will remove. The separate text "Remove from shortlist" button is removed.
+
+---
 
 ### Phase 15 · route_hint optimization + shortlist panel UI (Mar 1)
 > Branch: `restructure` | 4 commits
@@ -517,5 +536,5 @@ frontend/src/
 |--------|-------|
 | Total commits (all branches) | ~140 |
 | Project start | 2026-02-17 |
-| Latest commit | 2026-03-01 (`aef3e62`) |
+| Latest commit | 2026-03-01 (`bbb22ac`) |
 | Days active | 13 |
