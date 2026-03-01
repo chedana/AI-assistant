@@ -29,7 +29,7 @@ export default function App() {
   }
 
   function handleSaveListing(pageIndex: number) {
-    void sendMessage(`save listing ${pageIndex}`, { intent: "Shortlist", shortlist_action: "save" });
+    void sendMessage(`save listing ${pageIndex}`, { intent: "Shortlist", shortlist_action: "add", target_indices: [pageIndex] });
   }
 
   function handleRemoveFromShortlist(position: number) {
