@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 
 type Props = {
   isGenerating: boolean;
@@ -8,6 +8,15 @@ type Props = {
 
 export default function ChatInput({ isGenerating, onSend, onStop }: Props) {
   const [input, setInput] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-resize: shrink to 1 row, then grow to content height, capped at ~5 rows.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [input]);
 
   function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -21,10 +30,12 @@ export default function ChatInput({ isGenerating, onSend, onStop }: Props) {
     <footer className="border-t border-border p-4">
       <form onSubmit={handleSubmit} className="mx-auto flex max-w-3xl gap-2">
         <textarea
+          ref={textareaRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Send a message..."
-          className="h-12 flex-1 resize-none rounded-lg border border-border bg-panel px-3 py-3 text-sm outline-none focus:border-neutral-500"
+          rows={1}
+          className="max-h-40 min-h-[48px] flex-1 resize-none overflow-y-auto rounded-lg border border-border bg-panel px-3 py-3 text-sm leading-6 outline-none focus:border-neutral-500"
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
