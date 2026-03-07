@@ -289,8 +289,14 @@ async def chat_stream(req: ChatStreamRequest, request: Request) -> StreamingResp
             return
 
         try:
+            import time
+            t0 = time.perf_counter()
             state = get_or_create_state(req.session_id)
             session_lock = get_session_lock(req.session_id)
+            hint_str = str(req.route_hint.get("intent") if req.route_hint else "none")
+            print(f"[TIMING] start intent={hint_str!r} text={user_text[:60]!r}")
+
+            t1 = time.perf_counter()
             reply = await asyncio.to_thread(
                 _run_locked,
                 session_lock,
@@ -300,6 +306,8 @@ async def chat_stream(req: ChatStreamRequest, request: Request) -> StreamingResp
                 ROUTER_DEBUG,
                 req.route_hint,
             )
+            t2 = time.perf_counter()
+            print(f"[TIMING] process_turn={t2-t1:.2f}s  total_so_far={t2-t0:.2f}s  reply_len={len(reply)}")
 
             for chunk in split_chunks(reply, size=8):
                 if await request.is_disconnected():
@@ -308,11 +316,11 @@ async def chat_stream(req: ChatStreamRequest, request: Request) -> StreamingResp
                 await asyncio.sleep(0.01)
 
             metadata = build_metadata(state)
+            t3 = time.perf_counter()
             if metadata:
-                print(f"[SSE] sending metadata: {len(metadata.get('search_results', {}).get('listings', []))} listings, "
-                      f"constraints={bool(metadata.get('constraints'))}, "
-                      f"shortlist={metadata.get('shortlist', {}).get('count', 0)}, "
-                      f"quick_replies={len(metadata.get('quick_replies', []))}")
+                print(f"[TIMING] stream+metadata={t3-t2:.2f}s  total={t3-t0:.2f}s | "
+                      f"listings={len(metadata.get('search_results', {}).get('listings', []))} "
+                      f"constraints={bool(metadata.get('constraints'))}")
                 yield sse_event("metadata", metadata)
             else:
                 print("[SSE] no metadata to send (last_results empty?)")
