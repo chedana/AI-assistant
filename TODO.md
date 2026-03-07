@@ -38,7 +38,7 @@ _No tasks assigned yet._
 ## data — Data & Embeddings
 _Covers: `crawler/`, `artifacts/`, Qdrant collection, embedding scripts_
 
-- [ ] **Fix crawler location resolver** — postcode codes (E8, N1) fail in Rightmove typeahead; add `DISTRICT_TO_SEARCH_NAME` map in `london_postcodes.py` (e.g. E8→"Hackney", N1→"Islington"). Clear `artifacts/postcode_location_cache.json` and re-crawl.
+- [ ] **Re-crawl London with fixed scraper** — run `crawl_london.py` then `sync_qdrant.py --mode sync` to populate Qdrant Cloud with real London listings.
 - [ ] **Add OpenRent scraper** — private landlords, no agent fees. New `crawler/openrent.py`. Priority: Section 1 of product roadmap.
 
 ---
