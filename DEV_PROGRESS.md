@@ -355,7 +355,7 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5173
 ## Changelog
 
 ### Phase 19 · OpenClaw — cloud deployment fixes + lat/lon extraction (Mar 7)
-> Branch: `openclaw` | Commits: `635deeb` → `7ff1fa0`
+> Branch: `openclaw` | Commits: `635deeb` → `8b323ae`
 
 | Hash | Date | Type | Description |
 |------|------|------|-------------|
@@ -365,6 +365,8 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5173
 | `9399ca1` | 2026-03-07 | fix | Replace PyTorch/sentence-transformers with fastembed (ONNX) — eliminates ~200MB from Render deploy |
 | `3260634` | 2026-03-07 | fix | Build location vocab from Qdrant Cloud (scroll) when `RENT_QDRANT_URL` is set |
 | `7ff1fa0` | 2026-03-07 | feat | Extract latitude/longitude from Rightmove page JSON; include in JSONL + Qdrant payload |
+| `8f7daa6` | 2026-03-07 | fix | fastembed fallback in handler.py, soft_rank.py, internal_helpers.py — no sentence_transformers on Render |
+| `8b323ae` | 2026-03-07 | fix | Crawler location resolver: DISTRICT_TO_SEARCH_NAME map (264 districts → area names); postcode codes resolved to wrong STATION^ identifiers |
 
 **Key deliverables this phase:**
 
@@ -377,6 +379,10 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5173
 - **Lat/lon extraction** (`crawler/extract_one_page.py`, `crawler/sync_qdrant.py`): `extract_lat_lon()` reads latitude/longitude from Rightmove's embedded JSON. Added `latitude`/`longitude` fields to `ListingRecord` dataclass and `PAYLOAD_FIELDS` in sync_qdrant. Tested on single listing — confirmed correct values extracted (e.g. 53.41, -2.21). Future use: geo-radius search when `prefilter_count == 0` (see deferred task in TODO.md).
 
 - **Crawler running**: background crawler (PID 86871) scraping 15 core London districts (E8, E9, N1, N16, SE1, SE5, SE15, SW2, SW4, SW9, W1, W2, NW1, NW3, NW6) — in progress at time of writing. After it finishes, run `bash crawler/run_sync.sh sync` to push new listings to Qdrant Cloud.
+
+- **fastembed fallback** (`handler.py`, `soft_rank.py`, `internal_helpers.py`): All three files that imported `sentence_transformers` now try fastembed first and fall back gracefully. `_embed_texts_cached()` uses `.embed()` (fastembed) or `.encode()` (sentence-transformers) based on `hasattr(embedder, "embed")`. Required for Render deployment where `sentence_transformers`/PyTorch are not installed.
+
+- **Crawler location fix** (`crawler/london_postcodes.py`, `crawler/artifacts/postcode_location_cache.json`): Added `DISTRICT_TO_SEARCH_NAME` dict mapping all 264 London postcode districts to Rightmove typeahead-friendly area names (e.g. `E8 → "Hackney, London"`). Previous crawl produced 752 listings all from Manchester (East Didsbury Station) because Rightmove's tokenizer matched `"E8"` to `STATION^3062`. Rewrote `get_search_queries()` to use area names with deduplication (182 unique queries from 264 districts). Cleared stale cache.
 
 ---
 
