@@ -313,11 +313,15 @@ async def chat_stream(req: ChatStreamRequest, request: Request) -> StreamingResp
             t2 = time.perf_counter()
             print(f"[TIMING] process_turn={t2-t1:.2f}s  total_so_far={t2-t0:.2f}s  reply_len={len(reply)}")
 
-            for chunk in split_chunks(reply, size=8):
+            is_silent = req.route_hint is not None
+            chunk_size = 200 if is_silent else 8
+            chunk_delay = 0.0 if is_silent else 0.01
+            for chunk in split_chunks(reply, size=chunk_size):
                 if await request.is_disconnected():
                     return
                 yield sse_event("delta", {"text": chunk})
-                await asyncio.sleep(0.01)
+                if chunk_delay:
+                    await asyncio.sleep(chunk_delay)
 
             metadata = build_metadata(state)
             t3 = time.perf_counter()
