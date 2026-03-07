@@ -9,7 +9,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from sentence_transformers import SentenceTransformer
+try:
+    from fastembed import TextEmbedding as SentenceTransformer  # type: ignore[assignment]
+except ImportError:
+    from sentence_transformers import SentenceTransformer  # type: ignore[no-redef]
 
 from core.internal_helpers import _collect_value_candidates, _embed_texts_cached, _score_intent_group
 from core.settings import (

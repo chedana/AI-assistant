@@ -17,7 +17,12 @@ import json
 import re
 from typing import Any, Dict, Optional, Tuple
 
-from sentence_transformers import SentenceTransformer
+try:
+    from fastembed import TextEmbedding as _FastEmbed
+    _USE_FASTEMBED = True
+except ImportError:
+    from sentence_transformers import SentenceTransformer as _FastEmbed  # type: ignore
+    _USE_FASTEMBED = False
 
 from core.chatbot_config import QWEN_BASE_URL, QWEN_MODEL
 from core.llm_client import (
@@ -161,7 +166,7 @@ def build_pipeline_deps(stage_note):
 
 def run_chat():
     qdrant_client = load_stage_a_resources()
-    embedder = SentenceTransformer(EMBED_MODEL)
+    embedder = _FastEmbed(EMBED_MODEL)
 
     state = init_runtime_state()
 
