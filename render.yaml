@@ -13,6 +13,10 @@ services:
         sync: false
       - key: RENT_QDRANT_API_KEY
         sync: false
+      - key: QWEN_MODEL
+        value: "gpt-5-mini"
+      - key: ROUTER_MODEL
+        value: "gpt-5-mini"
       - key: RENT_RECALL
         value: "500"
       - key: RENT_PREF_VECTOR_ENABLED

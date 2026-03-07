@@ -12,7 +12,14 @@ set -euo pipefail
 
 MODE="${1:-sync}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "${SCRIPT_DIR}")"
 cd "${SCRIPT_DIR}"
+
+# Use venv python if available, else fall back to python3
+PYTHON="${PROJECT_ROOT}/../openclaw-venv/bin/python3"
+if [[ ! -x "${PYTHON}" ]]; then
+  PYTHON="$(command -v python3)"
+fi
 
 echo "═══════════════════════════════════════════"
 echo "  OpenClaw Data Sync — mode: ${MODE}"
@@ -21,7 +28,7 @@ echo "════════════════════════�
 # Step 1: Crawl Rightmove
 echo ""
 echo "── Step 1: Crawl Rightmove ──"
-python crawl_london.py
+"${PYTHON}" crawl_london.py
 
 if [[ "${MODE}" == "crawl-only" ]]; then
     echo ""
@@ -39,9 +46,9 @@ if [[ -z "${RENT_QDRANT_URL:-}" ]]; then
 fi
 
 if [[ "${MODE}" == "full" ]]; then
-    python sync_qdrant.py --mode full
+    "${PYTHON}" sync_qdrant.py --mode full
 else
-    python sync_qdrant.py --mode sync
+    "${PYTHON}" sync_qdrant.py --mode sync
 fi
 
 echo ""
