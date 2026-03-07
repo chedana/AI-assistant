@@ -218,6 +218,9 @@ class ListingRecord:
     description:      Optional[str] = None
     features:         Optional[str] = None   # newline-joined key-feature bullets
 
+    latitude:         Optional[float] = None
+    longitude:        Optional[float] = None
+
     # JSON strings (Qdrant payload must be str)
     stations:         Optional[str] = None   # json.dumps([{"name": ..., "miles": ...}])
     schools:          Optional[str] = None
@@ -796,6 +799,41 @@ def extract_features(soup: BeautifulSoup) -> Optional[List[str]]:
     return out or None
 
 
+def extract_lat_lon(html: str) -> Tuple[Optional[float], Optional[float]]:
+    """Extract latitude/longitude from Rightmove's embedded JSON blob."""
+    patterns = [
+        r'"latitude"\s*:\s*(-?\d+\.\d+)',
+        r'"lat"\s*:\s*(-?\d+\.\d+)',
+        r'latitude["\s:]+(-?\d+\.\d+)',
+    ]
+    lon_patterns = [
+        r'"longitude"\s*:\s*(-?\d+\.\d+)',
+        r'"lng"\s*:\s*(-?\d+\.\d+)',
+        r'"lon"\s*:\s*(-?\d+\.\d+)',
+        r'longitude["\s:]+(-?\d+\.\d+)',
+    ]
+    lat = lon = None
+    for pat in patterns:
+        m = re.search(pat, html)
+        if m:
+            lat = float(m.group(1))
+            # sanity check: UK latitude range
+            if not (49.0 <= lat <= 61.0):
+                lat = None
+                continue
+            break
+    for pat in lon_patterns:
+        m = re.search(pat, html)
+        if m:
+            lon = float(m.group(1))
+            # sanity check: UK longitude range
+            if not (-8.0 <= lon <= 2.0):
+                lon = None
+                continue
+            break
+    return lat, lon
+
+
 def _listing_id(url: str) -> str:
     m = re.search(r'/properties/(\d+)', url or "")
     return f"rightmove:{m.group(1)}" if m else ""
@@ -813,6 +851,7 @@ def build_record_from_html(
     schools:  Optional[List[Dict[str, Any]]] = None,
 ) -> ListingRecord:
     soup = BeautifulSoup(html, "lxml")
+    lat, lon = extract_lat_lon(html)
 
     title, added_date = extract_title_and_added_date(soup)
     raw_pcm, raw_pw   = extract_price(soup)
@@ -882,6 +921,9 @@ def build_record_from_html(
     # stations & schools → always JSON strings
     rec.stations = json.dumps(stations, ensure_ascii=False) if stations else "ask agent"
     rec.schools  = json.dumps(schools,  ensure_ascii=False) if schools  else "ask agent"
+
+    rec.latitude  = lat
+    rec.longitude = lon
 
     return rec
 

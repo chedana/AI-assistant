@@ -67,6 +67,8 @@ PAYLOAD_FIELDS = [
     "let_type", "furnish_type", "council_tax",
     # Text
     "description", "features", "stations", "schools",
+    # Coordinates
+    "latitude", "longitude",
     # Metadata
     "added_date", "discovery_paths",
 ]
