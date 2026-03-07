@@ -49,13 +49,14 @@ def load_stage_a_resources():
 
 
 def embed_query(embedder, q: str) -> np.ndarray:
-    x = embedder.encode(
-        [q],
-        batch_size=1,
-        show_progress_bar=False,
-        convert_to_numpy=True,
-        normalize_embeddings=False,
-    ).astype("float32")
+    # Supports both fastembed.TextEmbedding (embed()) and sentence-transformers (encode())
+    if hasattr(embedder, "embed"):
+        x = np.array(list(embedder.embed([q])), dtype="float32")
+    else:
+        x = embedder.encode(
+            [q], batch_size=1, show_progress_bar=False,
+            convert_to_numpy=True, normalize_embeddings=False,
+        ).astype("float32")
     norms = np.linalg.norm(x, axis=1, keepdims=True)
     norms = np.maximum(norms, 1e-12)
     x = x / norms

@@ -4,7 +4,12 @@ import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from sentence_transformers import SentenceTransformer
+try:
+    from fastembed import TextEmbedding as _FastEmbed
+    _USE_FASTEMBED = True
+except ImportError:
+    from sentence_transformers import SentenceTransformer as _FastEmbed  # type: ignore
+    _USE_FASTEMBED = False
 
 from skills.common.parse_signals import derive_signals, parse_signals
 from core.settings import (
@@ -31,13 +36,14 @@ from skills.search.handler import (
 @dataclass
 class SearchRuntime:
     qdrant_client: Any
-    embedder: SentenceTransformer
+    embedder: Any
 
 
 def build_search_runtime() -> SearchRuntime:
+    embedder = _FastEmbed(EMBED_MODEL) if _USE_FASTEMBED else _FastEmbed(EMBED_MODEL)
     return SearchRuntime(
         qdrant_client=load_stage_a_resources(),
-        embedder=SentenceTransformer(EMBED_MODEL),
+        embedder=embedder,
     )
 
 
