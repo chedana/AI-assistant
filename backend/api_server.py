@@ -44,7 +44,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-RUNTIME = build_search_runtime()
+_RUNTIME = None
+_RUNTIME_LOCK = Lock()
+
+def get_runtime():
+    global _RUNTIME
+    if _RUNTIME is None:
+        with _RUNTIME_LOCK:
+            if _RUNTIME is None:
+                _RUNTIME = build_search_runtime()
+    return _RUNTIME
+
 ROUTER_DEBUG = str(os.environ.get("ROUTER_DEBUG", "1")).strip().lower() in {"1", "true", "yes", "on"}
 SESSIONS: TTLCache = TTLCache(maxsize=50, ttl=3600)  # max 50 sessions, 1-hour TTL
 SESSIONS_LOCK = Lock()
@@ -286,7 +296,7 @@ async def chat_stream(req: ChatStreamRequest, request: Request) -> StreamingResp
                 session_lock,
                 user_text,
                 state,
-                RUNTIME,
+                get_runtime(),
                 ROUTER_DEBUG,
                 req.route_hint,
             )
