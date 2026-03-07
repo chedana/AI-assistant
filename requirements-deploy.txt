@@ -18,7 +18,8 @@ openai
 qdrant-client
 
 # Embedding model (ONNX — no PyTorch needed)
-fastembed
+# Pinned: newer versions pull in py-rust-stemmers which requires Rust compilation
+fastembed==0.3.6
 
 # Graph orchestration
 langgraph
