@@ -5,6 +5,8 @@ services:
     buildCommand: "pip install -r requirements-deploy.txt"
     startCommand: "uvicorn backend.api_server:app --host 0.0.0.0 --port $PORT"
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.0"
       - key: PYTHONPATH
         value: .
       - key: OPENAI_API_KEY
