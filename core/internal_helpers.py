@@ -35,13 +35,20 @@ def _embed_texts_cached(
         if t not in cache:
             missing.append(t)
     if missing:
-        embs = embedder.encode(
-            missing,
-            batch_size=min(BATCH, max(1, len(missing))),
-            show_progress_bar=False,
-            convert_to_numpy=True,
-            normalize_embeddings=True,
-        ).astype("float32")
+        if hasattr(embedder, "embed"):
+            # fastembed API
+            raw = np.array(list(embedder.embed(missing)), dtype="float32")
+            norms = np.linalg.norm(raw, axis=1, keepdims=True)
+            embs = raw / np.maximum(norms, 1e-12)
+        else:
+            # sentence-transformers API
+            embs = embedder.encode(
+                missing,
+                batch_size=min(BATCH, max(1, len(missing))),
+                show_progress_bar=False,
+                convert_to_numpy=True,
+                normalize_embeddings=True,
+            ).astype("float32")
         for t, e in zip(missing, embs):
             cache[t] = e
     return [cache[t] for t in texts]
