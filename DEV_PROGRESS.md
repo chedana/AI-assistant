@@ -8,7 +8,7 @@
 
 Multi-turn conversational rental search assistant. Users describe rental requirements in natural language; the system extracts constraints, retrieves listings from a vector database, applies hard filters and soft ranking, and returns grounded explanations.
 
-**Stack:** Python · FastAPI · LangGraph · vLLM (Qwen3-14B) · React + Vite + TypeScript + TailwindCSS · Qdrant · Sentence Transformers
+**Stack:** Python · FastAPI · LangGraph · OpenAI API (GPT-5 Mini) · React + Vite + TypeScript + TailwindCSS · Qdrant Cloud · Sentence Transformers
 
 ---
 
@@ -16,7 +16,8 @@ Multi-turn conversational rental search assistant. Users describe rental require
 
 | Branch | Role | Tip commit |
 |--------|------|-----------|
-| `restructure` | **Active dev (default commit target)** | `f1597ae` 2026-03-01 |
+| `openclaw` | **OpenClaw fork — local-first, OpenAI API + Qdrant Cloud** | (see Phase 18) |
+| `restructure` | Previous active dev branch | `f1597ae` 2026-03-01 |
 | `feature/rental` | Previous dev branch (behind restructure) | `b12fe96` 2026-02-25 |
 | `main` | Stable baseline | `7355f5d` 2026-02-24 |
 | `codex/initial-modular-structure` | Archived Codex bootstrap | — |
@@ -25,7 +26,7 @@ Multi-turn conversational rental search assistant. Users describe rental require
 
 ## Current State
 
-_Last updated: 2026-03-01 · Branch: `restructure` · Tip: `f1597ae`_
+_Last updated: 2026-03-07 · Branch: `openclaw` · Tip: see Phase 18_
 
 ### Architecture
 
@@ -154,6 +155,58 @@ frontend/src/
 
 ---
 
+### openclaw — OpenClaw fork setup (2026-03-07)
+
+**Branch:** `openclaw` (forked from `restructure`)
+**Python venv:** `/Users/derek/Desktop/LLM_project/openclaw-venv` (Python 3.11)
+**Run commands:**
+```bash
+# Terminal 1 — backend
+export $(grep -v '^#' .env | grep -v '^$' | xargs)
+/Users/derek/Desktop/LLM_project/openclaw-venv/bin/uvicorn backend.api_server:app --host 0.0.0.0 --port 8000
+
+# Terminal 2 — frontend
+cd frontend && npm run dev -- --host 0.0.0.0 --port 5173
+```
+
+**What was done:**
+- Created `openclaw` branch from `restructure`
+- Switched LLM from vLLM/Qwen3-14B (RunPod) → OpenAI API with GPT-5 Mini for both reasoning and routing clients
+- Fixed GPT-5 Mini temperature constraint: model only supports default temperature (1); `qwen_chat()` and `qwen_router_chat()` now skip `temperature` param when using GPT-5-class models (`_is_fixed_temp()` helper)
+- Set up Qdrant Cloud cluster "openclaw" (GCP europe-west3): `https://725a9b5a-2732-448b-b094-a06577cfe7bd.europe-west3-0.gcp.cloud.qdrant.io`
+- `skills/search/engine.py`: dual-mode Qdrant client — uses `RENT_QDRANT_URL` for cloud, falls back to local path
+- `core/settings.py`: added `QDRANT_URL` and `QDRANT_API_KEY` from env vars `RENT_QDRANT_URL` / `RENT_QDRANT_API_KEY`
+- Migrated 9,794 listings from local Qdrant → Qdrant Cloud (collection `rent_listings`); data covers 35 central London regions (Shoreditch, Mayfair, Paddington, etc.)
+- Created `crawler/sync_qdrant.py`: JSONL → Qdrant Cloud ingestion with incremental sync (`--mode full` / `--mode sync`); deterministic UUID5 point IDs from `listing_id`; builds `location_tokens`, `location_station_tokens`, `location_region_tokens`, `location_postcode_tokens`
+- Created `crawler/run_sync.sh`: one-command wrapper (crawl + sync)
+- Created `requirements-deploy.txt`: CPU-only deps for Render free tier (512MB RAM)
+- Created `frontend/vercel.json`: Vercel SPA config with catch-all rewrite
+- Created `render.yaml`: Render blueprint with build/start commands and all env var placeholders
+- Updated `backend/api_server.py`: defaults to OpenAI API, TTLCache reduced 500→50 for Render RAM
+- Updated `run.sh`: defaults to `gpt-5-mini`, added `OPENAI_API_KEY` required check, skips model availability check for `api.openai.com`
+- Removed `vllm==0.15.1` from `requirements.txt`
+- Added `.env` to `.gitignore` (contains API keys — never commit)
+- Updated `CLAUDE.md`: stack, commands (3→2 terminals), config table
+
+**Current working state:**
+- Backend starts cleanly: Qdrant Cloud connects (9,794 points), MiniLM embedding model loads, GPT-5 Mini responds
+- Chat works: "hi" → chitchat reply; "2 bed in Shoreditch under £3000" → 51 listings, 5 shown with SSE cards + quick replies
+- Frontend at `http://localhost:5173` connects to backend at `http://localhost:8000`
+- `.env` holds `OPENAI_API_KEY`, `RENT_QDRANT_URL`, `RENT_QDRANT_API_KEY` (do not commit)
+
+**Known limitations of current dataset:**
+- Only 35 central London regions scraped (Shoreditch, Mayfair, Vauxhall, Paddington, etc.)
+- Outer London (Hackney, Peckham, etc.) returns 0 results — needs crawler run to expand
+- Run `crawler/run_sync.sh` twice per week to refresh data
+
+**Next session priorities:**
+- Deploy frontend to Vercel (connect repo, set root to `frontend/`)
+- Deploy backend to Render (use `render.yaml` blueprint, set env vars in dashboard)
+- Run Rightmove crawler to expand dataset beyond central London
+- Test full Vercel → Render → Qdrant Cloud production flow
+
+---
+
 ### backend-1 — Orchestration & Search Pipeline
 
 - `6ce8ef9` fix: deposit QA returns actual deposit value (0/amount/ask-agent) for single + multi listing — removed `__ASKED__` fail path
@@ -204,6 +257,27 @@ frontend/src/
 ---
 
 ## Changelog
+
+### Phase 18 · OpenClaw fork — local OpenAI API + Qdrant Cloud deployment setup (Mar 7)
+> Branch: `openclaw` | No new commits (all changes uncommitted, working in branch)
+
+**Key deliverables this phase:**
+
+- **Branch**: `openclaw` forked from `restructure`. All OpenClaw-specific work stays here; `restructure` preserved as-is.
+
+- **LLM switch** (`core/chatbot_config.py`, `core/llm_client.py`, `backend/api_server.py`, `run.sh`): vLLM/Qwen3-14B on RunPod replaced entirely by OpenAI API. Default model for both `qwen_client` (reasoning) and `router_client` (intent classification) is now `gpt-5-mini`. `_is_fixed_temp()` helper skips the `temperature` parameter for GPT-5-class models that only support the default (temperature=1).
+
+- **Qdrant Cloud** (`core/settings.py`, `skills/search/engine.py`): `load_qdrant_client()` now reads `RENT_QDRANT_URL` — if set, connects to Qdrant Cloud; otherwise falls back to local path. Cloud cluster "openclaw" on GCP europe-west3 created and populated with 9,794 listings migrated from local storage.
+
+- **Data sync pipeline** (`crawler/sync_qdrant.py`, `crawler/run_sync.sh`): new JSONL→Qdrant ingestion script with full and incremental sync modes. Deterministic UUID5 point IDs allow safe re-runs. Builds all location token types (`location_tokens`, `location_station_tokens`, `location_region_tokens`, `location_postcode_tokens`). Designed to be run twice per week from the OpenClaw bot machine.
+
+- **Deployment configs** (`requirements-deploy.txt`, `frontend/vercel.json`, `render.yaml`): Render blueprint + Vercel SPA config ready to wire up. CPU-only PyTorch in deploy requirements to fit Render 512MB RAM free tier.
+
+- **Python 3.11 venv** at `/Users/derek/Desktop/LLM_project/openclaw-venv`: all backend deps installed and tested (codebase uses `dict | None` union syntax requiring Python 3.10+; old LLM_chatbot venv was 3.9).
+
+- **Secrets management**: `.env` added to `.gitignore`. Credentials (OpenAI key, Qdrant URL + API key) stored only in `.env`, never committed.
+
+---
 
 ### Phase 17 · Explicit button actions — bypass LLM extraction, assistant acknowledgments (Mar 1)
 > Branch: `restructure` | 1 commit
@@ -554,5 +628,6 @@ frontend/src/
 |--------|-------|
 | Total commits (all branches) | ~140 |
 | Project start | 2026-02-17 |
-| Latest commit | 2026-03-01 (`bbb22ac`) |
-| Days active | 13 |
+| Latest commit | 2026-03-01 (`f1597ae`, restructure) |
+| OpenClaw branch start | 2026-03-07 |
+| Days active | 18 |

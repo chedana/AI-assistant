@@ -1,0 +1,762 @@
+"""
+london_regions.py
+-----------------
+伦敦 mental region → postcode districts + 中心坐标 映射表
+
+用途：
+1. 爬虫：按 postcode district 搜索 Rightmove，覆盖全伦敦
+2. 标注：listing geocoding 后，根据 lat/lng 反查所属 region
+3. 搜索：用户说 "Shoreditch"，查中心坐标，Qdrant geo radius filter
+
+粗略原则：
+- postcode district 和 region 有重叠是正常的（边界本来就模糊）
+- 中心坐标取区域几何中心，不需要精确
+- 优先覆盖租房用户最关心的 Zone 1-3
+"""
+
+# ══════════════════════════════════════════════════════════════════
+# 核心数据结构
+# ══════════════════════════════════════════════════════════════════
+
+LONDON_REGIONS = {
+
+    # ── Zone 1 · Central ─────────────────────────────────────────
+
+    "City of London": {
+        "lat": 51.5155, "lng": -0.0922,
+        "postcodes": ["EC1", "EC2", "EC3", "EC4"],
+        "borough": "City of London",
+        "zone": 1,
+    },
+    "Shoreditch": {
+        "lat": 51.5247, "lng": -0.0793,
+        "postcodes": ["E1", "E2", "EC2A"],
+        "borough": "Tower Hamlets / Hackney",
+        "zone": 1,
+    },
+    "Spitalfields": {
+        "lat": 51.5194, "lng": -0.0750,
+        "postcodes": ["E1"],
+        "borough": "Tower Hamlets",
+        "zone": 1,
+    },
+    "Aldgate": {
+        "lat": 51.5143, "lng": -0.0755,
+        "postcodes": ["E1", "EC3"],
+        "borough": "Tower Hamlets",
+        "zone": 1,
+    },
+    "Clerkenwell": {
+        "lat": 51.5239, "lng": -0.1028,
+        "postcodes": ["EC1"],
+        "borough": "Islington",
+        "zone": 1,
+    },
+    "Farringdon": {
+        "lat": 51.5194, "lng": -0.1053,
+        "postcodes": ["EC1", "EC1A"],
+        "borough": "Islington / City",
+        "zone": 1,
+    },
+    "Barbican": {
+        "lat": 51.5197, "lng": -0.0940,
+        "postcodes": ["EC2Y", "EC1Y"],
+        "borough": "City of London",
+        "zone": 1,
+    },
+    "Moorgate": {
+        "lat": 51.5186, "lng": -0.0886,
+        "postcodes": ["EC2"],
+        "borough": "City of London",
+        "zone": 1,
+    },
+    "Angel": {
+        "lat": 51.5322, "lng": -0.1058,
+        "postcodes": ["N1"],
+        "borough": "Islington",
+        "zone": 1,
+    },
+    "King's Cross": {
+        "lat": 51.5308, "lng": -0.1238,
+        "postcodes": ["N1", "WC1"],
+        "borough": "Camden / Islington",
+        "zone": 1,
+    },
+    "Euston": {
+        "lat": 51.5281, "lng": -0.1337,
+        "postcodes": ["NW1"],
+        "borough": "Camden",
+        "zone": 1,
+    },
+    "Bloomsbury": {
+        "lat": 51.5218, "lng": -0.1240,
+        "postcodes": ["WC1"],
+        "borough": "Camden",
+        "zone": 1,
+    },
+    "Holborn": {
+        "lat": 51.5174, "lng": -0.1200,
+        "postcodes": ["WC1", "WC2"],
+        "borough": "Camden",
+        "zone": 1,
+    },
+    "Covent Garden": {
+        "lat": 51.5129, "lng": -0.1243,
+        "postcodes": ["WC2"],
+        "borough": "Westminster",
+        "zone": 1,
+    },
+    "Soho": {
+        "lat": 51.5137, "lng": -0.1337,
+        "postcodes": ["W1"],
+        "borough": "Westminster",
+        "zone": 1,
+    },
+    "Mayfair": {
+        "lat": 51.5118, "lng": -0.1478,
+        "postcodes": ["W1"],
+        "borough": "Westminster",
+        "zone": 1,
+    },
+    "Marylebone": {
+        "lat": 51.5194, "lng": -0.1542,
+        "postcodes": ["W1", "NW1"],
+        "borough": "Westminster",
+        "zone": 1,
+    },
+    "Fitzrovia": {
+        "lat": 51.5194, "lng": -0.1383,
+        "postcodes": ["W1", "WC1"],
+        "borough": "Westminster / Camden",
+        "zone": 1,
+    },
+    "Paddington": {
+        "lat": 51.5154, "lng": -0.1755,
+        "postcodes": ["W2", "W9"],
+        "borough": "Westminster",
+        "zone": 1,
+    },
+    "Bayswater": {
+        "lat": 51.5127, "lng": -0.1873,
+        "postcodes": ["W2"],
+        "borough": "Westminster",
+        "zone": 1,
+    },
+    "Notting Hill": {
+        "lat": 51.5091, "lng": -0.2000,
+        "postcodes": ["W11"],
+        "borough": "Kensington and Chelsea",
+        "zone": 2,
+    },
+    "Knightsbridge": {
+        "lat": 51.5014, "lng": -0.1607,
+        "postcodes": ["SW1X", "SW3"],
+        "borough": "Kensington and Chelsea",
+        "zone": 1,
+    },
+    "Chelsea": {
+        "lat": 51.4871, "lng": -0.1706,
+        "postcodes": ["SW3", "SW10"],
+        "borough": "Kensington and Chelsea",
+        "zone": 2,
+    },
+    "South Kensington": {
+        "lat": 51.4941, "lng": -0.1756,
+        "postcodes": ["SW7"],
+        "borough": "Kensington and Chelsea",
+        "zone": 1,
+    },
+    "Kensington": {
+        "lat": 51.4994, "lng": -0.1916,
+        "postcodes": ["W8", "W14"],
+        "borough": "Kensington and Chelsea",
+        "zone": 2,
+    },
+    "Belgravia": {
+        "lat": 51.4963, "lng": -0.1530,
+        "postcodes": ["SW1W", "SW1X"],
+        "borough": "Westminster",
+        "zone": 1,
+    },
+    "Pimlico": {
+        "lat": 51.4893, "lng": -0.1342,
+        "postcodes": ["SW1V"],
+        "borough": "Westminster",
+        "zone": 1,
+    },
+    "Westminster": {
+        "lat": 51.4994, "lng": -0.1273,
+        "postcodes": ["SW1", "SW1A"],
+        "borough": "Westminster",
+        "zone": 1,
+    },
+    "Victoria": {
+        "lat": 51.4965, "lng": -0.1447,
+        "postcodes": ["SW1E", "SW1V"],
+        "borough": "Westminster",
+        "zone": 1,
+    },
+    "Waterloo": {
+        "lat": 51.5036, "lng": -0.1143,
+        "postcodes": ["SE1"],
+        "borough": "Lambeth",
+        "zone": 1,
+    },
+    "South Bank": {
+        "lat": 51.5055, "lng": -0.1132,
+        "postcodes": ["SE1"],
+        "borough": "Lambeth / Southwark",
+        "zone": 1,
+    },
+    "London Bridge": {
+        "lat": 51.5055, "lng": -0.0860,
+        "postcodes": ["SE1"],
+        "borough": "Southwark",
+        "zone": 1,
+    },
+    "Borough": {
+        "lat": 51.5007, "lng": -0.0938,
+        "postcodes": ["SE1"],
+        "borough": "Southwark",
+        "zone": 1,
+    },
+    "Bermondsey": {
+        "lat": 51.4983, "lng": -0.0643,
+        "postcodes": ["SE1", "SE16"],
+        "borough": "Southwark",
+        "zone": 2,
+    },
+    "Elephant and Castle": {
+        "lat": 51.4943, "lng": -0.1002,
+        "postcodes": ["SE1", "SE17"],
+        "borough": "Southwark / Lambeth",
+        "zone": 1,
+    },
+    "Vauxhall": {
+        "lat": 51.4859, "lng": -0.1228,
+        "postcodes": ["SW8"],
+        "borough": "Lambeth",
+        "zone": 1,
+    },
+
+    # ── Zone 2 · Inner ───────────────────────────────────────────
+
+    "Old Street": {
+        "lat": 51.5263, "lng": -0.0878,
+        "postcodes": ["EC1V", "N1"],
+        "borough": "Islington / Hackney",
+        "zone": 1,
+    },
+    "Hackney Central": {
+        "lat": 51.5452, "lng": -0.0553,
+        "postcodes": ["E8"],
+        "borough": "Hackney",
+        "zone": 2,
+    },
+    "Dalston": {
+        "lat": 51.5463, "lng": -0.0750,
+        "postcodes": ["E8", "N16"],
+        "borough": "Hackney",
+        "zone": 2,
+    },
+    "Stoke Newington": {
+        "lat": 51.5635, "lng": -0.0750,
+        "postcodes": ["N16"],
+        "borough": "Hackney",
+        "zone": 2,
+    },
+    "Bethnal Green": {
+        "lat": 51.5269, "lng": -0.0545,
+        "postcodes": ["E2"],
+        "borough": "Tower Hamlets",
+        "zone": 2,
+    },
+    "Mile End": {
+        "lat": 51.5254, "lng": -0.0330,
+        "postcodes": ["E3"],
+        "borough": "Tower Hamlets",
+        "zone": 2,
+    },
+    "Bow": {
+        "lat": 51.5269, "lng": -0.0197,
+        "postcodes": ["E3"],
+        "borough": "Tower Hamlets",
+        "zone": 2,
+    },
+    "Victoria Park": {
+        "lat": 51.5361, "lng": -0.0386,
+        "postcodes": ["E3", "E9"],
+        "borough": "Tower Hamlets / Hackney",
+        "zone": 2,
+    },
+    "Homerton": {
+        "lat": 51.5492, "lng": -0.0430,
+        "postcodes": ["E9"],
+        "borough": "Hackney",
+        "zone": 2,
+    },
+    "Wapping": {
+        "lat": 51.5054, "lng": -0.0576,
+        "postcodes": ["E1W"],
+        "borough": "Tower Hamlets",
+        "zone": 2,
+    },
+    "Shadwell": {
+        "lat": 51.5101, "lng": -0.0581,
+        "postcodes": ["E1"],
+        "borough": "Tower Hamlets",
+        "zone": 1,
+    },
+    "Whitechapel": {
+        "lat": 51.5194, "lng": -0.0627,
+        "postcodes": ["E1"],
+        "borough": "Tower Hamlets",
+        "zone": 1,
+    },
+    "Canary Wharf": {
+        "lat": 51.5054, "lng": -0.0235,
+        "postcodes": ["E14"],
+        "borough": "Tower Hamlets",
+        "zone": 2,
+    },
+    "Limehouse": {
+        "lat": 51.5122, "lng": -0.0387,
+        "postcodes": ["E14"],
+        "borough": "Tower Hamlets",
+        "zone": 2,
+    },
+    "Rotherhithe": {
+        "lat": 51.4988, "lng": -0.0518,
+        "postcodes": ["SE16"],
+        "borough": "Southwark",
+        "zone": 2,
+    },
+    "Canada Water": {
+        "lat": 51.4980, "lng": -0.0497,
+        "postcodes": ["SE16"],
+        "borough": "Southwark",
+        "zone": 2,
+    },
+    "Peckham": {
+        "lat": 51.4740, "lng": -0.0694,
+        "postcodes": ["SE15"],
+        "borough": "Southwark",
+        "zone": 2,
+    },
+    "New Cross": {
+        "lat": 51.4766, "lng": -0.0395,
+        "postcodes": ["SE14"],
+        "borough": "Lewisham",
+        "zone": 2,
+    },
+    "Deptford": {
+        "lat": 51.4786, "lng": -0.0232,
+        "postcodes": ["SE8"],
+        "borough": "Lewisham",
+        "zone": 2,
+    },
+    "Greenwich": {
+        "lat": 51.4826, "lng": -0.0077,
+        "postcodes": ["SE10"],
+        "borough": "Greenwich",
+        "zone": 2,
+    },
+    "Brixton": {
+        "lat": 51.4613, "lng": -0.1156,
+        "postcodes": ["SW2", "SW9"],
+        "borough": "Lambeth",
+        "zone": 2,
+    },
+    "Stockwell": {
+        "lat": 51.4724, "lng": -0.1228,
+        "postcodes": ["SW9"],
+        "borough": "Lambeth",
+        "zone": 2,
+    },
+    "Clapham": {
+        "lat": 51.4617, "lng": -0.1380,
+        "postcodes": ["SW4", "SW11"],
+        "borough": "Lambeth / Wandsworth",
+        "zone": 2,
+    },
+    "Battersea": {
+        "lat": 51.4785, "lng": -0.1540,
+        "postcodes": ["SW8", "SW11"],
+        "borough": "Wandsworth",
+        "zone": 2,
+    },
+    "Fulham": {
+        "lat": 51.4751, "lng": -0.1958,
+        "postcodes": ["SW6"],
+        "borough": "Hammersmith and Fulham",
+        "zone": 2,
+    },
+    "Hammersmith": {
+        "lat": 51.4927, "lng": -0.2239,
+        "postcodes": ["W6"],
+        "borough": "Hammersmith and Fulham",
+        "zone": 2,
+    },
+    "Shepherd's Bush": {
+        "lat": 51.5046, "lng": -0.2186,
+        "postcodes": ["W12"],
+        "borough": "Hammersmith and Fulham",
+        "zone": 2,
+    },
+    "Ladbroke Grove": {
+        "lat": 51.5168, "lng": -0.2072,
+        "postcodes": ["W10", "W11"],
+        "borough": "Kensington and Chelsea",
+        "zone": 2,
+    },
+    "Queen's Park": {
+        "lat": 51.5341, "lng": -0.2041,
+        "postcodes": ["NW6"],
+        "borough": "Brent",
+        "zone": 2,
+    },
+    "Kilburn": {
+        "lat": 51.5479, "lng": -0.1959,
+        "postcodes": ["NW6"],
+        "borough": "Camden / Brent",
+        "zone": 2,
+    },
+    "Maida Vale": {
+        "lat": 51.5252, "lng": -0.1867,
+        "postcodes": ["W9"],
+        "borough": "Westminster",
+        "zone": 2,
+    },
+    "Swiss Cottage": {
+        "lat": 51.5435, "lng": -0.1762,
+        "postcodes": ["NW3"],
+        "borough": "Camden",
+        "zone": 2,
+    },
+    "Belsize Park": {
+        "lat": 51.5499, "lng": -0.1660,
+        "postcodes": ["NW3"],
+        "borough": "Camden",
+        "zone": 2,
+    },
+    "Highbury": {
+        "lat": 51.5530, "lng": -0.0975,
+        "postcodes": ["N5"],
+        "borough": "Islington",
+        "zone": 2,
+    },
+    "Finsbury Park": {
+        "lat": 51.5642, "lng": -0.1044,
+        "postcodes": ["N4"],
+        "borough": "Islington / Hackney",
+        "zone": 2,
+    },
+    "Canonbury": {
+        "lat": 51.5468, "lng": -0.0930,
+        "postcodes": ["N1"],
+        "borough": "Islington",
+        "zone": 2,
+    },
+
+    # ── Zone 3 ───────────────────────────────────────────────────
+
+    "Stratford": {
+        "lat": 51.5416, "lng": -0.0028,
+        "postcodes": ["E15"],
+        "borough": "Newham",
+        "zone": 3,
+    },
+    "Walthamstow": {
+        "lat": 51.5836, "lng": -0.0200,
+        "postcodes": ["E17"],
+        "borough": "Waltham Forest",
+        "zone": 3,
+    },
+    "Leyton": {
+        "lat": 51.5693, "lng": -0.0118,
+        "postcodes": ["E10"],
+        "borough": "Waltham Forest",
+        "zone": 3,
+    },
+    "Forest Gate": {
+        "lat": 51.5497, "lng": 0.0311,
+        "postcodes": ["E7"],
+        "borough": "Newham",
+        "zone": 3,
+    },
+    "Lewisham": {
+        "lat": 51.4614, "lng": -0.0118,
+        "postcodes": ["SE13"],
+        "borough": "Lewisham",
+        "zone": 3,
+    },
+    "Forest Hill": {
+        "lat": 51.4387, "lng": -0.0518,
+        "postcodes": ["SE23"],
+        "borough": "Lewisham",
+        "zone": 3,
+    },
+    "Crystal Palace": {
+        "lat": 51.4180, "lng": -0.0755,
+        "postcodes": ["SE19"],
+        "borough": "Bromley / Croydon",
+        "zone": 3,
+    },
+    "Streatham": {
+        "lat": 51.4277, "lng": -0.1220,
+        "postcodes": ["SW16"],
+        "borough": "Lambeth",
+        "zone": 3,
+    },
+    "Tooting": {
+        "lat": 51.4275, "lng": -0.1680,
+        "postcodes": ["SW17"],
+        "borough": "Wandsworth",
+        "zone": 3,
+    },
+    "Balham": {
+        "lat": 51.4431, "lng": -0.1526,
+        "postcodes": ["SW12"],
+        "borough": "Wandsworth",
+        "zone": 3,
+    },
+    "Wimbledon": {
+        "lat": 51.4214, "lng": -0.2064,
+        "postcodes": ["SW19"],
+        "borough": "Merton",
+        "zone": 3,
+    },
+    "Putney": {
+        "lat": 51.4613, "lng": -0.2160,
+        "postcodes": ["SW15"],
+        "borough": "Wandsworth",
+        "zone": 3,
+    },
+    "Richmond": {
+        "lat": 51.4613, "lng": -0.3011,
+        "postcodes": ["TW9", "TW10"],
+        "borough": "Richmond upon Thames",
+        "zone": 4,
+    },
+    "Chiswick": {
+        "lat": 51.4928, "lng": -0.2677,
+        "postcodes": ["W4"],
+        "borough": "Hounslow",
+        "zone": 3,
+    },
+    "Acton": {
+        "lat": 51.5030, "lng": -0.2677,
+        "postcodes": ["W3"],
+        "borough": "Ealing",
+        "zone": 3,
+    },
+    "Ealing": {
+        "lat": 51.5130, "lng": -0.3089,
+        "postcodes": ["W5"],
+        "borough": "Ealing",
+        "zone": 3,
+    },
+    "Muswell Hill": {
+        "lat": 51.5899, "lng": -0.1441,
+        "postcodes": ["N10"],
+        "borough": "Haringey",
+        "zone": 3,
+    },
+    "Wood Green": {
+        "lat": 51.5980, "lng": -0.1098,
+        "postcodes": ["N22"],
+        "borough": "Haringey",
+        "zone": 3,
+    },
+    "Tottenham": {
+        "lat": 51.5882, "lng": -0.0726,
+        "postcodes": ["N17"],
+        "borough": "Haringey",
+        "zone": 3,
+    },
+    "Finchley": {
+        "lat": 51.5994, "lng": -0.1866,
+        "postcodes": ["N3", "N12"],
+        "borough": "Barnet",
+        "zone": 4,
+    },
+    "Hampstead": {
+        "lat": 51.5564, "lng": -0.1780,
+        "postcodes": ["NW3"],
+        "borough": "Camden",
+        "zone": 2,
+    },
+    "Camden Town": {
+        "lat": 51.5390, "lng": -0.1426,
+        "postcodes": ["NW1"],
+        "borough": "Camden",
+        "zone": 2,
+    },
+    "Islington": {
+        "lat": 51.5362, "lng": -0.1033,
+        "postcodes": ["N1"],
+        "borough": "Islington",
+        "zone": 1,
+    },
+    "Harlesden": {
+        "lat": 51.5360, "lng": -0.2530,
+        "postcodes": ["NW10"],
+        "borough": "Brent",
+        "zone": 3,
+    },
+    "Willesden": {
+        "lat": 51.5494, "lng": -0.2295,
+        "postcodes": ["NW10"],
+        "borough": "Brent",
+        "zone": 3,
+    },
+}
+
+
+# ══════════════════════════════════════════════════════════════════
+# 全伦敦 postcode districts（爬虫分片用）
+# ══════════════════════════════════════════════════════════════════
+
+# 按热度标注是否需要细分到 sector
+# high = 可能超 1050 条，需要细分
+# low  = 直接用 district
+
+LONDON_POSTCODE_DISTRICTS = {
+    # Central / Zone 1
+    "E1":   "high",   # Whitechapel, Shoreditch, Spitalfields
+    "E2":   "high",   # Bethnal Green, Shoreditch
+    "EC1":  "high",   # Clerkenwell, Farringdon, Barbican
+    "EC2":  "low",    # City (mostly commercial)
+    "EC3":  "low",
+    "EC4":  "low",
+    "N1":   "high",   # Angel, Islington, Canonbury
+    "NW1":  "high",   # Camden, Euston, Marylebone
+    "SE1":  "high",   # South Bank, Borough, Bermondsey
+    "SW1":  "high",   # Westminster, Belgravia, Pimlico, Victoria
+    "W1":   "high",   # Soho, Mayfair, Marylebone
+    "W2":   "high",   # Paddington, Bayswater
+    "WC1":  "low",
+    "WC2":  "low",
+
+    # Zone 2 · North / East
+    "E3":   "low",    # Bow, Mile End
+    "E8":   "high",   # Dalston, Hackney
+    "E9":   "low",    # Homerton, Victoria Park
+    "E14":  "high",   # Canary Wharf, Limehouse
+    "E15":  "low",    # Stratford
+    "E1W":  "low",    # Wapping
+    "N4":   "low",    # Finsbury Park
+    "N5":   "low",    # Highbury
+    "N16":  "low",    # Stoke Newington, Dalston
+    "NW3":  "high",   # Hampstead, Belsize Park, Swiss Cottage
+    "NW6":  "low",    # Kilburn, Queen's Park
+
+    # Zone 2 · South
+    "SE8":  "low",    # Deptford
+    "SE10": "low",    # Greenwich
+    "SE14": "low",    # New Cross
+    "SE15": "low",    # Peckham
+    "SE16": "low",    # Rotherhithe, Canada Water
+    "SE17": "low",    # Elephant & Castle
+    "SW2":  "low",    # Brixton
+    "SW4":  "low",    # Clapham
+    "SW8":  "low",    # Vauxhall, Battersea
+    "SW9":  "low",    # Stockwell, Brixton
+    "SW11": "high",   # Battersea, Clapham
+
+    # Zone 2 · West
+    "SW3":  "high",   # Chelsea, Knightsbridge
+    "SW6":  "high",   # Fulham
+    "SW7":  "high",   # South Kensington
+    "SW10": "low",    # Chelsea
+    "W6":   "low",    # Hammersmith
+    "W8":   "high",   # Kensington
+    "W9":   "low",    # Maida Vale
+    "W10":  "low",    # Ladbroke Grove
+    "W11":  "high",   # Notting Hill
+    "W12":  "low",    # Shepherd's Bush
+    "W14":  "low",    # Kensington (east)
+
+    # Zone 3 · North
+    "N10":  "low",    # Muswell Hill
+    "N17":  "low",    # Tottenham
+    "N22":  "low",    # Wood Green
+    "NW2":  "low",    # Cricklewood
+    "NW10": "low",    # Harlesden, Willesden
+
+    # Zone 3 · East
+    "E7":   "low",    # Forest Gate
+    "E10":  "low",    # Leyton
+    "E17":  "low",    # Walthamstow
+
+    # Zone 3 · South
+    "SE13": "low",    # Lewisham
+    "SE19": "low",    # Crystal Palace
+    "SE23": "low",    # Forest Hill
+    "SW12": "low",    # Balham
+    "SW15": "low",    # Putney
+    "SW16": "low",    # Streatham
+    "SW17": "low",    # Tooting
+    "SW19": "low",    # Wimbledon
+
+    # Zone 3 · West
+    "W3":   "low",    # Acton
+    "W4":   "low",    # Chiswick
+    "W5":   "low",    # Ealing
+    "TW9":  "low",    # Richmond
+
+    # Zone 4+（外围，按需扩展）
+    "N3":   "low",    # Finchley
+    "N12":  "low",
+    "N13":  "low",
+    "IG1":  "low",    # Ilford
+    "RM1":  "low",    # Romford
+    "BR1":  "low",    # Bromley
+    "CR0":  "low",    # Croydon
+    "SM1":  "low",    # Sutton
+    "KT1":  "low",    # Kingston
+    "TW3":  "low",    # Hounslow
+    "HA0":  "low",    # Wembley
+    "HA1":  "low",    # Harrow
+}
+
+
+# ══════════════════════════════════════════════════════════════════
+# 工具函数
+# ══════════════════════════════════════════════════════════════════
+
+def get_region_for_postcode(postcode_district: str) -> list[str]:
+    """给定一个 postcode district，返回所有包含它的 region 名字"""
+    matches = []
+    for region, data in LONDON_REGIONS.items():
+        if postcode_district.upper() in [p.upper() for p in data["postcodes"]]:
+            matches.append(region)
+    return matches
+
+
+def get_all_postcode_districts() -> list[str]:
+    """返回所有需要爬取的 postcode district 列表"""
+    return list(LONDON_POSTCODE_DISTRICTS.keys())
+
+
+def needs_sector_split(district: str) -> bool:
+    """是否需要细分到 sector（热门区域）"""
+    return LONDON_POSTCODE_DISTRICTS.get(district.upper(), "low") == "high"
+
+
+def get_region_center(region_name: str) -> tuple[float, float] | None:
+    """返回 region 的中心坐标 (lat, lng)"""
+    r = LONDON_REGIONS.get(region_name)
+    if r:
+        return r["lat"], r["lng"]
+    return None
+
+
+if __name__ == "__main__":
+    # 快速验证
+    print(f"Total regions: {len(LONDON_REGIONS)}")
+    print(f"Total postcode districts: {len(LONDON_POSTCODE_DISTRICTS)}")
+    high = [d for d, v in LONDON_POSTCODE_DISTRICTS.items() if v == "high"]
+    print(f"Districts needing sector split: {len(high)} → {high}")
+    print(f"\nShoreditch center: {get_region_center('Shoreditch')}")
+    print(f"E8 belongs to: {get_region_for_postcode('E8')}")

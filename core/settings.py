@@ -7,6 +7,8 @@ QDRANT_LOCAL_PATH = os.environ.get(
     os.path.join(ROOT_DIR, "artifacts", "skills", "search", "data", "qdrant_local"),
 )
 QDRANT_COLLECTION = os.environ.get("RENT_QDRANT_COLLECTION", "rent_listings")
+QDRANT_URL = os.environ.get("RENT_QDRANT_URL", "")
+QDRANT_API_KEY = os.environ.get("RENT_QDRANT_API_KEY", "")
 QDRANT_ENABLE_PREFILTER = os.environ.get("RENT_QDRANT_ENABLE_PREFILTER", "1") != "0"
 
 VERBOSE_STATE_LOG = os.environ.get("RENT_VERBOSE_STATE_LOG", "0") == "1"

@@ -18,6 +18,8 @@ from core.settings import (
     QDRANT_COLLECTION,
     QDRANT_ENABLE_PREFILTER,
     QDRANT_LOCAL_PATH,
+    QDRANT_URL,
+    QDRANT_API_KEY,
     STAGEA_TRACE,
 )
 
@@ -25,10 +27,17 @@ from core.settings import (
 def load_qdrant_client() -> QdrantClient:
     if QdrantClient is None or models is None:
         raise ImportError("qdrant-client is not installed. Please run: pip install qdrant-client")
-    client = QdrantClient(path=QDRANT_LOCAL_PATH)
+
+    if QDRANT_URL:
+        client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY or None)
+        log_message("INFO", f"boot qdrant mode=cloud url={QDRANT_URL}")
+    else:
+        client = QdrantClient(path=QDRANT_LOCAL_PATH)
+        log_message("INFO", f"boot qdrant mode=local path={QDRANT_LOCAL_PATH}")
+
     if not client.collection_exists(QDRANT_COLLECTION):
         raise FileNotFoundError(
-            f"Missing Qdrant collection: {QDRANT_COLLECTION} (path={QDRANT_LOCAL_PATH})"
+            f"Missing Qdrant collection: {QDRANT_COLLECTION}"
         )
     info = client.get_collection(QDRANT_COLLECTION)
     log_message("INFO", f"boot qdrant collection={QDRANT_COLLECTION}, points={info.points_count}")

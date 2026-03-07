@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: openclaw-backend
+    runtime: python
+    buildCommand: "pip install torch --index-url https://download.pytorch.org/whl/cpu && pip install -r requirements-deploy.txt"
+    startCommand: "uvicorn backend.api_server:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: PYTHONPATH
+        value: .
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: RENT_QDRANT_URL
+        sync: false
+      - key: RENT_QDRANT_API_KEY
+        sync: false
+      - key: RENT_RECALL
+        value: "500"
+      - key: RENT_PREF_VECTOR_ENABLED
+        value: "0"
+      - key: RENT_STRUCTURED_CONFLICT_LOG
+        value: "0"
+      - key: ROUTER_DEBUG
+        value: "0"
+    plan: free

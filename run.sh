@@ -29,13 +29,16 @@ export ROUTER_DEBUG="${ROUTER_DEBUG:-1}"
 
 # LLM endpoints/models
 # Reasoning model (search extraction / QA / explanation)
-export QWEN_BASE_URL="${QWEN_BASE_URL:-http://127.0.0.1:8002/v1}"
-export QWEN_MODEL="${QWEN_MODEL:-./Qwen3-14B}"
-# Router model (intent classification) defaults to 14B.
+export QWEN_BASE_URL="${QWEN_BASE_URL:-https://api.openai.com/v1}"
+export QWEN_MODEL="${QWEN_MODEL:-gpt-5-mini}"
+# Router model (intent classification) defaults to same model.
 export ROUTER_BASE_URL="${ROUTER_BASE_URL:-${QWEN_BASE_URL}}"
-export ROUTER_MODEL="${ROUTER_MODEL:-./Qwen3-14B}"
+export ROUTER_MODEL="${ROUTER_MODEL:-gpt-5-mini}"
 # API keys (Router falls back to OPENAI_API_KEY if ROUTER_API_KEY is unset)
-export OPENAI_API_KEY="${OPENAI_API_KEY:-dummy}"
+if [[ -z "${OPENAI_API_KEY:-}" ]]; then
+  echo "[run][error] OPENAI_API_KEY is not set. Export it before running."
+  exit 1
+fi
 export ROUTER_API_KEY="${ROUTER_API_KEY:-${OPENAI_API_KEY}}"
 
 mkdir -p "/workspace/AI-assistant/artifacts/skills/search/logs" || true
@@ -81,7 +84,10 @@ echo "[run] QWEN_MODEL=${QWEN_MODEL}"
 echo "[run] ROUTER_BASE_URL=${ROUTER_BASE_URL}"
 echo "[run] ROUTER_MODEL=${ROUTER_MODEL}"
 
-check_model_exists "${QWEN_BASE_URL}" "${QWEN_MODEL}" "reasoning"
-check_model_exists "${ROUTER_BASE_URL}" "${ROUTER_MODEL}" "router"
+# Model availability check (skip for hosted APIs like OpenAI)
+if [[ "${QWEN_BASE_URL}" != *"api.openai.com"* ]]; then
+  check_model_exists "${QWEN_BASE_URL}" "${QWEN_MODEL}" "reasoning"
+  check_model_exists "${ROUTER_BASE_URL}" "${ROUTER_MODEL}" "router"
+fi
 
 exec python3 main.py

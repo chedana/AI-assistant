@@ -29,21 +29,25 @@ qwen_client = OpenAI(base_url=QWEN_BASE_URL, api_key=QWEN_API_KEY, timeout=90.0)
 router_client = OpenAI(base_url=ROUTER_BASE_URL, api_key=ROUTER_API_KEY, timeout=30.0)
 
 
+_GPT5_MODELS = {"gpt-5-mini", "gpt-5", "o3", "o3-mini", "o4-mini"}
+
+def _is_fixed_temp(model: str) -> bool:
+    return any(model.startswith(p) for p in _GPT5_MODELS)
+
+
 def qwen_chat(messages, temperature=0.0) -> str:
-    r = qwen_client.chat.completions.create(
-        model=QWEN_MODEL,
-        messages=messages,
-        temperature=temperature,
-    )
+    kwargs: dict = dict(model=QWEN_MODEL, messages=messages)
+    if not _is_fixed_temp(QWEN_MODEL):
+        kwargs["temperature"] = temperature
+    r = qwen_client.chat.completions.create(**kwargs)
     return r.choices[0].message.content.strip()
 
 
 def qwen_router_chat(messages, temperature=0.0) -> str:
-    r = router_client.chat.completions.create(
-        model=ROUTER_MODEL,
-        messages=messages,
-        temperature=temperature,
-    )
+    kwargs: dict = dict(model=ROUTER_MODEL, messages=messages)
+    if not _is_fixed_temp(ROUTER_MODEL):
+        kwargs["temperature"] = temperature
+    r = router_client.chat.completions.create(**kwargs)
     return r.choices[0].message.content.strip()
 
 
