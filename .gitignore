@@ -1,4 +1,7 @@
 
+# secrets
+.env
+
 # skill artifacts (local only)
 artifacts/skills/search/data/
 artifacts/skills/search/logs/

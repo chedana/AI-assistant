@@ -6,21 +6,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Multi-turn conversational rental search assistant. Users describe rental requirements in natural language; the system extracts constraints, retrieves listings from a vector database, applies hard filters and soft ranking, and returns grounded explanations with structured UI cards.
 
-**Key technologies:** Python (FastAPI, LangGraph, vLLM), React + Vite + TypeScript + TailwindCSS, Qdrant, Sentence Transformers.
+**Key technologies:** Python (FastAPI, LangGraph, OpenAI API), React + Vite + TypeScript + TailwindCSS, Qdrant, Sentence Transformers.
 
 ---
 
 ## Commands
 
-### Backend (3 terminals)
+### Backend (2 terminals)
 ```bash
-# Terminal 1: vLLM inference server (must be running first)
-vllm serve ./Qwen3-14B --port 8002
-
-# Terminal 2: FastAPI backend
+# Terminal 1: FastAPI backend (set OPENAI_API_KEY first)
+export OPENAI_API_KEY="sk-..."
 cd backend && uvicorn api_server:app --host 0.0.0.0 --port 8000
 
-# Terminal 3: Frontend dev server
+# Terminal 2: Frontend dev server
 cd frontend && npm install && npm run dev -- --host 0.0.0.0 --port 5173
 ```
 
@@ -113,7 +111,7 @@ Key components:
 
 ### Dual LLM Clients
 
-`core/llm_client.py` exposes two OpenAI-compatible clients against vLLM:
+`core/llm_client.py` exposes two OpenAI SDK clients (default: OpenAI API):
 - **`qwen_client`** — reasoning (extraction, QA, explanation)
 - **`router_client`** — intent routing (may point to same or lighter model)
 
@@ -125,8 +123,9 @@ All tunable parameters are env vars (see `run.sh` for defaults, `core/settings.p
 
 | Var | Default | Purpose |
 |-----|---------|---------|
-| `QWEN_BASE_URL` | `http://127.0.0.1:8002/v1` | Reasoning LLM endpoint |
-| `QWEN_MODEL` | `./Qwen3-14B` | Model name |
+| `OPENAI_API_KEY` | — (required) | OpenAI API key |
+| `QWEN_BASE_URL` | `https://api.openai.com/v1` | Reasoning LLM endpoint |
+| `QWEN_MODEL` | `gpt-5-mini` | Model name |
 | `ROUTER_BASE_URL` | same as QWEN | Routing LLM endpoint |
 | `RENT_QDRANT_PATH` | — | Qdrant DB directory |
 | `RENT_QDRANT_COLLECTION` | `rent_listings` | Collection name |

@@ -12,11 +12,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-# Ensure assistant workflow points to local vLLM when backend is started standalone.
-os.environ.setdefault("QWEN_BASE_URL", "http://127.0.0.1:8002/v1")
+# Ensure assistant workflow points to OpenAI API when backend is started standalone.
+os.environ.setdefault("QWEN_BASE_URL", "https://api.openai.com/v1")
 os.environ.setdefault("ROUTER_BASE_URL", os.environ["QWEN_BASE_URL"])
-os.environ.setdefault("OPENAI_API_KEY", "dummy")
-os.environ.setdefault("ROUTER_API_KEY", os.environ["OPENAI_API_KEY"])
+os.environ.setdefault("ROUTER_API_KEY", os.environ.get("OPENAI_API_KEY", ""))
 
 from orchestration.state import AgentState
 from orchestration.workflow import process_turn
@@ -47,7 +46,7 @@ app.add_middleware(
 
 RUNTIME = build_search_runtime()
 ROUTER_DEBUG = str(os.environ.get("ROUTER_DEBUG", "1")).strip().lower() in {"1", "true", "yes", "on"}
-SESSIONS: TTLCache = TTLCache(maxsize=500, ttl=3600)  # max 500 sessions, 1-hour TTL
+SESSIONS: TTLCache = TTLCache(maxsize=50, ttl=3600)  # max 50 sessions, 1-hour TTL
 SESSIONS_LOCK = Lock()
 
 SESSION_LOCKS: dict[str, Lock] = {}
