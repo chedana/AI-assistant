@@ -258,6 +258,32 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5173
 
 ## Changelog
 
+### Phase 19 · OpenClaw — cloud deployment fixes + lat/lon extraction (Mar 7)
+> Branch: `openclaw` | Commits: `635deeb` → `7ff1fa0`
+
+| Hash | Date | Type | Description |
+|------|------|------|-------------|
+| `635deeb` | 2026-03-07 | fix | Downgrade react-leaflet v5→v4 (React 18 compat); exclude duplicate `* 2.*` files from tsconfig |
+| `002fae0` | 2026-03-07 | fix | run_sync.sh uses venv python; add QWEN_MODEL/ROUTER_MODEL to render.yaml |
+| `78d1c5b` | 2026-03-07 | fix | Lazy-load search runtime to avoid OOM on Render 512MB free tier |
+| `9399ca1` | 2026-03-07 | fix | Replace PyTorch/sentence-transformers with fastembed (ONNX) — eliminates ~200MB from Render deploy |
+| `3260634` | 2026-03-07 | fix | Build location vocab from Qdrant Cloud (scroll) when `RENT_QDRANT_URL` is set |
+| `7ff1fa0` | 2026-03-07 | feat | Extract latitude/longitude from Rightmove page JSON; include in JSONL + Qdrant payload |
+
+**Key deliverables this phase:**
+
+- **Frontend on Vercel**: deployed to `https://frontend-delta-red-23.vercel.app`. `VITE_API_BASE=https://openclaw-backend.onrender.com` set on Vercel. `vercel.json` SPA catch-all rewrite. Required: fix react-leaflet v5→v4 (React 18 compat) and tsconfig exclude for stale `* 2.*` duplicate files.
+
+- **Backend on Render** (`render.yaml`, `requirements-deploy.txt`): Replaced CPU PyTorch + sentence-transformers with **fastembed** (ONNX runtime, no PyTorch). Peak RAM drops ~200MB. Added lazy singleton `get_runtime()` so Render can bind port before model loads. Both fixes needed to stay within Render free tier 512MB limit. Note: Render service currently **suspended** — needs manual resume from dashboard.
+
+- **Location vocab on Qdrant Cloud** (`skills/search/location_match.py`): `_build_location_match_index()` now scrolls Qdrant Cloud (when `RENT_QDRANT_URL` is set) to populate station/region vocab instead of reading local SQLite. Fixes region/station name matching for cloud deployments.
+
+- **Lat/lon extraction** (`crawler/extract_one_page.py`, `crawler/sync_qdrant.py`): `extract_lat_lon()` reads latitude/longitude from Rightmove's embedded JSON. Added `latitude`/`longitude` fields to `ListingRecord` dataclass and `PAYLOAD_FIELDS` in sync_qdrant. Tested on single listing — confirmed correct values extracted (e.g. 53.41, -2.21). Future use: geo-radius search when `prefilter_count == 0` (see deferred task in TODO.md).
+
+- **Crawler running**: background crawler (PID 86871) scraping 15 core London districts (E8, E9, N1, N16, SE1, SE5, SE15, SW2, SW4, SW9, W1, W2, NW1, NW3, NW6) — in progress at time of writing. After it finishes, run `bash crawler/run_sync.sh sync` to push new listings to Qdrant Cloud.
+
+---
+
 ### Phase 18 · OpenClaw fork — local OpenAI API + Qdrant Cloud deployment setup (Mar 7)
 > Branch: `openclaw` | No new commits (all changes uncommitted, working in branch)
 

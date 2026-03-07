@@ -45,4 +45,4 @@ _No tasks assigned yet._
 
 | Task | Session | Reason |
 |------|---------|--------|
-| P2-B: location expansion when `prefilter_count == 0` | data | Requires lat/lon data not yet available |
+| P2-B: location expansion when `prefilter_count == 0` | backend-1 | lat/lon now scraped — needs radius search logic in engine.py + Qdrant geo payload index |
