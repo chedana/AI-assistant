@@ -6,9 +6,105 @@
 
 ## Project Overview
 
-Multi-turn conversational rental search assistant. Users describe rental requirements in natural language; the system extracts constraints, retrieves listings from a vector database, applies hard filters and soft ranking, and returns grounded explanations.
+A **renter-advocate platform** — the whole property market is structured to favour agents and landlords (portals are funded by them, UX nudges users to sign up for things they don't need). This product is explicitly on the renter's side, guiding them through the entire rental journey end-to-end.
 
-**Stack:** Python · FastAPI · LangGraph · OpenAI API (GPT-5 Mini) · React + Vite + TypeScript + TailwindCSS · Qdrant Cloud · Sentence Transformers
+**Stack:** Python · FastAPI · LangGraph · OpenAI API (GPT-5 Mini) · React + Vite + TypeScript + TailwindCSS · Qdrant Cloud · fastembed (ONNX)
+
+---
+
+## Product Vision — The Full Renter Journey
+
+```
+[FIND] → [RESEARCH] → [CONTACT] → [VIEW] → [SIGN] → [RIGHTS]
+   1          2            3          4        5          6
+```
+
+### Section 1 · FIND _(in progress)_
+Surface the right listings before the user knows exactly what they want. Conversational search across multiple portals.
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Rightmove scraper | ✅ done | Bug: postcode typeahead resolves wrong — must use area names |
+| Qdrant Cloud vector search | ✅ done | 9,794 listings (initial); needs refresh with area-name crawl |
+| Conversational search + constraints | ✅ done | GPT-5 Mini, LangGraph orchestration |
+| OpenRent scraper | ❌ next | Private landlords, no agent fees — key differentiator |
+| Zoopla integration | ❌ future | Broader coverage |
+| SpareRoom integration | ❌ future | Rooms / HMO market |
+| Geo-radius fallback | ❌ deferred | When location miss → lat/lon radius in Qdrant |
+| Multi-source dedup | ❌ future | Same property on 2+ portals → merge |
+
+### Section 2 · RESEARCH _(planned)_
+"Is this area right for me?" — neighbourhood intelligence from public APIs.
+
+| Feature | Data source |
+|---------|-------------|
+| Commute time | TfL Unified API (free, no key) |
+| Crime index | data.police.uk API (free) |
+| Average rent for area | Our own Qdrant aggregates |
+| Schools nearby | Ofsted API |
+| Broadband speed | Ofcom postcode checker |
+| Flood risk | Environment Agency API |
+| Council tax band | Local council open data |
+| EPC rating | gov.uk EPC register |
+
+### Section 3 · CONTACT _(planned)_
+Help the user send a good first message and not get scammed.
+
+| Feature | Approach |
+|---------|----------|
+| Draft viewing request email | LLM with listing context |
+| Red flag detection | Rule engine on listing text: no DSS, "admin fees", holding deposit required upfront |
+| Agent response analyser | Paste reply → flag evasive answers, pressure tactics |
+| Holding deposit warnings | Max 1 week rent, refundable if landlord withdraws |
+
+### Section 4 · VIEW _(planned)_
+User walks in knowing exactly what to check and ask.
+
+| Feature | Approach |
+|---------|----------|
+| Legal requirements checklist | Gas cert, EPC, electrical safety, smoke/CO detectors, deposit protection |
+| Physical inspection checklist | Damp, boiler age, water pressure, broadband, natural light, storage |
+| Questions to ask agent | Generated from listing data gaps |
+| In-app notes + photo tags | Per-viewing, linked to listing |
+| Post-viewing comparison | Side-by-side across your viewing notes |
+
+### Section 5 · SIGN _(planned — biggest differentiator)_
+Renter understands every clause before signing.
+
+| Feature | Approach |
+|---------|----------|
+| Plain-English summary | LLM reads uploaded tenancy agreement |
+| Clause flagging | Non-standard break clauses, excessive landlord access rights, unusual cleaning obligations |
+| Legal compliance check | Deposit ≤ 5 weeks? No prohibited fees (Tenant Fees Act 2019)? |
+| Deposit protection explainer | Which scheme, how to reclaim |
+| Inventory importance | Explain what to check and why it matters |
+
+### Section 6 · RIGHTS _(planned)_
+Ongoing tenancy — user knows what they're entitled to.
+
+| Topic | Coverage |
+|-------|---------|
+| Repairs | Section 11 obligations, 24hr emergency vs reasonable timeframe |
+| Deposit disputes | TDS / MyDeposits / DPS adjudication, how to evidence |
+| Rent increases | Section 13 procedure, how to challenge at tribunal |
+| Eviction | Section 21 abolition (Renters Reform Act 2025), Section 8 grounds |
+| Harassment | What counts, how to report |
+
+Implementation: RAG skill over indexed UK tenant law docs (GOV.UK, Shelter guides, Renters Reform Act text).
+
+---
+
+### Build Priority Order
+
+```
+1. Fix crawler (area names not postcodes) — unblocks real data
+2. OpenRent scraper              — private landlords, major differentiator
+3. Red flag detection (Sec 3)   — quick win, reuses existing LLM + listing data
+4. Viewing checklist (Sec 4)    — high user value, no new data needed
+5. Contract analysis (Sec 5)    — biggest differentiator, LLM-heavy
+6. Area research (Sec 2)        — external API integrations
+7. Tenant rights RAG (Sec 6)    — legal corpus indexing
+```
 
 ---
 
