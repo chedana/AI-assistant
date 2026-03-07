@@ -84,10 +84,11 @@ export default function ChatArea({
                           ))}
                           {metadata!.search_results!.has_more && (
                             <button
+                              disabled={isGenerating}
                               onClick={() => onQuickReply("show me more", { intent: "Page_Nav", page_action: "next" })}
-                              className="w-full rounded-lg border border-border py-2 text-xs text-muted hover:bg-neutral-800 hover:text-text"
+                              className="w-full rounded-lg border border-border py-2 text-xs text-muted hover:bg-neutral-800 hover:text-text disabled:cursor-not-allowed disabled:opacity-40"
                             >
-                              Show more results ({metadata!.search_results!.total - metadata!.search_results!.listings.length * (metadata!.search_results!.page_index + 1)} remaining)
+                              Show more results ({metadata!.search_results!.remaining} remaining)
                             </button>
                           )}
                         </div>

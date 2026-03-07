@@ -129,11 +129,15 @@ def build_metadata(state: AgentState) -> dict | None:
                 "penalty_reasons": [p for p in _to_list(r.get("penalty_reasons")) if not p.startswith("unknown_hard(")],
                 "preference_hits": _to_list(r.get("preference_hits")),
             })
+        total = len(state.search_full_results)
+        k = int((state.constraints or {}).get("k") or 5)
+        shown_so_far = (state.page_index + 1) * k
         meta["search_results"] = {
             "listings": listings,
             "page_index": state.page_index,
             "has_more": state.has_more,
-            "total": len(state.search_full_results),
+            "total": total,
+            "remaining": max(0, total - shown_so_far),
         }
 
     # Constraints

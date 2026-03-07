@@ -35,6 +35,7 @@ export type SearchResultsMeta = {
   page_index: number;
   has_more: boolean;
   total: number;
+  remaining: number;
 };
 
 export type ConstraintsMeta = Record<string, unknown>;

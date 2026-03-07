@@ -24,6 +24,7 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
   const [suppressedIds, setSuppressedIds] = useState<Set<string>>(new Set());
   const abortRef = useRef<AbortController | null>(null);
   const lastSearchSigRef = useRef<string>("");
+  const isGeneratingRef = useRef(false);
 
   useEffect(() => {
     setMetadata(null);
@@ -34,7 +35,7 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
   }, [activeSession?.id]);
 
   async function sendMessage(input: string, routeHint?: Record<string, unknown>) {
-    if (!activeSession || isGenerating) return;
+    if (!activeSession || isGeneratingRef.current) return;
     const prompt = input.trim();
     if (!prompt) return;
 
@@ -52,6 +53,7 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
       createdAt: now + 1,
     };
 
+    isGeneratingRef.current = true;
     setIsGenerating(true);
     setActiveAssistantId(assistantMessage.id);
     const controller = new AbortController();
@@ -104,6 +106,7 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
         });
       }
     } finally {
+      isGeneratingRef.current = false;
       setIsGenerating(false);
       setActiveAssistantId(null);
       abortRef.current = null;
@@ -114,7 +117,7 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
   // message. An optional actionLabel adds a brief assistant acknowledgment so
   // the user knows what is happening (e.g. "Lowering budget to £1,280/month…").
   async function sendSilentAction(input: string, routeHint?: Record<string, unknown>, actionLabel?: string) {
-    if (!activeSession || isGenerating) return;
+    if (!activeSession || isGeneratingRef.current) return;
     const prompt = input.trim();
     if (!prompt) return;
 
@@ -133,6 +136,7 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
       }));
     }
 
+    isGeneratingRef.current = true;
     setIsGenerating(true);
     const controller = new AbortController();
     abortRef.current = controller;
@@ -154,6 +158,7 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
         console.error("[silent action failed]", error);
       }
     } finally {
+      isGeneratingRef.current = false;
       setIsGenerating(false);
       abortRef.current = null;
     }
