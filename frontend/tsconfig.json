@@ -14,5 +14,6 @@
     "strict": true
   },
   "include": ["src"],
+  "exclude": ["src/**/* 2.*", "src/**/* 2/**"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
