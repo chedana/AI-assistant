@@ -241,6 +241,35 @@ def _build_location_match_index() -> Dict[str, Any]:
                 if name:
                     _add_phrase(name, name)
 
+    # ── Qdrant Cloud path (when RENT_QDRANT_URL is set) ──────────────
+    from core.settings import QDRANT_URL, QDRANT_API_KEY, QDRANT_COLLECTION
+    if QDRANT_URL:
+        try:
+            from qdrant_client import QdrantClient as _QC
+            _client = _QC(url=QDRANT_URL, api_key=QDRANT_API_KEY or None)
+            _offset = None
+            while True:
+                _points, _offset = _client.scroll(
+                    QDRANT_COLLECTION,
+                    limit=500,
+                    offset=_offset,
+                    with_payload=[
+                        "location_region_tokens", "location_region_slugs",
+                        "location_station_tokens", "location_station_slugs",
+                        "station_names_norm", "stations",
+                        "discovery_queries_by_method",
+                    ],
+                    with_vectors=False,
+                )
+                for _pt in _points:
+                    if _pt.payload:
+                        _add_from_payload(_pt.payload)
+                if _offset is None:
+                    break
+        except Exception:
+            pass
+
+    # ── Local SQLite path (when running with local Qdrant) ───────────
     for path in _iter_location_vocab_sources():
         if not os.path.exists(path):
             continue
