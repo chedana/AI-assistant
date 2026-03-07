@@ -1,5 +1,5 @@
-# CPU-only deployment requirements (Render free tier)
-# Install torch separately: pip install torch --index-url https://download.pytorch.org/whl/cpu
+# Deployment requirements (Render free tier, no PyTorch)
+# Uses fastembed (ONNX runtime) instead of sentence-transformers + PyTorch
 
 # Web framework
 fastapi
@@ -17,10 +17,8 @@ openai
 # Vector DB
 qdrant-client
 
-# Embedding model (CPU)
-sentence-transformers
-transformers
-tokenizers
+# Embedding model (ONNX — no PyTorch needed)
+fastembed
 
 # Graph orchestration
 langgraph
