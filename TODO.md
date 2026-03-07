@@ -3,6 +3,7 @@
 > Tasks assigned by the lead session. Each session works through their section top-to-bottom.
 > **When a task is done:** remove it from here and add a line to your session's Done section in `DEV_PROGRESS.md`.
 > **When a task is deferred:** move it to the Deferred section below with a one-phrase reason.
+> **Product vision:** see `DEV_PROGRESS.md` → "Product Vision — The Full Renter Journey" for the full roadmap.
 
 ---
 
@@ -23,7 +24,7 @@ _No tasks assigned yet._
 ## frontend — UI
 _Covers: `frontend/src/` — components, hooks, types, lib_
 
-- [ ] UI Phase 2: map view
+- [ ] UI Phase 2: map view (listing pins; lat/lon now available from scraper)
 
 ---
 
@@ -37,7 +38,19 @@ _No tasks assigned yet._
 ## data — Data & Embeddings
 _Covers: `crawler/`, `artifacts/`, Qdrant collection, embedding scripts_
 
-_No tasks assigned yet._
+- [ ] **Fix crawler location resolver** — postcode codes (E8, N1) fail in Rightmove typeahead; add `DISTRICT_TO_SEARCH_NAME` map in `london_postcodes.py` (e.g. E8→"Hackney", N1→"Islington"). Clear `artifacts/postcode_location_cache.json` and re-crawl.
+- [ ] **Add OpenRent scraper** — private landlords, no agent fees. New `crawler/openrent.py`. Priority: Section 1 of product roadmap.
+
+---
+
+## Product Roadmap — Next Sections
+_See full details in `DEV_PROGRESS.md` → Product Vision_
+
+- [ ] **Section 3: Red flag detection** — rule engine on listing text (no DSS, upfront fees, no deposit protection). Quick win using existing LLM + listing data.
+- [ ] **Section 4: Viewing checklist** — pre-viewing checklist (legal requirements + physical inspection + questions to ask). No new data needed.
+- [ ] **Section 5: Contract analysis** — upload tenancy agreement → plain-English summary + clause flagging. Biggest differentiator.
+- [ ] **Section 2: Area research** — commute (TfL API), crime (police API), average rents. Requires external API integrations.
+- [ ] **Section 6: Tenant rights RAG** — index GOV.UK + Shelter guides + Renters Reform Act. Requires legal corpus pipeline.
 
 ---
 
