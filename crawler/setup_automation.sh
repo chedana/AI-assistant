@@ -2,8 +2,9 @@
 # ══════════════════════════════════════════════════════════════════
 #  setup_automation.sh — Install/uninstall launchd schedule
 #
-#  Creates a macOS LaunchAgent that runs auto_crawl.sh on
-#  Monday + Thursday at 3:00 AM.
+#  Creates a macOS LaunchAgent that runs auto_crawl.sh:
+#    - On schedule: Monday + Thursday at 3:00 AM
+#    - On demand: when the trigger file is created (OpenClaw Discord)
 #
 #  Usage:
 #    bash crawler/setup_automation.sh install    # create + load plist
@@ -20,6 +21,11 @@ PROJECT_ROOT="$(dirname "${SCRIPT_DIR}")"
 AUTO_CRAWL="${SCRIPT_DIR}/auto_crawl.sh"
 LOG_FILE="${SCRIPT_DIR}/artifacts/crawl_automation.log"
 VENV_PYTHON="${PROJECT_ROOT}/../openclaw-venv/bin/python3"
+
+# OpenClaw config dir (bind-mounted into Docker container)
+OPENCLAW_CONFIG="${HOME}/openclaw-secure/config"
+TRIGGER_FILE="${OPENCLAW_CONFIG}/crawl-trigger"
+STATUS_FILE="${OPENCLAW_CONFIG}/crawl-status.json"
 
 # Detect Playwright browser path
 if [[ -d "${HOME}/Library/Caches/ms-playwright" ]]; then
@@ -74,6 +80,10 @@ cmd_install() {
         <string>${PW_BROWSERS}</string>
         <key>HOME</key>
         <string>${HOME}</string>
+        <key>TRIGGER_FILE</key>
+        <string>${TRIGGER_FILE}</string>
+        <key>STATUS_FILE</key>
+        <string>${STATUS_FILE}</string>
     </dict>
 
     <key>StartCalendarInterval</key>
@@ -98,6 +108,12 @@ cmd_install() {
         </dict>
     </array>
 
+    <!-- Also trigger when OpenClaw agent creates the trigger file -->
+    <key>WatchPaths</key>
+    <array>
+        <string>${TRIGGER_FILE}</string>
+    </array>
+
     <key>StandardOutPath</key>
     <string>${LOG_FILE}</string>
     <key>StandardErrorPath</key>
@@ -119,7 +135,9 @@ PLIST
     echo "  Agent loaded."
     echo ""
     echo "Schedule: Monday + Thursday at 3:00 AM"
-    echo "Log:      ${LOG_FILE}"
+    echo "On-demand trigger: touch ${TRIGGER_FILE}"
+    echo "Status file: ${STATUS_FILE}"
+    echo "Log: ${LOG_FILE}"
     echo ""
     echo "To run immediately:"
     echo "  launchctl kickstart gui/$(id -u)/${LABEL}"
@@ -163,6 +181,13 @@ cmd_status() {
         :
     else
         echo "  (not loaded)"
+    fi
+
+    echo ""
+    if [[ -f "${STATUS_FILE}" ]]; then
+        echo "  Last crawl status:"
+        cat "${STATUS_FILE}"
+        echo ""
     fi
 
     echo ""
