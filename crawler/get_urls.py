@@ -381,6 +381,7 @@ def collect_page_range(
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
 
+        consecutive_empty = 0
         for page_no in range(start_page, end_page):
             idx = page_no * per_page
             page_url = set_index_param(search_url, idx)
@@ -410,6 +411,14 @@ def collect_page_range(
                     print(f"[{worker_name}] No urls found on page={page_no}. url={page.url} title={title}")
             print(f"[{worker_name}] Collected {len(urls)} urls on page={page_no}")
             all_urls.extend(urls)
+
+            if not urls:
+                consecutive_empty += 1
+                if consecutive_empty >= 2:
+                    print(f"[{worker_name}] 2 consecutive empty pages — stopping early at page={page_no}")
+                    break
+            else:
+                consecutive_empty = 0
 
         browser.close()
 

@@ -66,6 +66,7 @@ PER_PAGE      = 25
 CHUNK_SIZE    = 200
 SLEEP_SEC     = 0.5
 CRAWL_WORKERS = 8
+URL_WORKERS   = 4  # parallel Playwright browsers per query for URL collection
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -98,6 +99,7 @@ def collect_urls_for_query(
     max_pages: int,
     location_cache: dict,
     cache_path: Path,
+    url_workers: int = URL_WORKERS,
 ) -> list[str]:
     from get_urls import resolve_with_typeahead, collect_pages_parallel, build_rightmove_search_url
 
@@ -140,7 +142,7 @@ def collect_urls_for_query(
         start_page=0,
         end_page=max_pages,
         per_page=PER_PAGE,
-        workers=1,
+        workers=url_workers,
     )
 
     clean_urls = [normalize_url(u) for u in urls if normalize_url(u)]
@@ -155,6 +157,7 @@ def step1_collect_all_urls(
     run_dir: Path,
     max_pages: int,
     resume: bool,
+    url_workers: int = URL_WORKERS,
 ) -> tuple[dict, dict]:
     query_urls_dir = run_dir / "query_urls"
     query_urls_dir.mkdir(exist_ok=True)
@@ -182,7 +185,7 @@ def step1_collect_all_urls(
             print(f"[{i:03d}/{total}] SKIP {query} ({len(urls)} cached)")
         else:
             print(f"[{i:03d}/{total}] {query} ...", end=" ", flush=True)
-            urls = collect_urls_for_query(query, out_file, max_pages, location_cache, cache_path)
+            urls = collect_urls_for_query(query, out_file, max_pages, location_cache, cache_path, url_workers=url_workers)
             print(f"{len(urls)} URLs")
             if not urls:
                 failed_queries.append(query)
@@ -383,9 +386,10 @@ def parse_args():
     p.add_argument("--resume",     action="store_true")
     p.add_argument("--districts",  default=None, help="e.g. E1,E2,SW1V")
     p.add_argument("--dry-run",    action="store_true")
-    p.add_argument("--max-pages",  type=int,   default=MAX_PAGES)
-    p.add_argument("--workers",    type=int,   default=CRAWL_WORKERS)
-    p.add_argument("--chunk-size", type=int,   default=CHUNK_SIZE)
+    p.add_argument("--max-pages",    type=int,   default=MAX_PAGES)
+    p.add_argument("--workers",      type=int,   default=CRAWL_WORKERS)
+    p.add_argument("--url-workers",  type=int,   default=URL_WORKERS, help="Parallel Playwright browsers per query for URL collection")
+    p.add_argument("--chunk-size",   type=int,   default=CHUNK_SIZE)
     p.add_argument("--sleep-sec",  type=float, default=SLEEP_SEC)
     return p.parse_args()
 
@@ -432,6 +436,7 @@ def main():
             run_dir=run_dir,
             max_pages=args.max_pages,
             resume=args.resume,
+            url_workers=args.url_workers,
         )
 
         if args.dry_run:
