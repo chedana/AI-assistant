@@ -23,7 +23,7 @@ LOG_FILE="${SCRIPT_DIR}/artifacts/crawl_automation.log"
 VENV_PYTHON="${PROJECT_ROOT}/../openclaw-venv/bin/python3"
 
 # OpenClaw config dir (bind-mounted into Docker container)
-OPENCLAW_CONFIG="${HOME}/openclaw-secure/config"
+OPENCLAW_CONFIG="${HOME}/openclaw-dog/config"
 TRIGGER_FILE="${OPENCLAW_CONFIG}/crawl-trigger"
 STATUS_FILE="${OPENCLAW_CONFIG}/crawl-status.json"
 
