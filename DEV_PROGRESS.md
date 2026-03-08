@@ -348,7 +348,7 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5173
 
 ### data — Data & Embeddings
 
-- _(no commits recorded yet)_
+- `257a45e` feat: automated crawl pipeline — purge-days, auto_crawl.sh, launchd setup
 
 ---
 
@@ -365,6 +365,7 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5173
 | `efabb11` | 2026-03-08 | fix | Silent actions stream at full speed (200 chars/0ms) — eliminates 2s lag on pagination/shortlist/budget buttons |
 | `7bfbf79` | 2026-03-08 | docs | Add Phase 20 to DEV_PROGRESS + backend-1 tasks to TODO |
 | `3f13590` | 2026-03-08 | fix | Suppress `need_clarify` for Search intent in both router paths — GPT-5 Mini was asking clarification instead of searching |
+| `257a45e` | 2026-03-08 | feat | Automated crawl pipeline — `--purge-days` flag, `auto_crawl.sh`, launchd `setup_automation.sh` |
 
 **Key deliverables this phase:**
 

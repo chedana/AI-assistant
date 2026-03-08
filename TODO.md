@@ -38,12 +38,6 @@ _No tasks assigned yet._
 ## data — Data & Embeddings
 _Covers: `crawler/`, `artifacts/`, Qdrant collection, embedding scripts_
 
-- [ ] **Automate crawl + sync pipeline** — full plan at `.claude/plans/prancy-conjuring-torvalds.md`. Three deliverables:
-  1. **`crawler/sync_qdrant.py`** — add `--purge-days N` flag + `purge_stale()` function (delete listings with `scraped_at` older than N days). After `sync_incremental()` ~line 388. Make `--mode` optional when `--purge-days` is provided.
-  2. **`crawler/auto_crawl.sh`** (NEW) — sources `.env`, runs crawl → sync → purge → cleanup old runs, logs to `crawler/artifacts/crawl_automation.log` with 10MB rotation. Each step independent (one failure doesn't block the rest).
-  3. **`crawler/setup_automation.sh`** (NEW) — `install` creates launchd plist at `~/Library/LaunchAgents/com.openclaw.crawl.plist` (Mon+Thu 3am), loads it. `uninstall` removes. `status` shows state + last 10 log lines.
-  - **Test:** `bash crawler/auto_crawl.sh` end-to-end, then `bash crawler/setup_automation.sh install`, then `launchctl kickstart gui/$(id -u)/com.openclaw.crawl`
-  - **Watch for:** Playwright browser path in launchd context — may need `PLAYWRIGHT_BROWSERS_PATH` in plist env vars
 - [ ] **Re-crawl London with fixed scraper** — run `crawl_london.py` then `sync_qdrant.py --mode sync` to populate Qdrant Cloud with real London listings. (May be handled by the automation above once installed.)
 - [ ] **Add OpenRent scraper** — private landlords, no agent fees. New `crawler/openrent.py`. Priority: Section 1 of product roadmap.
 
