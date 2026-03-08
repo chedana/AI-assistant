@@ -122,7 +122,7 @@ Implementation: RAG skill over indexed UK tenant law docs (GOV.UK, Shelter guide
 
 ## Current State
 
-_Last updated: 2026-03-07 · Branch: `openclaw` · Tip: see Phase 18_
+_Last updated: 2026-03-08 · Branch: `openclaw` · Tip: see Phase 20_
 
 ### Architecture
 
@@ -353,6 +353,40 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5173
 ---
 
 ## Changelog
+
+### Phase 20 · OpenClaw — UX fixes, local hosting, GPT-5 Mini tuning (Mar 8)
+> Branch: `openclaw` | Commits: `569e813` → `efabb11`
+
+| Hash | Date | Type | Description |
+|------|------|------|-------------|
+| `569e813` | 2026-03-08 | fix | E6 district — use "Plaistow, East London" instead of "East Ham" (typeahead mismatch) |
+| `e49641f` | 2026-03-08 | debug | Add per-request `[TIMING]` logs to `api_server.py` for bottleneck identification |
+| `876fe9f` | 2026-03-08 | fix | Prevent double-click race condition — `isGeneratingRef` for synchronous guard; disable Show more button while loading; add `remaining` count to metadata |
+| `efabb11` | 2026-03-08 | fix | Silent actions stream at full speed (200 chars/0ms) — eliminates 2s lag on pagination/shortlist/budget buttons |
+
+**Key deliverables this phase:**
+
+- **Render confirmed too slow**: `[TIMING]` logs showed Render free tier (0.1 vCPU) takes 29–35s per search (router + extraction + Stage D × 5). Same code runs in ~5s locally. Decision: **local Mac hosting** for now (Mac is always-on).
+
+- **Double-click race condition** (`frontend/src/hooks/useChat.ts`): React state `isGenerating` doesn't update synchronously — rapid button clicks could fire multiple simultaneous requests. Added `isGeneratingRef = useRef(false)` as a synchronous guard checked by both `sendMessage` and `sendSilentAction`. Also `disabled={isGenerating}` on the "Show more" button.
+
+- **Silent action streaming delay** (`backend/api_server.py`): Button actions (Show more, Lower budget, Compare) sent text via `sendSilentAction` which discards all chunks — but backend still streamed at 8 chars/10ms (= ~2s latency for 1000+ char replies). Now: requests with `route_hint` stream at 200 chars/chunk with 0ms delay.
+
+- **Card rendering position for silent actions** (`frontend/src/hooks/useChat.ts`): `sendSilentAction` now creates an ack message (e.g. "Lowering budget to £2,800/month…") and moves `metadataForId` to the ack message position when new metadata arrives. Previously cards stayed at the original search message position (scrolled off screen) while ack text appeared below.
+
+- **`remaining` count in metadata** (`backend/api_server.py`, `frontend/src/types/chat.ts`): "Show more results" button now shows actual remaining count (e.g. "Show more results (42 remaining)") computed from `total - shown_so_far`.
+
+- **Crawler re-crawl in progress**: Background crawl running all 182 London area queries (264 districts → 182 unique area names). At time of session end: 10/182 queries done, 682 URLs collected. After completion, run `bash crawler/run_sync.sh sync` to push to Qdrant Cloud.
+
+**Known issues discovered (not yet fixed):**
+
+- **GPT-5 Mini asks clarification instead of searching**: Query "I need a 2b2b near Waterloo under 3500" triggers `need_clarify=true` — GPT-5 Mini generates "Do you mean a 2-bedroom, 2-bathroom property?" instead of directly searching. Qwen never did this. Root cause: the router prompt's `need_clarify` field lets the LLM ask questions; GPT-5 Mini is more conservative than Qwen and triggers it on clear search queries. **Fix needed**: either (a) add "NEVER set need_clarify=true for Search intent" to the no-listings router prompt, or (b) override `need_clarify=false` in code when intent is Search and clear constraints are present. See `orchestration/router.py` lines 56–170.
+
+- **"Yes" confirmation loses constraints**: When user replies "Yes" to a clarification question, the search runs without the constraints from the original query (e.g. returns 4-bed at £43k instead of 2-bed under £3,500). The router classifies "Yes" as a new Search but the original constraints aren't carried forward.
+
+- **Stale Qdrant data**: Current Qdrant Cloud has 9,794 listings from old crawl — some with corrupted descriptions ("JavaScript is disabled" noscript text), wrong locations (Manchester listings from postcode mismatch), and incorrect prices. Will be replaced once the current re-crawl completes.
+
+---
 
 ### Phase 19 · OpenClaw — cloud deployment fixes + lat/lon extraction (Mar 7)
 > Branch: `openclaw` | Commits: `635deeb` → `8b323ae`

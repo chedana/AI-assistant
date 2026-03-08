@@ -10,7 +10,8 @@
 ## backend-1 — Orchestration & Search Pipeline
 _Covers: `orchestration/`, `agent_graph/`, `agent/`, `skills/`, `core/`_
 
-_No tasks assigned yet._
+- [ ] **Fix GPT-5 Mini clarification over-triggering** — router prompt allows `need_clarify=true` which GPT-5 Mini triggers on clear search queries like "2b2b near Waterloo under 3500". Qwen never did this. Options: (a) add "NEVER set need_clarify=true for Search intent" to no-listings router prompt in `orchestration/router.py`, or (b) override `need_clarify=false` in `workflow.py`/`nodes.py` when intent=Search and user text contains clear constraints.
+- [ ] **Fix "Yes" confirmation losing constraints** — when user replies "Yes" to a clarification question, the search runs without the original constraints (gets 4-bed £43k instead of 2-bed under £3,500). Router classifies "Yes" as new Search but constraints from the clarification context aren't carried forward.
 
 ---
 
