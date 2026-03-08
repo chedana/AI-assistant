@@ -387,45 +387,106 @@ def sync_incremental(client: QdrantClient, records: List[Dict[str, Any]], embedd
     print(f"\nSync complete. Collection: {final_info.points_count:,} points")
 
 
+def purge_stale(client: QdrantClient, days: int):
+    """Delete listings whose scraped_at is older than `days` days ago."""
+    from datetime import datetime, timedelta, timezone
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff_str = cutoff.strftime("%Y-%m-%dT%H:%M:%S")
+    print(f"Purging listings with scraped_at before {cutoff_str} ({days} days ago)...")
+
+    if not client.collection_exists(COLLECTION):
+        print("[WARN] Collection does not exist, nothing to purge.")
+        return
+
+    # Scroll all points and check scraped_at
+    stale_ids: list[str] = []
+    offset = None
+    while True:
+        points, offset = client.scroll(
+            collection_name=COLLECTION,
+            limit=500,
+            offset=offset,
+            with_payload=["scraped_at", "listing_id"],
+            with_vectors=False,
+        )
+        for p in points:
+            scraped = (p.payload or {}).get("scraped_at", "")
+            if not scraped:
+                continue
+            # scraped_at is ISO string like "2025-06-15T10:30:00"
+            if str(scraped) < cutoff_str:
+                stale_ids.append(str(p.id))
+        if offset is None:
+            break
+
+    if not stale_ids:
+        print("  No stale listings found.")
+        return
+
+    # Delete in batches
+    for i in range(0, len(stale_ids), BATCH_SIZE):
+        batch = stale_ids[i:i + BATCH_SIZE]
+        client.delete(
+            collection_name=COLLECTION,
+            points_selector=models.PointIdsList(points=batch),
+        )
+
+    final_info = client.get_collection(COLLECTION)
+    print(f"  Purged {len(stale_ids):,} stale listings. Collection: {final_info.points_count:,} points")
+
+
 # ══════════════════════════════════════════════════════════════════
 # CLI
 # ══════════════════════════════════════════════════════════════════
 
 def main():
     parser = argparse.ArgumentParser(description="Sync crawled listings to Qdrant Cloud")
-    parser.add_argument("--mode", choices=["full", "sync"], default="sync",
+    parser.add_argument("--mode", choices=["full", "sync"], default=None,
                         help="full = drop + rebuild | sync = incremental (default)")
     parser.add_argument("--source", type=str, default=None,
                         help="Path to properties_final.jsonl (default: latest crawl run)")
+    parser.add_argument("--purge-days", type=int, default=None,
+                        help="Delete listings with scraped_at older than N days")
     args = parser.parse_args()
 
-    # Find source JSONL
-    if args.source:
-        source_path = Path(args.source)
-        if not source_path.exists():
-            print(f"[ERROR] Source file not found: {source_path}")
-            sys.exit(1)
-    else:
-        source_path = find_latest_source()
-
-    # Load data
-    records = load_jsonl(source_path)
-    if not records:
-        print("[ERROR] No records to sync.")
-        sys.exit(1)
+    # Must specify --mode or --purge-days (or both)
+    if args.mode is None and args.purge_days is None:
+        args.mode = "sync"  # default when neither is specified
 
     # Connect
     client = connect_qdrant()
 
-    # Load embedder
-    print(f"Loading embedding model: {EMBED_MODEL}")
-    embedder = SentenceTransformer(EMBED_MODEL)
+    # Run sync if --mode is specified
+    if args.mode is not None:
+        # Find source JSONL
+        if args.source:
+            source_path = Path(args.source)
+            if not source_path.exists():
+                print(f"[ERROR] Source file not found: {source_path}")
+                sys.exit(1)
+        else:
+            source_path = find_latest_source()
 
-    # Sync
-    if args.mode == "full":
-        sync_full(client, records, embedder)
-    else:
-        sync_incremental(client, records, embedder)
+        # Load data
+        records = load_jsonl(source_path)
+        if not records:
+            print("[ERROR] No records to sync.")
+            sys.exit(1)
+
+        # Load embedder
+        print(f"Loading embedding model: {EMBED_MODEL}")
+        embedder = SentenceTransformer(EMBED_MODEL)
+
+        # Sync
+        if args.mode == "full":
+            sync_full(client, records, embedder)
+        else:
+            sync_incremental(client, records, embedder)
+
+    # Run purge if --purge-days is specified
+    if args.purge_days is not None:
+        purge_stale(client, args.purge_days)
 
 
 if __name__ == "__main__":
