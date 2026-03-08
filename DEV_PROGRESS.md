@@ -349,6 +349,7 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5173
 ### data — Data & Embeddings
 
 - `257a45e` feat: automated crawl pipeline — purge-days, auto_crawl.sh, launchd setup
+- `f03dfc7` feat: OpenClaw Discord integration — trigger file + status JSON + WatchPaths + skill
 
 ---
 
@@ -366,6 +367,7 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5173
 | `7bfbf79` | 2026-03-08 | docs | Add Phase 20 to DEV_PROGRESS + backend-1 tasks to TODO |
 | `3f13590` | 2026-03-08 | fix | Suppress `need_clarify` for Search intent in both router paths — GPT-5 Mini was asking clarification instead of searching |
 | `257a45e` | 2026-03-08 | feat | Automated crawl pipeline — `--purge-days` flag, `auto_crawl.sh`, launchd `setup_automation.sh` |
+| `f03dfc7` | 2026-03-08 | feat | OpenClaw Discord integration — trigger/status files, WatchPaths, crawl skill |
 
 **Key deliverables this phase:**
 
