@@ -363,6 +363,8 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5173
 | `e49641f` | 2026-03-08 | debug | Add per-request `[TIMING]` logs to `api_server.py` for bottleneck identification |
 | `876fe9f` | 2026-03-08 | fix | Prevent double-click race condition — `isGeneratingRef` for synchronous guard; disable Show more button while loading; add `remaining` count to metadata |
 | `efabb11` | 2026-03-08 | fix | Silent actions stream at full speed (200 chars/0ms) — eliminates 2s lag on pagination/shortlist/budget buttons |
+| `7bfbf79` | 2026-03-08 | docs | Add Phase 20 to DEV_PROGRESS + backend-1 tasks to TODO |
+| `3f13590` | 2026-03-08 | fix | Suppress `need_clarify` for Search intent in both router paths — GPT-5 Mini was asking clarification instead of searching |
 
 **Key deliverables this phase:**
 
@@ -379,10 +381,6 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5173
 - **Crawler re-crawl in progress**: Background crawl running all 182 London area queries (264 districts → 182 unique area names). At time of session end: 10/182 queries done, 682 URLs collected. After completion, run `bash crawler/run_sync.sh sync` to push to Qdrant Cloud.
 
 **Known issues discovered (not yet fixed):**
-
-- **GPT-5 Mini asks clarification instead of searching**: Query "I need a 2b2b near Waterloo under 3500" triggers `need_clarify=true` — GPT-5 Mini generates "Do you mean a 2-bedroom, 2-bathroom property?" instead of directly searching. Qwen never did this. Root cause: the router prompt's `need_clarify` field lets the LLM ask questions; GPT-5 Mini is more conservative than Qwen and triggers it on clear search queries. **Fix needed**: either (a) add "NEVER set need_clarify=true for Search intent" to the no-listings router prompt, or (b) override `need_clarify=false` in code when intent is Search and clear constraints are present. See `orchestration/router.py` lines 56–170.
-
-- **"Yes" confirmation loses constraints**: When user replies "Yes" to a clarification question, the search runs without the constraints from the original query (e.g. returns 4-bed at £43k instead of 2-bed under £3,500). The router classifies "Yes" as a new Search but the original constraints aren't carried forward.
 
 - **Stale Qdrant data**: Current Qdrant Cloud has 9,794 listings from old crawl — some with corrupted descriptions ("JavaScript is disabled" noscript text), wrong locations (Manchester listings from postcode mismatch), and incorrect prices. Will be replaced once the current re-crawl completes.
 
