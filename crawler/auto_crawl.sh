@@ -145,11 +145,16 @@ else
     OVERALL="partial_failure"
 fi
 
-# ── Write status JSON (for OpenClaw skill to read) ──────────────
+# ── Write status JSON ────────────────────────────────────────────
+STATUS_JSON="{\"status\": \"${OVERALL}\", \"finished_at\": \"${FINISHED_AT}\", ${STEP_RESULTS}\"exit_code\": ${EXIT_CODE}}"
+
+# Always write local copy (for rental AI backend)
+echo "${STATUS_JSON}" > "${SCRIPT_DIR}/artifacts/crawl-status.json"
+log "Status written to ${SCRIPT_DIR}/artifacts/crawl-status.json"
+
+# Also write to OpenClaw config dir (for Discord bot skill)
 if [[ -n "${STATUS_FILE:-}" ]]; then
-    cat > "${STATUS_FILE}" <<STATUSEOF
-{"status": "${OVERALL}", "finished_at": "${FINISHED_AT}", ${STEP_RESULTS}"exit_code": ${EXIT_CODE}}
-STATUSEOF
+    echo "${STATUS_JSON}" > "${STATUS_FILE}"
     log "Status written to ${STATUS_FILE}"
 fi
 

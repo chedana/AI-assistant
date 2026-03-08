@@ -281,6 +281,20 @@ async def healthz() -> JSONResponse:
     return JSONResponse({"ok": True, "service": "backend-proxy", "sessions": len(SESSIONS)})
 
 
+@app.get("/crawl-status")
+async def crawl_status() -> JSONResponse:
+    """Return the last crawl pipeline status (written by auto_crawl.sh)."""
+    status_path = os.path.join(os.path.dirname(__file__), "..", "crawler", "artifacts", "crawl-status.json")
+    try:
+        with open(status_path) as f:
+            data = json.load(f)
+        return JSONResponse(data)
+    except FileNotFoundError:
+        return JSONResponse({"status": "no_data", "message": "No crawl has run yet"}, status_code=404)
+    except json.JSONDecodeError:
+        return JSONResponse({"status": "error", "message": "Corrupt status file"}, status_code=500)
+
+
 @app.post("/api/chat/stream")
 async def chat_stream(req: ChatStreamRequest, request: Request) -> StreamingResponse:
     async def event_gen() -> AsyncGenerator[str, None]:
