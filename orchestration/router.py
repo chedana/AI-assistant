@@ -155,6 +155,9 @@ def _classify_with_llm_no_listings(
         refinement_type = None
     if intent != "Page_Nav":
         page_action = None
+    # Never ask clarification before running a first search — just search.
+    if intent == "Search":
+        need_clarify = False
     if not need_clarify:
         clarify_question = None
     return RouteDecision(
@@ -354,6 +357,9 @@ def _classify_with_llm_for_listings(
     if intent == "Specific_QA" and has_focus and not target_indices:
         need_clarify = False
         clarify_question = None
+    # Never block a search with a clarification question — just run the search.
+    if intent == "Search":
+        need_clarify = False
     if not need_clarify:
         clarify_question = None
     return RouteDecision(
