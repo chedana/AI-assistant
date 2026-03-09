@@ -56,6 +56,8 @@ _UUID_NS = uuid.UUID("a3b2c1d0-e5f6-7890-abcd-ef1234567890")
 PAYLOAD_FIELDS = [
     # Identity
     "listing_id", "url", "source_site", "source", "scraped_at",
+    # Media
+    "image_url",
     # Location
     "address", "postcode", "postcode_district", "title",
     # Price
@@ -235,7 +237,7 @@ def fetch_existing_ids(client: QdrantClient) -> Dict[str, str]:
         for p in points:
             lid = (p.payload or {}).get("listing_id", "")
             if lid:
-                existing[lid] = str(p.id)
+                existing[lid] = p.id
         if offset is None:
             break
     return existing
@@ -487,6 +489,13 @@ def main():
     # Run purge if --purge-days is specified
     if args.purge_days is not None:
         purge_stale(client, args.purge_days)
+
+    # Rebuild location match index after any Qdrant changes
+    if args.mode is not None or args.purge_days is not None:
+        print("\nRebuilding location match index...")
+        sys.path.insert(0, str(PROJECT_ROOT))
+        from skills.search.location_match import rebuild_location_index
+        rebuild_location_index()
 
 
 if __name__ == "__main__":

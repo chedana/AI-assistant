@@ -55,6 +55,15 @@ def get_runtime():
                 _RUNTIME = build_search_runtime()
     return _RUNTIME
 
+
+@app.on_event("startup")
+def _preload_runtime():
+    """Eagerly load sentence-transformer + Qdrant client at startup."""
+    import time as _t
+    t0 = _t.perf_counter()
+    get_runtime()
+    print(f"[TIMING] startup preload={_t.perf_counter()-t0:.2f}s")
+
 ROUTER_DEBUG = str(os.environ.get("ROUTER_DEBUG", "1")).strip().lower() in {"1", "true", "yes", "on"}
 SESSIONS: TTLCache = TTLCache(maxsize=50, ttl=3600)  # max 50 sessions, 1-hour TTL
 SESSIONS_LOCK = Lock()
@@ -120,6 +129,7 @@ def build_metadata(state: AgentState) -> dict | None:
             listings.append({
                 "title": str(r.get("title", "")),
                 "url": str(r.get("url", "")),
+                "image_url": str(r.get("image_url", "")),
                 "address": str(r.get("address", "")),
                 "price_pcm": _num(r.get("price_pcm")),
                 "bedrooms": _num(r.get("bedrooms")),
@@ -177,6 +187,7 @@ def build_metadata(state: AgentState) -> dict | None:
                     "index": i + 1,
                     "title": str(r.get("title", "")),
                     "url": str(r.get("url", "")),
+                    "image_url": str(r.get("image_url", "")),
                     "price_pcm": _num(r.get("price_pcm")),
                     "bedrooms": _num(r.get("bedrooms")),
                     "bathrooms": _num(r.get("bathrooms")),
@@ -199,6 +210,7 @@ def build_metadata(state: AgentState) -> dict | None:
         {
             "title": str(r.get("title", "")),
             "url": str(r.get("url", "")),
+            "image_url": str(r.get("image_url", "")),
             "address": str(r.get("address") or ""),
             "price_pcm": _num(r.get("price_pcm")),
             "bedrooms": _num(r.get("bedrooms")),
@@ -328,8 +340,8 @@ async def chat_stream(req: ChatStreamRequest, request: Request) -> StreamingResp
             print(f"[TIMING] process_turn={t2-t1:.2f}s  total_so_far={t2-t0:.2f}s  reply_len={len(reply)}")
 
             is_silent = req.route_hint is not None
-            chunk_size = 200 if is_silent else 8
-            chunk_delay = 0.0 if is_silent else 0.01
+            chunk_size = 200 if is_silent else 32
+            chunk_delay = 0.0 if is_silent else 0.005
             for chunk in split_chunks(reply, size=chunk_size):
                 if await request.is_disconnected():
                     return

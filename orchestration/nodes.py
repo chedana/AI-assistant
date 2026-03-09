@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import concurrent.futures
 import copy
 import json
 import logging
@@ -7,6 +8,11 @@ import re
 from typing import Literal
 
 _logger = logging.getLogger(__name__)
+
+# Process-level executor and cache for speculative refinement_plan execution.
+# Futures are stored here (not in LangGraph state) to avoid serialization issues.
+_SPEC_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+_SPEC_CACHE: dict[int, concurrent.futures.Future] = {}
 
 from core.chatbot_config import GENERAL_SYSTEM
 from core.llm_client import llm_grounded_explain, qwen_chat, render_stage_d_for_user
@@ -112,6 +118,18 @@ def route_node(state: GraphState) -> GraphState:
         state["intent"] = "Fallback"
         state["reply_text"] = "Empty input."
         return state
+
+    # Speculatively start refinement_plan in parallel with the intent router.
+    # Only for text queries without existing listings (intent is almost always Search).
+    # Future stored in process-level _SPEC_CACHE to avoid LangGraph state serialization issues.
+    if not agent_state.last_results:
+        _spec_key = id(state)
+        _SPEC_CACHE[_spec_key] = _SPEC_EXECUTOR.submit(
+            build_refinement_plan,
+            user_text=text,
+            existing_constraints=copy.deepcopy(agent_state.constraints or {}),
+        )
+        state["_spec_key"] = _spec_key
 
     pending = agent_state.pending_suggestion
     pending_ac = agent_state.pending_area_compare
@@ -293,11 +311,22 @@ def search_node(state: GraphState) -> GraphState:
         is_reset = False
         plan_source = "explicit_action"
     else:
-        # Text input — run refinement plan extraction as normal.
-        plan = build_refinement_plan(
-            user_text=str(state.get("user_input") or ""),
-            existing_constraints=agent_state.constraints,
-        )
+        # Text input — use speculative plan if route_node pre-computed it, else run now.
+        _spec_key = state.pop("_spec_key", None)
+        _spec_future = _SPEC_CACHE.pop(_spec_key, None) if _spec_key is not None else None
+        if _spec_future is not None:
+            try:
+                plan = _spec_future.result(timeout=30)
+            except Exception:
+                plan = build_refinement_plan(
+                    user_text=str(state.get("user_input") or ""),
+                    existing_constraints=agent_state.constraints,
+                )
+        else:
+            plan = build_refinement_plan(
+                user_text=str(state.get("user_input") or ""),
+                existing_constraints=agent_state.constraints,
+            )
         set_fields = plan.set_fields
         clear_fields = plan.clear_fields
         semantic_terms = plan.semantic_terms or {}
@@ -706,19 +735,8 @@ def apply_suggestion_node(state: GraphState) -> GraphState:
 
 
 def domain_router_node(state: GraphState) -> GraphState:
-    if state.get("route_hint"):
-        state["domain"] = "Rental"
-        return state
-    agent_state = state["agent_state"]
-    text = str(state.get("user_input") or "").strip()
-    decision = domain_route_turn(
-        user_text=text,
-        history_hint=_make_history_hint(agent_state),
-        has_listings=bool(agent_state.last_results),
-    )
-    state["domain"] = decision.domain
-    if state.get("router_debug"):
-        _debug_print(True, {"phase": "domain_router", "domain": decision.domain, "reason": decision.reason})
+    # Single-domain rental app — always Rental, no LLM call needed.
+    state["domain"] = "Rental"
     return state
 
 
@@ -768,6 +786,7 @@ def general_node(state: GraphState) -> GraphState:
                 {"role": "user", "content": user_payload},
             ],
             temperature=0.7,
+            _label="general_reply",
         )
     except Exception:
         reply = "Sorry, I'm having trouble responding right now. How can I help you with your rental search?"
@@ -957,6 +976,7 @@ def _run_compare(user_in: str, rows: list, constraints: dict, signals: dict) -> 
                 {"role": "user", "content": user_payload},
             ],
             temperature=0.3,
+            _label="compare_verdict",
         ).strip()
     except Exception:
         verdict = ""
@@ -1211,6 +1231,7 @@ def _run_area_compare(areas: list, base_constraints: dict, user_in: str, runtime
                 {"role": "user", "content": user_payload},
             ],
             temperature=0.3,
+            _label="area_compare_verdict",
         ).strip()
     except Exception:
         verdict = ""
