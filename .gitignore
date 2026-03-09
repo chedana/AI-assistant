@@ -28,6 +28,20 @@ artifacts/skills/search/tmp/
 # frontend artifacts
 frontend/node_modules/
 frontend/dist/
+frontend/tsconfig.tsbuildinfo
+frontend/tsconfig.node.tsbuildinfo
+frontend/vite.config.d.ts
+frontend/vite.config.js
+
+# python venv
+venv/
+
+# claude local config
+.claude/
+
+# macos
+.DS_Store
+**/.DS_Store
 
 # python cache
 **/__pycache__/
