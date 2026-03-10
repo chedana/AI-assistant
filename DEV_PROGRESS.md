@@ -794,3 +794,5 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5173
 | Latest commit | 2026-03-01 (`f1597ae`, restructure) |
 | OpenClaw branch start | 2026-03-07 |
 | Days active | 18 |
+
+- `9d35dc3` perf: parallel refinement plan + metadata-first → ~1.4s consistent time-to-cards (backend-2)
