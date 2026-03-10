@@ -61,7 +61,7 @@
 |---|--------|---------|--------|-------|
 | F-F1 | 🔄 Unblocked | **Map view** | Leaflet pins for each listing result | ~~B-B1~~ ✅ lat/lon now in metadata |
 | F-F2 | ✅ Fixed | **Listing detail drawer** | Click card → slide-out with full info. Includes Portal rendering, scroll lock, and keyboard focus trap. | — |
-| F-F7 | 🔄 Unblocked | **Image carousel in drawer** | `listing.image_urls` now available (up to 10 photos). Fall back to `image_url` if empty (backfill still running). | ~~B-img~~ ✅ `image_urls` in metadata |
+| F-F7 | ✅ Fixed | **Image carousel in drawer** | `listing.image_urls` now available (up to 10 photos). Fall back to `image_url` if empty (backfill still running). | ~~B-img~~ ✅ `image_urls` in metadata |
 | F-F3 | ✅ Fixed | **Mobile bottom nav** | Switch Chat ↔ Results on mobile | Implemented in responsive layout refactor. |
 | F-F4 | 🔴 Open | **Session rename** | Double-click session title to rename | Frontend only |
 | F-F5 | 🔴 Open | **Viewing checklist** | Per-listing checklist panel (legal + physical checks) | Roadmap Section 4 |
