@@ -65,11 +65,20 @@ def _focus_by_index(agent_state, idx: int, source: str = "user_query") -> str | 
     return None
 
 
-def _make_history_hint(agent_state, limit: int = 4) -> str | None:
+def _make_history_hint(agent_state, limit: int = 2) -> str | None:
+    """Return a compact conversation summary for the router prompt.
+
+    Limits to the 2 most recent turns and truncates assistant replies to
+    the first line (≤120 chars) to keep router prompt tokens low.
+    """
     if not agent_state.history:
         return None
     rows = agent_state.history[-limit:]
-    return "\n".join([f"U: {u}\nA: {a}" for u, a in rows])
+    lines = []
+    for u, a in rows:
+        a_short = (a or "").split("\n")[0][:120].strip()
+        lines.append(f"U: {u}\nA: {a_short}")
+    return "\n".join(lines)
 
 
 def _debug_print(enabled: bool, payload: dict) -> None:
