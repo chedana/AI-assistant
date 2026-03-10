@@ -365,25 +365,35 @@ async def chat_stream(req: ChatStreamRequest, request: Request) -> StreamingResp
             t2 = time.perf_counter()
             print(f"[TIMING] process_turn={t2-t1:.2f}s  total_so_far={t2-t0:.2f}s  reply_len={len(reply)}")
 
-            is_silent = req.route_hint is not None
-            chunk_size = 200 if is_silent else 32
-            chunk_delay = 0.0 if is_silent else 0.005
-            for chunk in split_chunks(reply, size=chunk_size):
-                if await request.is_disconnected():
-                    return
-                yield sse_event("delta", {"text": chunk})
-                if chunk_delay:
-                    await asyncio.sleep(chunk_delay)
-
             metadata = build_metadata(state)
             t3 = time.perf_counter()
-            if metadata:
-                print(f"[TIMING] stream+metadata={t3-t2:.2f}s  total={t3-t0:.2f}s | "
-                      f"listings={len(metadata.get('search_results', {}).get('listings', []))} "
+            has_search = bool(metadata and metadata.get("search_results", {}).get("listings"))
+
+            if has_search:
+                # Search response: send metadata first so listing cards appear immediately.
+                # Skip streaming the listing-dump text — the frontend replaces it with
+                # "Found X properties..." anyway via onMetadata, and we avoid messy concat.
+                print(f"[TIMING] pipeline+metadata={t3-t2:.2f}s  total={t3-t0:.2f}s | "
+                      f"listings={len(metadata['search_results']['listings'])} "
                       f"constraints={bool(metadata.get('constraints'))}")
                 yield sse_event("metadata", metadata)
             else:
-                print("[SSE] no metadata to send (last_results empty?)")
+                # Non-search (QA, Explain, Chitchat, etc.): stream text first, then metadata.
+                is_silent = req.route_hint is not None
+                chunk_size = 200 if is_silent else 32
+                chunk_delay = 0.0 if is_silent else 0.005
+                for chunk in split_chunks(reply, size=chunk_size):
+                    if await request.is_disconnected():
+                        return
+                    yield sse_event("delta", {"text": chunk})
+                    if chunk_delay:
+                        await asyncio.sleep(chunk_delay)
+                if metadata:
+                    print(f"[TIMING] stream+metadata={t3-t2:.2f}s  total={t3-t0:.2f}s | "
+                          f"constraints={bool(metadata.get('constraints'))}")
+                    yield sse_event("metadata", metadata)
+                else:
+                    print("[SSE] no metadata to send (last_results empty?)")
             yield sse_event("done", {"ok": True})
         except Exception as exc:  # noqa: BLE001
             yield sse_event("error", {"message": str(exc)})

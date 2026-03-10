@@ -120,16 +120,16 @@ def route_node(state: GraphState) -> GraphState:
         return state
 
     # Speculatively start refinement_plan in parallel with the intent router.
-    # Only for text queries without existing listings (intent is almost always Search).
+    # Runs for all text queries (not just first search) — if intent != Search the
+    # result is discarded; cost is one wasted LLM call but saves ~0.4s on Search turns.
     # Future stored in process-level _SPEC_CACHE to avoid LangGraph state serialization issues.
-    if not agent_state.last_results:
-        _spec_key = id(state)
-        _SPEC_CACHE[_spec_key] = _SPEC_EXECUTOR.submit(
-            build_refinement_plan,
-            user_text=text,
-            existing_constraints=copy.deepcopy(agent_state.constraints or {}),
-        )
-        state["_spec_key"] = _spec_key
+    _spec_key = id(state)
+    _SPEC_CACHE[_spec_key] = _SPEC_EXECUTOR.submit(
+        build_refinement_plan,
+        user_text=text,
+        existing_constraints=copy.deepcopy(agent_state.constraints or {}),
+    )
+    state["_spec_key"] = _spec_key
 
     pending = agent_state.pending_suggestion
     pending_ac = agent_state.pending_area_compare
@@ -255,6 +255,7 @@ def search_node(state: GraphState) -> GraphState:
         # Write audit data to GraphState regardless of result count.
         state["stage_b_audits"] = list(out.get("stage_b_audits") or [])
         state["stage_a_prefilter_count"] = int(out.get("stage_a_prefilter_count") or 0)
+        state["stage_a_geo_fallback_area"] = out.get("stage_a_geo_fallback_area") or None
 
         agent_state.constraints = out.get("constraints")
         # Auto-relax must not permanently modify the user's stated budget.
@@ -298,6 +299,7 @@ def search_node(state: GraphState) -> GraphState:
     state["relax_near_miss"] = []
     state["stage_b_audits"] = []
     state["stage_a_prefilter_count"] = -1
+    state["stage_a_geo_fallback_area"] = None
     agent_state.pending_suggestion = None
 
     # Determine constraint changes: explicit (button action) or extracted (text input).
@@ -435,6 +437,7 @@ def search_node(state: GraphState) -> GraphState:
     # Write audit data to GraphState for evaluate_node.
     state["stage_b_audits"] = list(out.get("stage_b_audits") or [])
     state["stage_a_prefilter_count"] = int(out.get("stage_a_prefilter_count") or 0)
+    state["stage_a_geo_fallback_area"] = out.get("stage_a_geo_fallback_area") or None
 
     agent_state.constraints = out.get("constraints")
     agent_state.user_profile.update(out.get("profile_patch") or {})
@@ -731,6 +734,7 @@ def apply_suggestion_node(state: GraphState) -> GraphState:
     state["relax_near_miss"] = []
     state["stage_b_audits"] = []
     state["stage_a_prefilter_count"] = -1
+    state["stage_a_geo_fallback_area"] = None
     return state
 
 
