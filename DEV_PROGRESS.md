@@ -796,3 +796,4 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5173
 | Days active | 18 |
 
 - `9d35dc3` perf: parallel refinement plan + metadata-first → ~1.4s consistent time-to-cards (backend-2)
+- `ef42c1e` perf: shrink router prompt (2-turn history, 120-char truncation) + switch to gpt-4o-mini → stable 1.4–1.6s (backend-2)
