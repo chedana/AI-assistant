@@ -20,11 +20,20 @@ export type ChatSession = {
 export type ListingData = {
   title: string;
   url: string;
+  image_url: string;
+  image_urls?: string[];
   address: string;
   price_pcm: number;
   bedrooms: number;
   bathrooms: number;
   available_from: string;
+  description?: string;
+  features?: string;
+  property_type?: string;
+  furnish_type?: string;
+  deposit?: number;
+  lat?: number | null;
+  lon?: number | null;
   final_score: number;
   penalty_reasons: string[];
   preference_hits: string[];
@@ -32,6 +41,7 @@ export type ListingData = {
 
 export type SearchResultsMeta = {
   listings: ListingData[];
+  all_listings?: ListingData[];
   page_index: number;
   has_more: boolean;
   total: number;

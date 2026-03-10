@@ -241,8 +241,9 @@ export default function ListingsPanel({
               </div>
             ) : (
               <MapView 
-                listings={results.listings} 
+                listings={results.all_listings || results.listings} 
                 onListingClick={setSelectedListing} 
+                onSearchArea={(area) => onSuggestionClick(`Show me rentals in ${area}`)}
               />
             )
           ) : isGenerating ? (

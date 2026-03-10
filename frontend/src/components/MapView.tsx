@@ -1,6 +1,7 @@
 import L from 'leaflet';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
-import { useEffect } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
+import { useEffect, useState, useRef } from 'react';
+import MarkerClusterGroup from 'react-leaflet-cluster';
 import type { ListingData } from '../types/chat';
 
 // Create a custom modern marker icon using DivIcon
@@ -17,11 +18,21 @@ const createCustomIcon = (price: number) => {
   });
 };
 
+const createClusterCustomIcon = function (cluster: any) {
+  return L.divIcon({
+    html: `<div class="flex items-center justify-center bg-emerald-600 text-white w-10 h-10 rounded-full shadow-xl border-2 border-white/20 font-bold text-sm ring-2 ring-black/10">${cluster.getChildCount()}</div>`,
+    className: 'custom-cluster-marker',
+    iconSize: [40, 40],
+  });
+};
+
 // Internal component to handle automatic map bounds fitting
 function FitBounds({ listings }: { listings: ListingData[] }) {
   const map = useMap();
+  const initialized = useRef(false);
 
   useEffect(() => {
+    if (initialized.current) return;
     // Collect all valid lat/lon points
     const points = listings
       .filter(l => typeof l.lat === 'number' && typeof l.lon === 'number')
@@ -35,18 +46,63 @@ function FitBounds({ listings }: { listings: ListingData[] }) {
         animate: true,
         duration: 1
       });
+      initialized.current = true;
     }
   }, [listings, map]);
 
   return null;
 }
 
+function SearchAreaButton({ onSearch }: { onSearch: (area: string) => void }) {
+  const [show, setShow] = useState(false);
+  const [areaName, setAreaName] = useState<string | null>(null);
+  const timeoutRef = useRef<any>(null);
+
+  const map = useMapEvents({
+    moveend: () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(async () => {
+        const center = map.getCenter();
+        try {
+          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${center.lat}&lon=${center.lng}&format=json&zoom=14`);
+          const data = await res.json();
+          const name = data.address?.suburb || data.address?.neighbourhood || data.address?.city_district || data.address?.town || null;
+          if (name) {
+            setAreaName(name);
+            setShow(true);
+          }
+        } catch (e) {
+          // ignore
+        }
+      }, 800);
+    }
+  });
+
+  if (!show || !areaName) return null;
+
+  return (
+    <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[1000]">
+      <button 
+        onClick={() => {
+          setShow(false);
+          onSearch(areaName);
+        }}
+        className="bg-panel/90 backdrop-blur-md text-text text-sm font-bold px-5 py-2.5 rounded-full shadow-2xl border border-border flex items-center gap-2 hover:bg-neutral-800 transition-all hover:scale-105 active:scale-95"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        Search {areaName}
+      </button>
+    </div>
+  );
+}
+
 interface MapViewProps {
   listings: ListingData[];
   onListingClick?: (listing: ListingData) => void;
+  onSearchArea?: (area: string) => void;
 }
 
-export default function MapView({ listings, onListingClick }: MapViewProps) {
+export default function MapView({ listings, onListingClick, onSearchArea }: MapViewProps) {
   // Defensive check: extract listings with valid coordinates
   const validListings = listings.filter(
     (l) => typeof l.lat === 'number' && typeof l.lon === 'number'
@@ -136,57 +192,66 @@ export default function MapView({ listings, onListingClick }: MapViewProps) {
           url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
         />
         
-        {validListings.map((listing, idx) => (
-          <Marker
-            key={`${listing.url}-${idx}`}
-            position={[listing.lat!, listing.lon!]}
-            icon={createCustomIcon(listing.price_pcm)}
-          >
-            <Popup closeButton={false} offset={[0, -10]}>
-              <div className="flex flex-col group/popup">
-                <div className="h-32 w-full overflow-hidden bg-neutral-800">
-                  {listing.image_url ? (
-                    <img 
-                      src={listing.image_url} 
-                      alt={listing.title} 
-                      className="w-full h-full object-cover transition-transform group-hover/popup:scale-110 duration-700"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-neutral-600">
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        {onSearchArea && <SearchAreaButton onSearch={onSearchArea} />}
+
+        <MarkerClusterGroup
+          chunkedLoading
+          iconCreateFunction={createClusterCustomIcon}
+          showCoverageOnHover={false}
+          maxClusterRadius={40}
+        >
+          {validListings.map((listing, idx) => (
+            <Marker
+              key={`${listing.url}-${idx}`}
+              position={[listing.lat!, listing.lon!]}
+              icon={createCustomIcon(listing.price_pcm)}
+            >
+              <Popup closeButton={false} offset={[0, -10]}>
+                <div className="flex flex-col group/popup">
+                  <div className="h-32 w-full overflow-hidden bg-neutral-800">
+                    {listing.image_url ? (
+                      <img 
+                        src={listing.image_url} 
+                        alt={listing.title} 
+                        className="w-full h-full object-cover transition-transform group-hover/popup:scale-110 duration-700"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-neutral-600">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-4">
+                    <div className="text-[10px] uppercase tracking-widest text-emerald-500 font-bold mb-1">
+                      {listing.property_type || 'Property'}
                     </div>
-                  )}
+                    <div className="text-sm font-bold truncate text-white mb-2 leading-tight">
+                      {listing.title}
+                    </div>
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="text-white font-black text-base">
+                        £{listing.price_pcm.toLocaleString()} <span className="text-[10px] text-neutral-500 font-normal uppercase tracking-tighter">pcm</span>
+                      </div>
+                      <div className="flex gap-2 text-[11px] font-bold text-neutral-400">
+                        <span>{listing.bedrooms} <span className="text-[9px] font-medium opacity-60">BD</span></span>
+                        <span>{listing.bathrooms} <span className="text-[9px] font-medium opacity-60">BA</span></span>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onListingClick?.(listing);
+                      }}
+                      className="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-black uppercase tracking-widest py-2.5 rounded-lg transition-all shadow-lg shadow-emerald-900/20 active:scale-[0.98]"
+                    >
+                      Details
+                    </button>
+                  </div>
                 </div>
-                <div className="p-4">
-                  <div className="text-[10px] uppercase tracking-widest text-emerald-500 font-bold mb-1">
-                    {listing.property_type || 'Property'}
-                  </div>
-                  <div className="text-sm font-bold truncate text-white mb-2 leading-tight">
-                    {listing.title}
-                  </div>
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="text-white font-black text-base">
-                      £{listing.price_pcm.toLocaleString()} <span className="text-[10px] text-neutral-500 font-normal uppercase tracking-tighter">pcm</span>
-                    </div>
-                    <div className="flex gap-2 text-[11px] font-bold text-neutral-400">
-                      <span>{listing.bedrooms} <span className="text-[9px] font-medium opacity-60">BD</span></span>
-                      <span>{listing.bathrooms} <span className="text-[9px] font-medium opacity-60">BA</span></span>
-                    </div>
-                  </div>
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onListingClick?.(listing);
-                    }}
-                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-black uppercase tracking-widest py-2.5 rounded-lg transition-all shadow-lg shadow-emerald-900/20 active:scale-[0.98]"
-                  >
-                    Details
-                  </button>
-                </div>
-              </div>
-            </Popup>
-          </Marker>
-        ))}
+              </Popup>
+            </Marker>
+          ))}
+        </MarkerClusterGroup>
         
         <FitBounds listings={validListings} />
       </MapContainer>

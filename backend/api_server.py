@@ -136,36 +136,39 @@ def build_metadata(state: AgentState) -> dict | None:
     """Extract structured metadata from agent state for the frontend."""
     meta: dict = {}
 
+    def _map_listing(r: dict) -> dict:
+        return {
+            "title": str(r.get("title", "")),
+            "url": str(r.get("url", "")),
+            "image_url": str(r.get("image_url", "")),
+            "address": str(r.get("address", "")),
+            "price_pcm": _num(r.get("price_pcm")),
+            "bedrooms": _num(r.get("bedrooms")),
+            "bathrooms": _num(r.get("bathrooms")),
+            "available_from": str(r.get("available_from", "")),
+            "description": str(r.get("description", "")),
+            "features": str(r.get("features", "")),
+            "property_type": str(r.get("property_type", "")),
+            "furnish_type": str(r.get("furnish_type", "")),
+            "lat": _num(r.get("latitude"), None),
+            "lon": _num(r.get("longitude"), None),
+            "image_urls": _json_list(r.get("image_urls")),
+            "deposit": _num(r.get("deposit")),
+            "final_score": _num(r.get("final_score")),
+            "penalty_reasons": [p for p in _to_list(r.get("penalty_reasons")) if not p.startswith("unknown_hard(")],
+            "preference_hits": _to_list(r.get("preference_hits")),
+        }
+
     # Search results
     if state.last_results:
-        listings = []
-        for r in state.last_results:
-            listings.append({
-                "title": str(r.get("title", "")),
-                "url": str(r.get("url", "")),
-                "image_url": str(r.get("image_url", "")),
-                "address": str(r.get("address", "")),
-                "price_pcm": _num(r.get("price_pcm")),
-                "bedrooms": _num(r.get("bedrooms")),
-                "bathrooms": _num(r.get("bathrooms")),
-                "available_from": str(r.get("available_from", "")),
-                "description": str(r.get("description", "")),
-                "features": str(r.get("features", "")),
-                "property_type": str(r.get("property_type", "")),
-                "furnish_type": str(r.get("furnish_type", "")),
-                "lat": _num(r.get("latitude"), None),
-                "lon": _num(r.get("longitude"), None),
-                "image_urls": _json_list(r.get("image_urls")),
-                "deposit": _num(r.get("deposit")),
-                "final_score": _num(r.get("final_score")),
-                "penalty_reasons": [p for p in _to_list(r.get("penalty_reasons")) if not p.startswith("unknown_hard(")],
-                "preference_hits": _to_list(r.get("preference_hits")),
-            })
+        listings = [_map_listing(r) for r in state.last_results]
+        all_listings = [_map_listing(r) for r in state.search_full_results] if state.search_full_results else listings
         total = len(state.search_full_results)
         k = int((state.constraints or {}).get("k") or 5)
         shown_so_far = (state.page_index + 1) * k
         meta["search_results"] = {
             "listings": listings,
+            "all_listings": all_listings,
             "page_index": state.page_index,
             "has_more": state.has_more,
             "total": total,
