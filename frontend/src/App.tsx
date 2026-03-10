@@ -71,8 +71,8 @@ export default function App() {
     void sendSilentAction(`remove shortlist ${position}`, { intent: "Shortlist", shortlist_action: "remove", target_indices: [position] });
   }
 
-  function handleSuggestionClick(text: string) {
-    void sendSilentAction(text);
+  function handleSuggestionClick(text: string, routeHint?: Record<string, unknown>) {
+    void sendSilentAction(text, routeHint);
   }
 
   return (

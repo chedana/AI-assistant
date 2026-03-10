@@ -49,6 +49,7 @@ export default function ShortlistPanel({ listings, onClose, onRemove, onCompare 
             <ListingCard
               key={listing.url || idx}
               listing={listing}
+              compact
               isSaved
               onRemove={() => onRemove(idx + 1)}
             />

@@ -1,127 +1,75 @@
-import { useEffect, useMemo, useRef } from "react";
-import type { ChatSession, SessionMetadata } from "../types/chat";
-import CompareTable from "./CompareTable";
-import ConstraintTags from "./ConstraintTags";
-import ListingCard from "./ListingCard";
+import { useEffect, useRef } from "react";
+import type { ChatSession, QuickReply } from "../types/chat";
 import MessageBubble from "./MessageBubble";
 import QuickReplies from "./QuickReplies";
 
 type Props = {
   session: ChatSession | undefined;
   isGenerating: boolean;
-  metadata: SessionMetadata | null;
-  suppressedIds: Set<string>;
-  metadataForId: string | null;
   activeAssistantId: string | null;
+  quickReplies: QuickReply[] | undefined;
   onQuickReply: (text: string, routeHint?: Record<string, unknown>) => void;
-  onRemoveConstraint: (clearFields: string[], actionLabel: string) => void;
-  onSaveListing?: (pageIndex: number) => void;
 };
 
 export default function ChatArea({
   session,
   isGenerating,
-  metadata,
-  suppressedIds,
-  metadataForId,
   activeAssistantId,
+  quickReplies,
   onQuickReply,
-  onRemoveConstraint,
-  onSaveListing,
 }: Props) {
-  const endRef = useRef<HTMLDivElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [session?.messages.length, isGenerating, metadata]);
+  }, [session?.messages.length, isGenerating]);
 
-  const savedIds = useMemo(
-    () => new Set(metadata?.shortlist?.saved_ids ?? []),
-    [metadata?.shortlist?.saved_ids],
-  );
-
-  const showConstraints = metadata?.constraints && Object.keys(metadata.constraints).length > 0;
-  const showCompare = !!(metadata?.compare_data && metadata.compare_data.listings.length >= 2);
-  const showListings = !!(metadata?.search_results && metadata.search_results.listings.length > 0);
-  const showQuickReplies = !isGenerating && !!(metadata?.quick_replies && metadata.quick_replies.length > 0);
+  const showQuickReplies = !isGenerating && quickReplies && quickReplies.length > 0;
 
   return (
-    <section className="relative flex-1 overflow-y-auto">
-      {showConstraints && (
-        <ConstraintTags
-          constraints={metadata!.constraints!}
-          onRemove={onRemoveConstraint}
-        />
-      )}
-
-      <div className="px-4 py-4">
-        <div className="mx-auto max-w-3xl space-y-4">
+    <div className="relative flex flex-1 flex-col overflow-hidden bg-panel-alt/30">
+      <div 
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto scroll-smooth p-4 md:p-6"
+      >
+        <div className="mx-auto flex max-w-3xl flex-col gap-6">
           {session?.messages.length ? (
             <>
-              {session.messages.map((message) => {
-                // Old suppressed messages (previous search pages, old compares):
-                // fully hidden, their slot replaced by nothing.
-                if (suppressedIds.has(message.id) && message.id !== metadataForId) {
-                  return null;
-                }
-
-                // Current structured position: render cards/compare inline here
-                // instead of the assistant text bubble, so they appear naturally
-                // in the conversation flow rather than pinned to the bottom.
-                if (message.id === metadataForId) {
-                  return (
-                    <div key={message.id} className="space-y-3">
-                      {showCompare && <CompareTable data={metadata!.compare_data!} />}
-                      {showListings && (
-                        <div className="space-y-3">
-                          {metadata!.search_results!.listings.map((listing, idx) => (
-                            <ListingCard
-                              key={listing.url || idx}
-                              listing={listing}
-                              isSaved={savedIds.has(listing.url)}
-                              onSave={onSaveListing ? () => onSaveListing(idx + 1) : undefined}
-                            />
-                          ))}
-                          {metadata!.search_results!.has_more && (
-                            <button
-                              disabled={isGenerating}
-                              onClick={() => onQuickReply("show me more", { intent: "Page_Nav", page_action: "next" })}
-                              className="w-full rounded-lg border border-border py-2 text-xs text-muted hover:bg-neutral-800 hover:text-text disabled:cursor-not-allowed disabled:opacity-40"
-                            >
-                              Show more results ({metadata!.search_results!.remaining} remaining)
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                }
-
-                return (
-                  <MessageBubble
-                    key={message.id}
-                    message={message}
-                    isGenerating={isGenerating}
-                    isActive={message.id === activeAssistantId}
-                  />
-                );
-              })}
-
-              {showQuickReplies && (
-                <QuickReplies
-                  replies={metadata!.quick_replies!}
-                  onSelect={onQuickReply}
+              {session.messages.map((message) => (
+                <MessageBubble
+                  key={message.id}
+                  message={message}
+                  isGenerating={isGenerating}
+                  isActive={message.id === activeAssistantId}
                 />
+              ))}
+              
+              {showQuickReplies && (
+                <div className="pt-2 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                  <div className="mb-3 text-[10px] font-bold uppercase tracking-widest text-muted/50">
+                    Suggestions
+                  </div>
+                  <QuickReplies replies={quickReplies!} onSelect={onQuickReply} />
+                </div>
               )}
             </>
           ) : (
-            <div className="pt-16 text-center text-sm text-muted">
-              Start a conversation.
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/5 text-muted">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+              </div>
+              <h3 className="text-sm font-bold text-text">Start a Conversation</h3>
+              <p className="mt-2 max-w-[200px] text-xs leading-relaxed text-muted">
+                Describe the property you're looking for to begin your search.
+              </p>
             </div>
           )}
-          <div ref={endRef} />
+          <div ref={endRef} className="h-4 shrink-0" />
         </div>
       </div>
-    </section>
+    </div>
   );
 }

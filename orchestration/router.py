@@ -59,35 +59,19 @@ def _classify_with_llm_no_listings(
     pending_area_compare_areas: Optional[List[str]] = None,
 ) -> Optional[RouteDecision]:
     prompt = (
-        "You are a router for a rental assistant.\n"
-        "Current state always has_listings=false and has_focus=false.\n"
-        "Return STRICT JSON only with schema:\n"
-        '{"intent":"Search|Specific_QA|Chitchat|Page_Nav|AreaCompare|Shortlist","shortlist_action":null,"target_areas":[],"confidence":0.0,"reason":"...",'
-        '"need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-        "Policy:\n"
-        "- Without listings, Specific_QA is invalid and should generally map to Search.\n"
-        "- If user asks to navigate pages, intent=Page_Nav with page_action='next' or 'prev'.\n"
-        "- Use Chitchat for greetings/small talk.\n"
-        "- Use Search for search requests or filter statements.\n"
-        "- Use AreaCompare when user wants to compare rental prices or availability across multiple areas "
-        "(e.g. 'Is Hackney cheaper than Peckham?', 'compare rents in zone 2 vs zone 3'). "
-        "Set target_areas to the list of area names mentioned.\n"
-        "- Use Shortlist when user manages saved listings: shortlist_action='show' (show my shortlist/saved), "
-        "'clear' (clear all saved). shortlist_action='add'/'remove' are valid only when listings exist.\n"
+        "Rental assistant router. State: has_listings=false, has_focus=false.\n"
+        "Return STRICT JSON. Omit null values, empty arrays, and false booleans.\n"
+        "Fields: intent(Search|Chitchat|Page_Nav|AreaCompare|Shortlist), confidence(0-1), reason(string), "
+        "target_areas(string[]), shortlist_action(show|clear), page_action(next|prev), refinement_type(string).\n"
+        "Policy: Without listings, QA/Compare/Explain→Search. Chitchat for greetings. "
+        "AreaCompare for cross-area price comparison (set target_areas). "
+        "Shortlist: show/clear only (add/remove need listings). Page_Nav for paging.\n"
         "\n"
-        "Few-shot:\n"
-        "Query: 'How r you'\n"
-        'Output: {"intent":"Chitchat","shortlist_action":null,"target_areas":[],"confidence":0.92,"reason":"small_talk","need_clarify":false,"clarify_question":null,"refinement_type":null}\n'
-        "Query: 'Find 1 bed near Waterloo under 2500'\n"
-        'Output: {"intent":"Search","shortlist_action":null,"target_areas":[],"confidence":0.96,"reason":"search_request","need_clarify":false,"clarify_question":null,"refinement_type":null}\n'
-        "Query: 'show more'\n"
-        'Output: {"intent":"Page_Nav","shortlist_action":null,"target_areas":[],"confidence":0.95,"reason":"next_page_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":"next"}\n'
-        "Query: 'Is Hackney cheaper than Peckham?'\n"
-        'Output: {"intent":"AreaCompare","shortlist_action":null,"target_areas":["Hackney","Peckham"],"confidence":0.95,"reason":"area_price_comparison","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-        "Query: 'show my shortlist'\n"
-        'Output: {"intent":"Shortlist","shortlist_action":"show","target_areas":[],"confidence":0.97,"reason":"show_saved_listings","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-        "Query: 'clear my saved listings'\n"
-        'Output: {"intent":"Shortlist","shortlist_action":"clear","target_areas":[],"confidence":0.96,"reason":"clear_shortlist","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}'
+        'Q: \'How r you\' → {"intent":"Chitchat","confidence":0.92,"reason":"small_talk"}\n'
+        'Q: \'Find 1 bed near Waterloo under 2500\' → {"intent":"Search","confidence":0.96,"reason":"search_request"}\n'
+        'Q: \'show more\' → {"intent":"Page_Nav","confidence":0.95,"reason":"next_page","page_action":"next"}\n'
+        'Q: \'Is Hackney cheaper than Peckham?\' → {"intent":"AreaCompare","target_areas":["Hackney","Peckham"],"confidence":0.95,"reason":"area_comparison"}\n'
+        'Q: \'show my shortlist\' → {"intent":"Shortlist","shortlist_action":"show","confidence":0.97,"reason":"show_saved"}\n'
     )
     user_payload = f"Conversation summary:\n{history_hint or '(none)'}\n\nUser input:\n{text}"
     try:
@@ -184,108 +168,49 @@ def _classify_with_llm_for_listings(
     suggestion_few_shot = ""
     if pending_suggestion_display:
         suggestion_policy = (
-            f"- The assistant previously suggested: \"{pending_suggestion_display}\".\n"
-            "- If the user is affirming that suggestion (e.g. 'yes', 'ok', 'do it', 'sure', 'go ahead',\n"
-            "  'yes please', 'sounds good', 'raise it'), set intent=AcceptSuggestion.\n"
-            "- Only use AcceptSuggestion when a pending suggestion exists AND the user is clearly accepting it.\n"
+            f"Pending suggestion: \"{pending_suggestion_display}\". "
+            "If user affirms (yes/ok/sure/do it/go ahead), intent=AcceptSuggestion. "
+            "If user rejects or redirects, intent=Search.\n"
         )
         suggestion_few_shot = (
-            f"[Pending: \"{pending_suggestion_display}\"]\n"
-            "Query: 'yes do that'\n"
-            '{"intent":"AcceptSuggestion","confidence":0.97,"reason":"accepting_suggestion","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-            f"[Pending: \"{pending_suggestion_display}\"]\n"
-            "Query: 'ok'\n"
-            '{"intent":"AcceptSuggestion","confidence":0.93,"reason":"accepting_suggestion","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-            f"[Pending: \"{pending_suggestion_display}\"]\n"
-            "Query: 'no thanks, show me cheaper areas instead'\n"
-            '{"intent":"Search","confidence":0.95,"reason":"rejecting_suggestion_new_search","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-            f"[Pending: \"{pending_suggestion_display}\"]\n"
-            "Query: 'not really, maybe try a different location'\n"
-            '{"intent":"Search","confidence":0.92,"reason":"rejecting_suggestion_redirect","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
+            f'Q: \'yes do that\' [pending] → {{"intent":"AcceptSuggestion","confidence":0.97,"reason":"accepting"}}\n'
+            f'Q: \'no thanks\' [pending] → {{"intent":"Search","confidence":0.95,"reason":"rejecting_suggestion"}}\n'
         )
 
     prompt = (
-        "You are a router for a rental assistant.\n"
-        f"Current state: has_listings=true, has_focus={'true' if has_focus else 'false'}.\n"
-        "Return STRICT JSON only with schema:\n"
-        '{"intent":"Search|Specific_QA|Compare|AreaCompare|Shortlist|Chitchat|Page_Nav|AcceptSuggestion|Explain","shortlist_action":null,"target_indices":[],"target_areas":[],"confidence":0.0,"reason":"...",'
-        '"need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-        "Interpretation policy:\n"
-        "- Search includes both new-search and refinement/reset actions.\n"
-        "- Specific_QA is for detail questions about current results/listings.\n"
-        "- Page_Nav is for paging requests.\n"
-        "- Use page_action='next' for: 'next page', 'show more', 'more results', 'next batch'.\n"
-        "- Use page_action='prev' for: 'previous page', 'prev page', 'go back', 'last page'.\n"
-        "- For a single listing reference in QA, use target_indices=[N] (e.g. 'second listing' → target_indices=[2]).\n"
-        "- Compare is for structured side-by-side comparison: 'compare listing 1 and 3', 'listing 2 vs 4', 'difference between 1 and 2'. Set target_indices to the 1-based indices mentioned. If no specific indices given, leave target_indices as [].\n"
-        "- AreaCompare is for comparing rental prices/availability across multiple geographic areas "
-        "(e.g. 'Is Hackney cheaper than Peckham?', 'compare rents in zone 2 vs zone 3'). "
-        "Set target_areas to the list of area names mentioned.\n"
-        "- Explain is for holistic evaluation without 'compare' keyword: 'which is best?', 'explain these results', 'why recommend these?'.\n"
-        "- Specific_QA with multiple listings: e.g. 'do listing 1 and 2 allow pets?'. Set target_indices=[1,2].\n"
-        "- If has_focus=true and user asks a listing detail question without index, keep intent=Specific_QA and need_clarify=false.\n"
-        "- If has_focus=false and QA target is ambiguous, set need_clarify=true.\n"
-        "- If refinement request is underspecified (e.g., 'too expensive' without a target budget), set need_clarify=true.\n"
-        "- For clear price reduction requests, set intent=Search and refinement_type='price_down'.\n"
-        "- Use Shortlist when user manages saved listings: shortlist_action='add' (save/bookmark listing N — set target_indices=[N]), "
-        "'remove' (remove shortlist item N — set target_indices=[N]), "
-        "'show' (show my shortlist/saved), 'clear' (clear all saved).\n"
+        "Rental assistant router. State: has_listings=true, "
+        f"has_focus={'true' if has_focus else 'false'}.\n"
+        "Return STRICT JSON. Omit null values, empty arrays, and false booleans.\n"
+        "Fields: intent(Search|Specific_QA|Compare|AreaCompare|Shortlist|Chitchat|Page_Nav|AcceptSuggestion|Explain), "
+        "confidence(0-1), reason(string), target_indices(int[]), target_areas(string[]), "
+        "shortlist_action(add|remove|show|clear), refinement_type(string), page_action(next|prev), "
+        "need_clarify(bool), clarify_question(string).\n"
+        "Policy: Search=new/refine/reset. Specific_QA=detail questions (set target_indices=[N]). "
+        "Compare=side-by-side (set target_indices). Explain=holistic eval (which is best?, why these?). "
+        "AreaCompare=cross-area price comparison (set target_areas). "
+        "Page_Nav=paging (page_action=next/prev). "
+        "Shortlist: add/remove (target_indices=[N]), show, clear. "
+        "Chitchat=greetings/thanks. "
+        "If has_focus=true, QA without index→Specific_QA. "
+        "If ambiguous QA target and no focus, need_clarify=true. "
+        "Price reduction→Search+refinement_type='price_down'.\n"
         + suggestion_policy
         + "\n"
-        "Few-shot:\n"
         + suggestion_few_shot
-        + "Query: 'too expensive, cheaper please'\n"
-        '{"intent":"Search","confidence":0.97,"reason":"refinement_request","need_clarify":false,"clarify_question":null,"refinement_type":"price_down","page_action":null}\n'
-        "Query: 'does it have a gym?'\n"
-        '{"intent":"Specific_QA","confidence":0.90,"reason":"detail_question_about_listing","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-        "Query: 'second one?'\n"
-        '{"intent":"Specific_QA","target_indices":[2],"confidence":0.96,"reason":"explicit_result_reference","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-        "Query: 'start over'\n"
-        '{"intent":"Search","confidence":0.98,"reason":"reset_search","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-        "Query: 'thanks'\n"
-        '{"intent":"Chitchat","confidence":0.95,"reason":"small_talk","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-        "Query: 'show me next page'\n"
-        '{"intent":"Page_Nav","confidence":0.96,"reason":"next_page_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":"next"}\n'
-        "Query: 'go to previous page'\n"
-        '{"intent":"Page_Nav","confidence":0.96,"reason":"prev_page_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":"prev"}\n'
-        "Query: 'which one is best?'\n"
-        '{"intent":"Explain","target_indices":[],"confidence":0.93,"reason":"evaluation_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-        "Query: 'explain these results'\n"
-        '{"intent":"Explain","target_indices":[],"confidence":0.95,"reason":"evaluation_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-        "Query: 'why did you recommend these?'\n"
-        '{"intent":"Explain","target_indices":[],"confidence":0.91,"reason":"evaluation_request","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-        "Query: 'compare listing 1 and 3'\n"
-        '{"intent":"Compare","target_indices":[1,3],"confidence":0.97,"reason":"structured_comparison","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-        "Query: 'listing 2 vs 4'\n"
-        '{"intent":"Compare","target_indices":[2,4],"confidence":0.96,"reason":"structured_comparison","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-        "Query: 'what is the difference between 1 and 2?'\n"
-        '{"intent":"Compare","target_indices":[1,2],"confidence":0.94,"reason":"structured_comparison","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-        "Query: 'compare all of them'\n"
-        '{"intent":"Compare","shortlist_action":null,"target_indices":[],"target_areas":[],"confidence":0.92,"reason":"structured_comparison_all","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-        "Query: 'compare my shortlist'\n"
-        '{"intent":"Compare","shortlist_action":null,"target_indices":[],"target_areas":[],"confidence":0.93,"reason":"compare_shortlist","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-        "Query: 'compare my saved listings'\n"
-        '{"intent":"Compare","shortlist_action":null,"target_indices":[],"target_areas":[],"confidence":0.92,"reason":"compare_shortlist","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-        "Query: 'do listing 1 and 2 allow pets?'\n"
-        '{"intent":"Specific_QA","target_indices":[1,2],"confidence":0.92,"reason":"multi_listing_qa","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-        "Query: 'do the first and second allow pets?'\n"
-        '{"intent":"Specific_QA","target_indices":[1,2],"confidence":0.91,"reason":"multi_listing_qa_ordinal","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-        "Query: 'does the third one have a garden?'\n"
-        '{"intent":"Specific_QA","target_indices":[3],"confidence":0.93,"reason":"explicit_result_reference_ordinal","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-        "Query: 'Is Hackney cheaper than Peckham for a 2 bed?'\n"
-        '{"intent":"AreaCompare","target_indices":[],"target_areas":["Hackney","Peckham"],"confidence":0.96,"reason":"area_price_comparison","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-        "Query: 'which area is more affordable, Brixton or Clapham?'\n"
-        '{"intent":"AreaCompare","target_indices":[],"target_areas":["Brixton","Clapham"],"confidence":0.94,"reason":"area_price_comparison","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-        "Query: 'save listing 2'\n"
-        '{"intent":"Shortlist","shortlist_action":"add","target_indices":[2],"target_areas":[],"confidence":0.97,"reason":"save_listing","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-        "Query: 'bookmark listing 1 and 3'\n"
-        '{"intent":"Shortlist","shortlist_action":"add","target_indices":[1,3],"target_areas":[],"confidence":0.95,"reason":"save_listings","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-        "Query: 'show my shortlist'\n"
-        '{"intent":"Shortlist","shortlist_action":"show","target_indices":[],"target_areas":[],"confidence":0.97,"reason":"show_saved","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-        "Query: 'remove shortlist 2'\n"
-        '{"intent":"Shortlist","shortlist_action":"remove","target_indices":[2],"target_areas":[],"confidence":0.95,"reason":"remove_saved","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}\n'
-        "Query: 'clear my shortlist'\n"
-        '{"intent":"Shortlist","shortlist_action":"clear","target_indices":[],"target_areas":[],"confidence":0.96,"reason":"clear_shortlist","need_clarify":false,"clarify_question":null,"refinement_type":null,"page_action":null}'
+        + 'Q: \'too expensive\' → {"intent":"Search","confidence":0.97,"reason":"refinement","refinement_type":"price_down"}\n'
+        'Q: \'does it have a gym?\' → {"intent":"Specific_QA","confidence":0.90,"reason":"detail_question"}\n'
+        'Q: \'second one?\' → {"intent":"Specific_QA","target_indices":[2],"confidence":0.96,"reason":"listing_ref"}\n'
+        'Q: \'do listing 1 and 2 allow pets?\' → {"intent":"Specific_QA","target_indices":[1,2],"confidence":0.92,"reason":"multi_qa"}\n'
+        'Q: \'start over\' → {"intent":"Search","confidence":0.98,"reason":"reset"}\n'
+        'Q: \'thanks\' → {"intent":"Chitchat","confidence":0.95,"reason":"small_talk"}\n'
+        'Q: \'show more\' → {"intent":"Page_Nav","confidence":0.96,"reason":"next_page","page_action":"next"}\n'
+        'Q: \'go back\' → {"intent":"Page_Nav","confidence":0.96,"reason":"prev_page","page_action":"prev"}\n'
+        'Q: \'which is best?\' → {"intent":"Explain","confidence":0.93,"reason":"evaluation"}\n'
+        'Q: \'compare 1 and 3\' → {"intent":"Compare","target_indices":[1,3],"confidence":0.97,"reason":"comparison"}\n'
+        'Q: \'compare all\' → {"intent":"Compare","confidence":0.92,"reason":"compare_all"}\n'
+        'Q: \'Hackney vs Peckham?\' → {"intent":"AreaCompare","target_areas":["Hackney","Peckham"],"confidence":0.95,"reason":"area_compare"}\n'
+        'Q: \'save listing 2\' → {"intent":"Shortlist","shortlist_action":"add","target_indices":[2],"confidence":0.97,"reason":"save"}\n'
+        'Q: \'show my shortlist\' → {"intent":"Shortlist","shortlist_action":"show","confidence":0.97,"reason":"show_saved"}\n'
     )
     user_payload = f"Conversation summary:\n{history_hint or '(none)'}\n\nUser input:\n{text}"
     try:

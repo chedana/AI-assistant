@@ -56,7 +56,8 @@ def compute_stagec_weights(signals: Dict[str, Any]) -> Dict[str, float]:
         base = {"transit": 0.00, "school": 0.65, "preference": 0.35}
         penalty = 0.30
     else:
-        base = {"transit": 0.00, "school": 0.00, "preference": 1.00}
+        # Default: No specific intents. Balance weights across metadata signals.
+        base = {"transit": 0.00, "school": 0.00, "preference": 0.30}
         penalty = 0.20
     return {
         **base,
@@ -442,7 +443,7 @@ def rank_stage_c(
             sim_cache=sim_cache,
         )
         if not pref_terms:
-            pref_score, pref_hits, pref_group_detail, pref_evidence = (0.0, [], "no_intents", [])
+            pref_score, pref_hits, pref_group_detail, pref_evidence = (0.50, [], "no_intents", [])
             pref_source = "no_intents"
         else:
             pref_source = "sidecar_vectors"

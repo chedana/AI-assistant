@@ -52,61 +52,23 @@ def _try_build_plan_via_llm(
     existing_constraints: Optional[Dict[str, Any]],
 ) -> Optional[RefinementPlan]:
     system_prompt = (
-        "You are a structured extraction engine for a rental-search assistant.\n"
-        "Return STRICT JSON only (no markdown, no explanation).\n"
-        "Schema:\n"
-        "{\n"
-        '  "set_fields": {\n'
-        '    "location_keywords": string[]|null,\n'
-        '    "max_rent_pcm": number|null,\n'
-        '    "available_from": string|null,\n'
-        '    "furnish_type": string|null,\n'
-        '    "let_type": string|null,\n'
-        '    "layout_options": [{"bedrooms": number|null, "bathrooms": number|null, "property_type": string|null, "layout_tag": string|null, "max_rent_pcm": number|null}]|null,\n'
-        '    "min_tenancy_months": number|null,\n'
-        '    "min_size_sqm": number|null\n'
-        "  },\n"
-        '  "clear_fields": [\n'
-        '    "location_keywords" | "max_rent_pcm" | "available_from" | "furnish_type" | "let_type" | "layout_options" | "min_tenancy_months" | "min_size_sqm"\n'
-        "  ],\n"
-        '  "is_reset": boolean,\n'
-        '  "semantic_terms": {\n'
-        '    "transit_terms": string[],\n'
-        '    "school_terms": string[],\n'
-        '    "general_semantic_phrases": string[]\n'
-        "  }\n"
-        "}\n"
-        "Rules:\n"
-        "- Only use these 8 set_fields keys; do not add others.\n"
-        "- clear_fields means explicit remove semantics: only include fields when user clearly says remove/clear/no-preference/unlimited "
-        '(e.g., "no budget limit", "don\'t care about furnishing", "remove size requirement").\n'
-        "- Default behavior is SET (add/update). Do not guess CLEAR.\n"
-        "- If uncertain, leave fields null/empty instead of guessing.\n"
-        "- For location_keywords, do verbatim extraction from user text spans only.\n"
-        "- Do NOT correct spelling, expand abbreviations, canonicalize, or rewrite location text.\n"
-        "- For any explicit location request (single or multiple), put them into set_fields.location_keywords.\n"
-        "- For any explicit layout request (single or multiple), put them into set_fields.layout_options.\n"
-        "- layout_options item schema: {\"bedrooms\":number|null,\"bathrooms\":number|null,\"property_type\":string|null,\"layout_tag\":string|null,\"max_rent_pcm\":number|null}.\n"
-        "- semantic_terms are phrase-level soft intents for reranking only.\n"
-        "- Keep named entities as full phrases; do NOT split entities into words.\n"
-        "- Do NOT put hard constraints into semantic_terms (budget/bedrooms/property_type/strict location filters).\n"
-        "- Avoid generic filler terms when concrete entities exist.\n"
-        "- is_reset=true only for explicit reset/start-over/new-search-from-scratch/ignore-previous intent (equivalent to update_scope=replace_all).\n"
-        "- Otherwise is_reset=false (equivalent to update_scope=patch).\n"
+        "Rental-search constraint extractor. Return STRICT JSON only, no markdown.\n"
+        "Omit null values, empty arrays [], empty objects {}, and false booleans. Only include fields the user actually mentioned.\n"
+        "set_fields keys (only these 8): location_keywords(string[]), max_rent_pcm(number), available_from(string), "
+        "furnish_type(string), let_type(string), layout_options([{bedrooms,bathrooms,property_type,layout_tag,max_rent_pcm}]), "
+        "min_tenancy_months(number), min_size_sqm(number).\n"
+        "clear_fields: list field names ONLY when user explicitly says remove/clear/no-preference (e.g. \"no budget limit\"). Default is SET, not CLEAR.\n"
+        "is_reset: true only for explicit reset/start-over intent.\n"
+        "semantic_terms: {transit_terms[], school_terms[], general_semantic_phrases[]} — soft reranking phrases only, no hard constraints.\n"
+        "Rules: location_keywords verbatim from user text, no spelling correction. Keep named entities as full phrases. "
+        "layout_options: studio→bedrooms:0+layout_tag:\"studio\". If uncertain, omit the field.\n"
         "\n"
-        "Few-shot:\n"
         "Q: '2 bed in Canary Wharf under 2500'\n"
-        'A: {"set_fields":{"location_keywords":["Canary Wharf"],"max_rent_pcm":2500,'
-        '"layout_options":[{"bedrooms":2,"bathrooms":null,"property_type":null,"layout_tag":null,"max_rent_pcm":null}],'
-        '"available_from":null,"furnish_type":null,"let_type":null,"min_tenancy_months":null,"min_size_sqm":null},'
-        '"clear_fields":[],"is_reset":false,'
-        '"semantic_terms":{"transit_terms":[],"school_terms":[],"general_semantic_phrases":[]}}\n'
-        "\n"
+        'A: {"set_fields":{"location_keywords":["Canary Wharf"],"max_rent_pcm":2500,"layout_options":[{"bedrooms":2}]}}\n'
         "Q: 'start over, I want something different'\n"
-        'A: {"set_fields":{"location_keywords":null,"max_rent_pcm":null,"layout_options":null,'
-        '"available_from":null,"furnish_type":null,"let_type":null,"min_tenancy_months":null,"min_size_sqm":null},'
-        '"clear_fields":[],"is_reset":true,'
-        '"semantic_terms":{"transit_terms":[],"school_terms":[],"general_semantic_phrases":[]}}\n'
+        'A: {"is_reset":true}\n'
+        "Q: 'furnished flat near good schools in Brixton'\n"
+        'A: {"set_fields":{"location_keywords":["Brixton"],"furnish_type":"furnished"},"semantic_terms":{"school_terms":["good schools"]}}\n'
     )
     user_payload = "User input:\n" + str(user_text or "")
     try:

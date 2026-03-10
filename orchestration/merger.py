@@ -16,6 +16,7 @@ SNAPSHOT_FIELDS: Tuple[str, ...] = (
     "let_type",
     "min_tenancy_months",
     "min_size_sqm",
+    "geo_bound",
 )
 
 
@@ -29,6 +30,7 @@ def empty_snapshot() -> QuerySnapshot:
         let_type=None,
         min_tenancy_months=None,
         min_size_sqm=None,
+        geo_bound=None,
         k=None,
         results=[],
     )
@@ -49,6 +51,7 @@ def snapshot_from_constraints(
     snap.let_type = c.get("let_type")
     snap.min_tenancy_months = c.get("min_tenancy_months")
     snap.min_size_sqm = c.get("min_size_sqm")
+    snap.geo_bound = deepcopy(c.get("geo_bound")) if c.get("geo_bound") else None
     # k is a display setting (page size), not a search constraint.
     # Carry it through so a cache-hit restore doesn't silently reset page size.
     raw_k = c.get("k")
@@ -67,6 +70,7 @@ def snapshot_to_constraints(snapshot: QuerySnapshot) -> Dict[str, Any]:
         "let_type": snapshot.let_type,
         "min_tenancy_months": snapshot.min_tenancy_months,
         "min_size_sqm": snapshot.min_size_sqm,
+        "geo_bound": snapshot.geo_bound,
     }
     if snapshot.k is not None:
         out["k"] = snapshot.k

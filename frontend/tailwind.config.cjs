@@ -4,12 +4,14 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        surface: "#171717",
-        panel: "#212121",
-        border: "#303030",
-        muted: "#a3a3a3",
-        text: "#f5f5f5",
-        accent: "#10a37f"
+        surface: "#0a0a0a",      // Deeper black for main background
+        panel: "#141414",        // Slightly lighter for cards
+        "panel-alt": "#111111",  // Subtle alternative for sidebar
+        border: "#262626",       // More subtle borders
+        muted: "#94a3b8",        // Slate-400 for better legibility
+        text: "#f8fafc",         // Slate-50 for high contrast
+        accent: "#10b981",       // Emerald-500 (vibrant green)
+        "accent-dim": "#059669", // Emerald-600
       }
     },
   },

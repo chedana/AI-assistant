@@ -18,7 +18,7 @@ type Props = {
   onShowMore: () => void;
   onShowPrev: () => void;
   onQuickReply: (text: string, routeHint?: Record<string, unknown>) => void;
-  onSuggestionClick: (text: string) => void;
+  onSuggestionClick: (text: string, routeHint?: Record<string, unknown>) => void;
 };
 
 function ListingSkeleton() {
@@ -245,7 +245,7 @@ export default function ListingsPanel({
                 onListingClick={setSelectedListing} 
                 onSearchArea={(areas, geo) => onSuggestionClick(
                     `Show me rentals in ${areas.length > 0 ? areas.join(' and ') : 'this area'}`,
-                    geo ? { geo_bound: geo } : undefined
+                    geo ? { intent: "Search", set_constraints: { geo_bound: geo }, clear_fields: ["location_keywords"] } : { intent: "Search", clear_fields: ["location_keywords"] }
                 )}
               />
             )

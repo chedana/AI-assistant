@@ -1,1 +1,530 @@
-{}
+{
+  "Whitechapel, London": {
+    "location_identifier": "REGION^85210",
+    "display_location_identifier": null
+  },
+  "Wapping, London": {
+    "location_identifier": "REGION^85209",
+    "display_location_identifier": null
+  },
+  "Bethnal Green, London": {
+    "location_identifier": "REGION^85224",
+    "display_location_identifier": null
+  },
+  "Chingford, London": {
+    "location_identifier": "REGION^85336",
+    "display_location_identifier": null
+  },
+  "Clapton, London": {
+    "location_identifier": "REGION^85455",
+    "display_location_identifier": null
+  },
+  "Plaistow, East London": {
+    "location_identifier": "REGION^85284",
+    "display_location_identifier": null
+  },
+  "Forest Gate, London": {
+    "location_identifier": "REGION^70426",
+    "display_location_identifier": null
+  },
+  "Hackney, London": {
+    "location_identifier": "REGION^87508",
+    "display_location_identifier": null
+  },
+  "Homerton, London": {
+    "location_identifier": "REGION^70408",
+    "display_location_identifier": null
+  },
+  "Leyton, London": {
+    "location_identifier": "REGION^87520",
+    "display_location_identifier": null
+  },
+  "Leytonstone, London": {
+    "location_identifier": "REGION^87521",
+    "display_location_identifier": null
+  },
+  "Manor Park, London": {
+    "location_identifier": "REGION^85349",
+    "display_location_identifier": null
+  },
+  "Plaistow, London": {
+    "location_identifier": "REGION^85284",
+    "display_location_identifier": null
+  },
+  "Canary Wharf, London": {
+    "location_identifier": "REGION^85362",
+    "display_location_identifier": null
+  },
+  "Stratford, London": {
+    "location_identifier": "REGION^85312",
+    "display_location_identifier": null
+  },
+  "Canning Town, London": {
+    "location_identifier": "REGION^70412",
+    "display_location_identifier": null
+  },
+  "Walthamstow, London": {
+    "location_identifier": "REGION^85310",
+    "display_location_identifier": null
+  },
+  "Clerkenwell, London": {
+    "location_identifier": "REGION^87500",
+    "display_location_identifier": null
+  },
+  "Shoreditch, London": {
+    "location_identifier": "REGION^87528",
+    "display_location_identifier": null
+  },
+  "Moorgate, London": {
+    "location_identifier": "REGION^87524",
+    "display_location_identifier": null
+  },
+  "Barbican, London": {
+    "location_identifier": "REGION^85259",
+    "display_location_identifier": null
+  },
+  "Aldgate, London": {
+    "location_identifier": "REGION^94187",
+    "display_location_identifier": null
+  },
+  "Blackfriars, London": {
+    "location_identifier": "REGION^70450",
+    "display_location_identifier": null
+  },
+  "Islington, London": {
+    "location_identifier": "REGION^87515",
+    "display_location_identifier": null
+  },
+  "Finchley, London": {
+    "location_identifier": "REGION^87506",
+    "display_location_identifier": null
+  },
+  "Finsbury Park, London": {
+    "location_identifier": "REGION^85353",
+    "display_location_identifier": null
+  },
+  "Highbury, London": {
+    "location_identifier": "REGION^70438",
+    "display_location_identifier": null
+  },
+  "Highgate, London": {
+    "location_identifier": "REGION^70315",
+    "display_location_identifier": null
+  },
+  "Holloway, London": {
+    "location_identifier": "REGION^87514",
+    "display_location_identifier": null
+  },
+  "Crouch End, London": {
+    "location_identifier": "REGION^85322",
+    "display_location_identifier": null
+  },
+  "Edmonton, London": {
+    "location_identifier": "REGION^87505",
+    "display_location_identifier": null
+  },
+  "Muswell Hill, London": {
+    "location_identifier": "REGION^85376",
+    "display_location_identifier": null
+  },
+  "Palmers Green, London": {
+    "location_identifier": "REGION^85429",
+    "display_location_identifier": null
+  },
+  "Southgate, London": {
+    "location_identifier": "REGION^85325",
+    "display_location_identifier": null
+  },
+  "Dalston, London": {
+    "location_identifier": "REGION^85389",
+    "display_location_identifier": null
+  },
+  "Tottenham, London": {
+    "location_identifier": "REGION^87532",
+    "display_location_identifier": null
+  },
+  "Archway, London": {
+    "location_identifier": "REGION^93727",
+    "display_location_identifier": null
+  },
+  "Whetstone, London": {
+    "location_identifier": "REGION^70374",
+    "display_location_identifier": null
+  },
+  "Winchmore Hill, London": {
+    "location_identifier": "REGION^85237",
+    "display_location_identifier": null
+  },
+  "Camden Town, London": {
+    "location_identifier": "REGION^85262",
+    "display_location_identifier": null
+  },
+  "Cricklewood, London": {
+    "location_identifier": "REGION^70430",
+    "display_location_identifier": null
+  },
+  "Hampstead, London": {
+    "location_identifier": "REGION^87509",
+    "display_location_identifier": null
+  },
+  "Hendon, London": {
+    "location_identifier": "REGION^87511",
+    "display_location_identifier": null
+  },
+  "Kentish Town, London": {
+    "location_identifier": "REGION^85230",
+    "display_location_identifier": null
+  },
+  "Kilburn, London": {
+    "location_identifier": "REGION^85233",
+    "display_location_identifier": null
+  },
+  "Colindale, London": {
+    "location_identifier": "REGION^70344",
+    "display_location_identifier": null
+  },
+  "Harlesden, London": {
+    "location_identifier": "REGION^70378",
+    "display_location_identifier": null
+  },
+  "Golders Green, London": {
+    "location_identifier": "REGION^70353",
+    "display_location_identifier": null
+  },
+  "Southwark, London": {
+    "location_identifier": "REGION^61518",
+    "display_location_identifier": null
+  },
+  "Abbey Wood, London": {
+    "location_identifier": "REGION^85240",
+    "display_location_identifier": null
+  },
+  "Blackheath, London": {
+    "location_identifier": "REGION^85278",
+    "display_location_identifier": null
+  },
+  "Brockley, London": {
+    "location_identifier": "REGION^85426",
+    "display_location_identifier": null
+  },
+  "Camberwell, London": {
+    "location_identifier": "REGION^70440",
+    "display_location_identifier": null
+  },
+  "Catford, London": {
+    "location_identifier": "REGION^85422",
+    "display_location_identifier": null
+  },
+  "Charlton, London": {
+    "location_identifier": "REGION^85402",
+    "display_location_identifier": null
+  },
+  "Deptford, London": {
+    "location_identifier": "REGION^85450",
+    "display_location_identifier": null
+  },
+  "Eltham, London": {
+    "location_identifier": "REGION^85199",
+    "display_location_identifier": null
+  },
+  "Greenwich, London": {
+    "location_identifier": "REGION^61226",
+    "display_location_identifier": null
+  },
+  "Kennington, London": {
+    "location_identifier": "REGION^70435",
+    "display_location_identifier": null
+  },
+  "Lee, London": {
+    "location_identifier": "REGION^87405",
+    "display_location_identifier": null
+  },
+  "Lewisham, London": {
+    "location_identifier": "REGION^61413",
+    "display_location_identifier": null
+  },
+  "Peckham, London": {
+    "location_identifier": "REGION^85428",
+    "display_location_identifier": null
+  },
+  "Rotherhithe, London": {
+    "location_identifier": "REGION^85367",
+    "display_location_identifier": null
+  },
+  "Walworth, London": {
+    "location_identifier": "REGION^85239",
+    "display_location_identifier": null
+  },
+  "Woolwich, London": {
+    "location_identifier": "REGION^70391",
+    "display_location_identifier": null
+  },
+  "Crystal Palace, London": {
+    "location_identifier": "REGION^70306",
+    "display_location_identifier": null
+  },
+  "Penge, London": {
+    "location_identifier": "REGION^85321",
+    "display_location_identifier": null
+  },
+  "Dulwich, London": {
+    "location_identifier": "REGION^87503",
+    "display_location_identifier": null
+  },
+  "Forest Hill, London": {
+    "location_identifier": "REGION^85335",
+    "display_location_identifier": null
+  },
+  "Herne Hill, London": {
+    "location_identifier": "REGION^85409",
+    "display_location_identifier": null
+  },
+  "Sydenham, London": {
+    "location_identifier": "REGION^85378",
+    "display_location_identifier": null
+  },
+  "Thamesmead, London": {
+    "location_identifier": "REGION^85472",
+    "display_location_identifier": null
+  },
+  "Westminster, London": {
+    "location_identifier": "REGION^87539",
+    "display_location_identifier": null
+  },
+  "Pimlico, London": {
+    "location_identifier": "REGION^87526",
+    "display_location_identifier": null
+  },
+  "Knightsbridge, London": {
+    "location_identifier": "REGION^85242",
+    "display_location_identifier": null
+  },
+  "Mayfair, London": {
+    "location_identifier": "REGION^87523",
+    "display_location_identifier": null
+  },
+  "Brixton, London": {
+    "location_identifier": "REGION^87496",
+    "display_location_identifier": null
+  },
+  "Chelsea, London": {
+    "location_identifier": "REGION^93853",
+    "display_location_identifier": null
+  },
+  "Clapham, London": {
+    "location_identifier": "REGION^94451",
+    "display_location_identifier": null
+  },
+  "Earls Court, London": {
+    "location_identifier": "REGION^70339",
+    "display_location_identifier": null
+  },
+  "Fulham, London": {
+    "location_identifier": "REGION^87507",
+    "display_location_identifier": null
+  },
+  "Kensington, London": {
+    "location_identifier": "REGION^87517",
+    "display_location_identifier": null
+  },
+  "Vauxhall, London": {
+    "location_identifier": "REGION^70424",
+    "display_location_identifier": null
+  },
+  "Stockwell, London": {
+    "location_identifier": "REGION^85369",
+    "display_location_identifier": null
+  },
+  "Battersea, London": {
+    "location_identifier": "REGION^94346",
+    "display_location_identifier": null
+  },
+  "Balham, London": {
+    "location_identifier": "REGION^85434",
+    "display_location_identifier": null
+  },
+  "Barnes, London": {
+    "location_identifier": "REGION^85439",
+    "display_location_identifier": null
+  },
+  "Mortlake, London": {
+    "location_identifier": "REGION^85410",
+    "display_location_identifier": null
+  },
+  "Putney, London": {
+    "location_identifier": "REGION^85244",
+    "display_location_identifier": null
+  },
+  "Streatham, London": {
+    "location_identifier": "REGION^87530",
+    "display_location_identifier": null
+  },
+  "Tooting, London": {
+    "location_identifier": "REGION^85419",
+    "display_location_identifier": null
+  },
+  "Wandsworth, London": {
+    "location_identifier": "REGION^93977",
+    "display_location_identifier": null
+  },
+  "Wimbledon, London": {
+    "location_identifier": "REGION^93682",
+    "display_location_identifier": null
+  },
+  "Raynes Park, London": {
+    "location_identifier": "REGION^70418",
+    "display_location_identifier": null
+  },
+  "Soho, London": {
+    "location_identifier": "REGION^87529",
+    "display_location_identifier": null
+  },
+  "Marylebone, London": {
+    "location_identifier": "REGION^87522",
+    "display_location_identifier": null
+  },
+  "Fitzrovia, London": {
+    "location_identifier": "REGION^93764",
+    "display_location_identifier": null
+  },
+  "Paddington, London": {
+    "location_identifier": "REGION^70403",
+    "display_location_identifier": null
+  },
+  "Acton, London": {
+    "location_identifier": "REGION^85314",
+    "display_location_identifier": null
+  },
+  "Chiswick, London": {
+    "location_identifier": "REGION^85345",
+    "display_location_identifier": null
+  },
+  "Ealing, London": {
+    "location_identifier": "REGION^87504",
+    "display_location_identifier": null
+  },
+  "Hammersmith, London": {
+    "location_identifier": "REGION^85329",
+    "display_location_identifier": null
+  },
+  "Hanwell, London": {
+    "location_identifier": "REGION^70328",
+    "display_location_identifier": null
+  },
+  "Maida Vale, London": {
+    "location_identifier": "REGION^85443",
+    "display_location_identifier": null
+  },
+  "Ladbroke Grove, London": {
+    "location_identifier": "REGION^85448",
+    "display_location_identifier": null
+  },
+  "Notting Hill, London": {
+    "location_identifier": "REGION^70331",
+    "display_location_identifier": null
+  },
+  "Shepherds Bush, London": {
+    "location_identifier": "REGION^85398",
+    "display_location_identifier": null
+  },
+  "Bloomsbury, London": {
+    "location_identifier": "REGION^87494",
+    "display_location_identifier": null
+  },
+  "Covent Garden, London": {
+    "location_identifier": "REGION^87501",
+    "display_location_identifier": null
+  },
+  "Bromley, London": {
+    "location_identifier": "REGION^225",
+    "display_location_identifier": null
+  },
+  "Beckenham, London": {
+    "location_identifier": "REGION^126",
+    "display_location_identifier": null
+  },
+  "Croydon, London": {
+    "location_identifier": "REGION^391",
+    "display_location_identifier": null
+  },
+  "Mitcham, London": {
+    "location_identifier": "REGION^944",
+    "display_location_identifier": null
+  },
+  "Bexleyheath, London": {
+    "location_identifier": "REGION^149",
+    "display_location_identifier": null
+  },
+  "Enfield, London": {
+    "location_identifier": "REGION^93950",
+    "display_location_identifier": null
+  },
+  "Barnet, London": {
+    "location_identifier": "REGION^105",
+    "display_location_identifier": null
+  },
+  "Harrow, London": {
+    "location_identifier": "REGION^93956",
+    "display_location_identifier": null
+  },
+  "Ilford, London": {
+    "location_identifier": "REGION^674",
+    "display_location_identifier": null
+  },
+  "Redbridge, London": {
+    "location_identifier": "REGION^61537",
+    "display_location_identifier": null
+  },
+  "Woodford, London": {
+    "location_identifier": "REGION^85302",
+    "display_location_identifier": null
+  },
+  "Barking, London": {
+    "location_identifier": "REGION^102",
+    "display_location_identifier": null
+  },
+  "Kingston upon Thames, London": {
+    "location_identifier": "REGION^85243",
+    "display_location_identifier": null
+  },
+  "Romford, London": {
+    "location_identifier": "REGION^1138",
+    "display_location_identifier": null
+  },
+  "Dagenham, London": {
+    "location_identifier": "REGION^399",
+    "display_location_identifier": null
+  },
+  "Hornchurch, London": {
+    "location_identifier": "REGION^658",
+    "display_location_identifier": null
+  },
+  "Rainham, London": {
+    "location_identifier": "REGION^1110",
+    "display_location_identifier": null
+  },
+  "Upminster, London": {
+    "location_identifier": "REGION^1377",
+    "display_location_identifier": null
+  },
+  "Sutton, London": {
+    "location_identifier": "REGION^93974",
+    "display_location_identifier": null
+  },
+  "Carshalton, London": {
+    "location_identifier": "REGION^290",
+    "display_location_identifier": null
+  },
+  "Hounslow, London": {
+    "location_identifier": "REGION^93962",
+    "display_location_identifier": null
+  },
+  "Richmond, London": {
+    "location_identifier": "REGION^61415",
+    "display_location_identifier": null
+  },
+  "Uxbridge, London": {
+    "location_identifier": "REGION^1380",
+    "display_location_identifier": null
+  }
+}

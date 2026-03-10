@@ -220,6 +220,7 @@ class ListingRecord:
 
     latitude:         Optional[float] = None
     longitude:        Optional[float] = None
+    image_url:        Optional[str] = None
 
     # JSON strings (Qdrant payload must be str)
     stations:         Optional[str] = None   # json.dumps([{"name": ..., "miles": ...}])
@@ -834,6 +835,14 @@ def extract_lat_lon(html: str) -> Tuple[Optional[float], Optional[float]]:
     return lat, lon
 
 
+def extract_image_url(soup: BeautifulSoup) -> Optional[str]:
+    """Extract og:image meta tag — Rightmove's property cover photo."""
+    tag = soup.find("meta", property="og:image")
+    if tag and tag.get("content"):
+        return tag["content"]
+    return None
+
+
 def _listing_id(url: str) -> str:
     m = re.search(r'/properties/(\d+)', url or "")
     return f"rightmove:{m.group(1)}" if m else ""
@@ -924,6 +933,7 @@ def build_record_from_html(
 
     rec.latitude  = lat
     rec.longitude = lon
+    rec.image_url = extract_image_url(soup)
 
     return rec
 
