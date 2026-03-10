@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 're
 import { useEffect, useState, useRef } from 'react';
 import MarkerClusterGroup from 'react-leaflet-cluster';
 import type { ListingData } from '../types/chat';
+import { LONDON_REGIONS } from '../lib/london_regions';
 
 // Create a custom modern marker icon using DivIcon
 const createCustomIcon = (price: number) => {
@@ -53,44 +54,82 @@ function FitBounds({ listings }: { listings: ListingData[] }) {
   return null;
 }
 
-function SearchAreaButton({ onSearch }: { onSearch: (area: string) => void }) {
+function SearchAreaButton({ onSearch }: { onSearch: (areas: string[], geoBound?: { lat: number; lng: number; radius_km: number }) => void }) {
   const [show, setShow] = useState(false);
-  const [areaName, setAreaName] = useState<string | null>(null);
+  const [areaNames, setAreaNames] = useState<string[]>([]);
+  const [geoBound, setGeoBound] = useState<{ lat: number; lng: number; radius_km: number } | null>(null);
   const timeoutRef = useRef<any>(null);
 
   const map = useMapEvents({
     moveend: () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       timeoutRef.current = setTimeout(async () => {
+        const bounds = map.getBounds();
         const center = map.getCenter();
+        
+        // Calculate a suitable search radius based on map bounds (center to corner)
+        const ne = bounds.getNorthEast();
+        const radius_km = center.distanceTo(ne) / 1000.0;
+        
+        const currentGeoBound = { 
+            lat: center.lat, 
+            lng: center.lng, 
+            radius_km: Math.min(radius_km, 5.0) // Cap at 5km for precision
+        };
+        setGeoBound(currentGeoBound);
+
+        // 1. Find regions from our internal database for display only
+        const visibleRegions: string[] = [];
+        for (const [name, data] of Object.entries(LONDON_REGIONS)) {
+          if (bounds.contains([data.lat, data.lng])) {
+            visibleRegions.push(name);
+          }
+        }
+
+        // 2. Also reverse geocode center for granularity
+        let centerArea: string | null = null;
         try {
           const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${center.lat}&lon=${center.lng}&format=json&zoom=14`);
           const data = await res.json();
-          const name = data.address?.suburb || data.address?.neighbourhood || data.address?.city_district || data.address?.town || null;
-          if (name) {
-            setAreaName(name);
-            setShow(true);
-          }
+          centerArea = data.address?.suburb || data.address?.neighbourhood || data.address?.city_district || data.address?.town || null;
         } catch (e) {
           // ignore
+        }
+
+        const finalAreas = [...visibleRegions];
+        if (centerArea && !finalAreas.includes(centerArea)) {
+            if (finalAreas.length < 3) finalAreas.unshift(centerArea);
+        }
+
+        if (finalAreas.length > 0 || currentGeoBound) {
+          setAreaNames(finalAreas.slice(0, 3));
+          setShow(true);
         }
       }, 800);
     }
   });
 
-  if (!show || !areaName) return null;
+  if (!show) return null;
+
+  const displayLabel = areaNames.length === 2
+    ? `${areaNames[0]} & ${areaNames[1]}`
+    : areaNames.length > 2 
+    ? `${areaNames[0]} & ${areaNames.length - 1} others` 
+    : areaNames.length === 1
+    ? areaNames[0]
+    : "this area";
 
   return (
     <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[1000]">
       <button 
         onClick={() => {
           setShow(false);
-          onSearch(areaName);
+          onSearch(areaNames, geoBound || undefined);
         }}
         className="bg-panel/90 backdrop-blur-md text-text text-sm font-bold px-5 py-2.5 rounded-full shadow-2xl border border-border flex items-center gap-2 hover:bg-neutral-800 transition-all hover:scale-105 active:scale-95"
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        Search {areaName}
+        Search {displayLabel}
       </button>
     </div>
   );
@@ -99,7 +138,7 @@ function SearchAreaButton({ onSearch }: { onSearch: (area: string) => void }) {
 interface MapViewProps {
   listings: ListingData[];
   onListingClick?: (listing: ListingData) => void;
-  onSearchArea?: (area: string) => void;
+  onSearchArea?: (areas: string[], geoBound?: { lat: number; lng: number; radius_km: number }) => void;
 }
 
 export default function MapView({ listings, onListingClick, onSearchArea }: MapViewProps) {
@@ -192,7 +231,7 @@ export default function MapView({ listings, onListingClick, onSearchArea }: MapV
           url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
         />
         
-        {onSearchArea && <SearchAreaButton onSearch={onSearchArea} />}
+        {onSearchArea && <SearchAreaButton onSearch={(areas, geo) => onSearchArea?.(areas, geo)} />}
 
         <MarkerClusterGroup
           chunkedLoading

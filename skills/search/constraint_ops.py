@@ -154,6 +154,7 @@ def merge_constraints(old: Optional[dict], new: dict) -> dict:
         "min_size_sqm",
         "min_size_sqft",
         "k",
+        "geo_bound",
     ]:
         if new.get(key) is not None:
             out[key] = new.get(key)
@@ -178,7 +179,7 @@ def merge_constraints(old: Optional[dict], new: dict) -> dict:
 
     old_locs = old.get("location_keywords") or []
     new_locs = new.get("location_keywords") or []
-    if bool(new.get("_clear_location_keywords")):
+    if bool(new.get("_clear_location_keywords")) or new.get("geo_bound") is not None:
         out["location_keywords"] = []
     else:
         location_mode = _safe_text(new.get("_location_update_mode")).lower()
@@ -313,6 +314,7 @@ def compact_constraints_view(c: Optional[dict]) -> dict:
         "min_tenancy_months", "min_size_sqm",
         "location_keywords",
         "k",
+        "geo_bound",
     ]
     for k in keep_keys:
         v = c.get(k)

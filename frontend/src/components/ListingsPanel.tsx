@@ -243,7 +243,10 @@ export default function ListingsPanel({
               <MapView 
                 listings={results.all_listings || results.listings} 
                 onListingClick={setSelectedListing} 
-                onSearchArea={(area) => onSuggestionClick(`Show me rentals in ${area}`)}
+                onSearchArea={(areas, geo) => onSuggestionClick(
+                    `Show me rentals in ${areas.length > 0 ? areas.join(' and ') : 'this area'}`,
+                    geo ? { geo_bound: geo } : undefined
+                )}
               />
             )
           ) : isGenerating ? (

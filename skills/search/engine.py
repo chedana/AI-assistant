@@ -1,7 +1,9 @@
 import json
+import math
 import os
 import re
-from typing import Any, Dict, List, Optional
+import time
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -12,7 +14,39 @@ except Exception:
     QdrantClient = None
     models = None
 
-from skills.search.extractors import _safe_text, expand_location_keyword_candidates
+try:
+    from crawler.london_regions import LONDON_REGIONS as _LONDON_REGIONS
+except Exception:
+    _LONDON_REGIONS = {}
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    R = 6371.0
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def _geocode_location_keywords(keywords: List[str]) -> Optional[Tuple[float, float, str]]:
+    """Match location keywords to a known London region. Returns (lat, lon, area_name) or None."""
+    if not _LONDON_REGIONS or not keywords:
+        return None
+    for kw in keywords:
+        kw_norm = kw.strip().lower()
+        # Exact match first
+        for region_name, data in _LONDON_REGIONS.items():
+            if kw_norm == region_name.lower():
+                return data["lat"], data["lng"], region_name
+        # Substring match
+        for region_name, data in _LONDON_REGIONS.items():
+            rn = region_name.lower()
+            if kw_norm in rn or rn in kw_norm:
+                return data["lat"], data["lng"], region_name
+    return None
+
+from skills.search.extractors import _safe_text, expand_location_keyword_candidates, _to_float
 from core.logger import log_message
 from core.settings import (
     QDRANT_COLLECTION,
@@ -119,6 +153,25 @@ def qdrant_search(
         c = c or {}
         must: List[Any] = []
 
+        # 1. Native Geo-Radius Filter (Primary geometric constraint)
+        geo = c.get("geo_bound")
+        if isinstance(geo, dict):
+            glat = _to_float(geo.get("lat"))
+            glon = _to_float(geo.get("lng") or geo.get("lon"))
+            grad = _to_float(geo.get("radius_km"))
+            if glat is not None and glon is not None and grad is not None:
+                # Qdrant GeoRadius filter (radius is in meters)
+                must.append(
+                    models.FieldCondition(
+                        key="location",
+                        geo_radius=models.GeoRadius(
+                            center=models.GeoPoint(lat=glat, lon=glon),
+                            radius=grad * 1000.0,
+                        ),
+                    )
+                )
+
+        # 2. Token-based Location Prefilter
         loc_values: List[str] = []
         station_values: List[str] = []
         region_values: List[str] = []
@@ -253,6 +306,7 @@ def qdrant_search(
         else:
             log_message("DEBUG", "stageA location keywords=[]")
 
+    _t_qdrant = time.perf_counter()
     if hasattr(client, "search"):
         hits = client.search(
             collection_name=QDRANT_COLLECTION,
@@ -272,15 +326,100 @@ def qdrant_search(
             with_vectors=False,
         )
         hits = list(getattr(qp, "points", []) or [])
+    print(f"[TIMING] qdrant_search={time.perf_counter()-_t_qdrant:.2f}s recall={recall} hits={len(hits)}")
 
     rows = []
-    for h in hits:
-        payload = dict(h.payload or {})
-        score = float(h.score)
-        payload["retrieval_score"] = score
-        payload["qdrant_score"] = score
-        payload["_qdrant_id"] = h.id
-        rows.append(payload)
+    # 1. Post-filter for geometric radius if geo_bound is present but primary filter returned too many or lacked index
+    geo = (c or {}).get("geo_bound")
+    if isinstance(geo, dict):
+        glat = _to_float(geo.get("lat"))
+        glon = _to_float(geo.get("lng") or geo.get("lon"))
+        grad = _to_float(geo.get("radius_km"))
+        if glat is not None and glon is not None and grad is not None:
+            for h in hits:
+                payload = dict(h.payload or {})
+                # Try location object first (native), then fallback to latitude/longitude fields
+                plat = _to_float(payload.get("location", {}).get("lat") if isinstance(payload.get("location"), dict) else payload.get("latitude"))
+                plon = _to_float(payload.get("location", {}).get("lon") if isinstance(payload.get("location"), dict) else payload.get("longitude"))
+                
+                if plat is not None and plon is not None:
+                    dist = _haversine_km(glat, glon, plat, plon)
+                    if dist <= grad:
+                        score = float(h.score)
+                        payload["retrieval_score"] = score
+                        payload["qdrant_score"] = score
+                        payload["_qdrant_id"] = h.id
+                        rows.append(payload)
+            log_message("INFO", f"stageA geo_postfilter: {len(rows)} listings within {grad}km of center")
+    else:
+        # Standard processing
+        for h in hits:
+            payload = dict(h.payload or {})
+            score = float(h.score)
+            payload["retrieval_score"] = score
+            payload["qdrant_score"] = score
+            payload["_qdrant_id"] = h.id
+            rows.append(payload)
+
+    # Geo-radius fallback: search returned nothing but user specified a location keyword.
+    # Triggers when token index misses. Skip if we already used an explicit geometric bound.
+    loc_keywords = [str(x).strip() for x in (c or {}).get("location_keywords") or [] if str(x).strip()]
+    has_geo_bound = isinstance((c or {}).get("geo_bound"), dict)
+    
+    if not rows and loc_keywords and not has_geo_bound:
+        geo_result = _geocode_location_keywords(loc_keywords)
+        if geo_result:
+            center_lat, center_lon, area_name = geo_result
+            GEO_RADIUS_KM = 3.0
+            log_message("INFO", f"stageA geo_fallback: token miss → radius {GEO_RADIUS_KM}km around '{area_name}' ({center_lat},{center_lon})")
+            _t_geo = time.perf_counter()
+            try:
+                if hasattr(client, "search"):
+                    geo_hits = client.search(
+                        collection_name=QDRANT_COLLECTION,
+                        query_vector=qx,
+                        query_filter=None,
+                        limit=recall,
+                        with_payload=True,
+                        with_vectors=False,
+                    )
+                else:
+                    gqp = client.query_points(
+                        collection_name=QDRANT_COLLECTION,
+                        query=qx,
+                        query_filter=None,
+                        limit=recall,
+                        with_payload=True,
+                        with_vectors=False,
+                    )
+                    geo_hits = list(getattr(gqp, "points", []) or [])
+                print(f"[TIMING] geo_fallback_search={time.perf_counter()-_t_geo:.2f}s hits={len(geo_hits)}")
+                for h in geo_hits:
+                    payload = dict(h.payload or {})
+                    lat = payload.get("latitude")
+                    lon = payload.get("longitude")
+                    if lat is None or lon is None:
+                        continue
+                    try:
+                        dist = _haversine_km(center_lat, center_lon, float(lat), float(lon))
+                    except (TypeError, ValueError):
+                        continue
+                    if dist <= GEO_RADIUS_KM:
+                        score = float(h.score)
+                        payload["retrieval_score"] = score
+                        payload["qdrant_score"] = score
+                        payload["_qdrant_id"] = h.id
+                        rows.append(payload)
+                log_message("INFO", f"stageA geo_fallback: {len(rows)} listings within {GEO_RADIUS_KM}km of '{area_name}'")
+            except Exception as exc:
+                log_message("WARN", f"stageA geo_fallback error: {exc}")
+
+            if rows:
+                df = pd.DataFrame(rows).reset_index(drop=True)
+                df.attrs["prefilter_count"] = prefilter_count
+                df.attrs["geo_fallback_area"] = area_name
+                return df
+
     if not rows:
         df = pd.DataFrame()
         df.attrs["prefilter_count"] = prefilter_count
