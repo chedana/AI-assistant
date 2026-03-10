@@ -74,6 +74,20 @@ SESSION_LOCKS_META = Lock()  # protects SESSION_LOCKS dict itself
 MAX_USER_INPUT = 2000
 
 
+def _json_list(val: object) -> list[str]:
+    """Parse a JSON-encoded array string (e.g. image_urls) into list[str]."""
+    if isinstance(val, list):
+        return [str(x) for x in val if x]
+    if isinstance(val, str) and val.strip():
+        try:
+            parsed = json.loads(val)
+            if isinstance(parsed, list):
+                return [str(x) for x in parsed if x]
+        except Exception:
+            pass
+    return []
+
+
 def _to_list(val: object) -> list[str]:
     """Normalise a field that may be str, list, or None into list[str]."""
     if isinstance(val, list):
@@ -135,6 +149,14 @@ def build_metadata(state: AgentState) -> dict | None:
                 "bedrooms": _num(r.get("bedrooms")),
                 "bathrooms": _num(r.get("bathrooms")),
                 "available_from": str(r.get("available_from", "")),
+                "description": str(r.get("description", "")),
+                "features": str(r.get("features", "")),
+                "property_type": str(r.get("property_type", "")),
+                "furnish_type": str(r.get("furnish_type", "")),
+                "lat": _num(r.get("latitude"), None),
+                "lon": _num(r.get("longitude"), None),
+                "image_urls": _json_list(r.get("image_urls")),
+                "deposit": _num(r.get("deposit")),
                 "final_score": _num(r.get("final_score")),
                 "penalty_reasons": [p for p in _to_list(r.get("penalty_reasons")) if not p.startswith("unknown_hard(")],
                 "preference_hits": _to_list(r.get("preference_hits")),
@@ -196,6 +218,8 @@ def build_metadata(state: AgentState) -> dict | None:
                     "size_sqm": _num(r.get("size_sqm")),
                     "furnish_type": str(r.get("furnish_type") or ""),
                     "property_type": str(r.get("property_type") or ""),
+                    "lat": _num(r.get("latitude"), None),
+                    "lon": _num(r.get("longitude"), None),
                 })
             meta["compare_data"] = {"listings": compare_listings}
 
@@ -219,6 +243,8 @@ def build_metadata(state: AgentState) -> dict | None:
             "final_score": _num(r.get("final_score")),
             "penalty_reasons": [p for p in _to_list(r.get("penalty_reasons")) if not p.startswith("unknown_hard(")],
             "preference_hits": _to_list(r.get("preference_hits")),
+            "lat": _num(r.get("latitude"), None),
+            "lon": _num(r.get("longitude"), None),
         }
         for r in shortlist_items
     ]
