@@ -12,7 +12,7 @@
 | Layer | Status | Notes |
 |-------|--------|-------|
 | Backend API | ✅ Running | FastAPI · `venv/bin/uvicorn backend.api_server:app --port 8000` |
-| Qdrant Cloud | ✅ Connected | 26,191 listings, `rent_listings` collection |
+| Qdrant Cloud | ✅ Connected | **24,389 listings** (dead listings removed, image backfill complete), `rent_listings` collection |
 | Frontend | ✅ Running | Vite · `cd frontend && npm run dev -- --port 5173` |
 | Search pipeline | ✅ Working | LangGraph + 4-stage pipeline (retrieve → filter → rank → explain) |
 | SSE streaming | ✅ Working | delta / metadata / done events |
@@ -25,11 +25,14 @@
 ```
 1. ✅ [BACKEND]  lat/lon in SSE metadata             → unblocked map view
 2. ✅ [BACKEND]  Geo-radius fallback                 → fixes location misses for unknown area names
-3. ✅ [BACKEND]  image_urls gallery in SSE metadata  → unblocked image carousel (backfill running: ~26K listings)
-4. [FRONTEND] Implement Leaflet map view (UNBLOCKED) → biggest missing feature
-5. [FRONTEND] Image carousel in drawer (UNBLOCKED)  → image_urls now available
-6. [BACKEND]  Re-crawl with area names              → further improves location coverage
-7. [BACKEND]  OpenRent scraper                      → adds private landlords
+3. ✅ [BACKEND]  image_urls gallery in SSE metadata  → unblocked image carousel
+4. ✅ [FRONTEND] Implement Leaflet map view           → done (map tab, clusters, Search this area)
+5. ✅ [FRONTEND] Image carousel in drawer/card        → done (ImageCarousel component, arrows + dots)
+6. ✅ [FRONTEND] Features + description on cards      → done (_features_list, filters "ask agent")
+7. ✅ [DATA]     Dead listing cleanup                 → 2,005 removed (404/410 on Rightmove)
+8. ✅ [DATA]     Image backfill                       → 23,418 listings updated
+9. [BACKEND]  OpenRent scraper                      → adds private landlords (next priority)
+10. [BACKEND]  Re-crawl outer London                 → more coverage (SW11, E10, SE22, etc.)
 ```
 
 ---
@@ -42,7 +45,7 @@
 |---|--------|-------|--------|
 | F-B1 | ✅ Fixed | Match % showed raw `final_score * 100` (e.g. "11%") | Now normalised 70–100% within page, minus 8% per penalty reason |
 | F-B2 | ✅ Fixed | Chat accumulates multiple "Loading more listings…" ack messages | Pagination and interactions are now fully silent. Reusing ack bubbles where necessary. |
-| F-B3 | 🔄 Unblocked | Map view button shows "coming soon" placeholder | Leaflet installed but not wired up — ~~blocked on B-B1~~ ✅ lat/lon now in metadata |
+| F-B3 | ✅ Fixed | Map view button shows "coming soon" placeholder | Leaflet map view implemented: clusters, popups, Search this area with exact viewport bounds |
 
 ### Polish
 
@@ -59,9 +62,9 @@
 
 | # | Status | Feature | Detail | Needs |
 |---|--------|---------|--------|-------|
-| F-F1 | 🔄 Unblocked | **Map view** | Leaflet pins for each listing result | ~~B-B1~~ ✅ lat/lon now in metadata |
+| F-F1 | ✅ Done | **Map view** | Leaflet map tab with cluster markers, popups, Search this area (exact viewport bounds, 10% inward shrink), skipFitBounds after geo search | — |
 | F-F2 | ✅ Fixed | **Listing detail drawer** | Click card → slide-out with full info. Includes Portal rendering, scroll lock, and keyboard focus trap. | — |
-| F-F7 | ✅ Fixed | **Image carousel in drawer** | `listing.image_urls` now available (up to 10 photos). Fall back to `image_url` if empty (backfill still running). | ~~B-img~~ ✅ `image_urls` in metadata |
+| F-F7 | ✅ Done | **Image carousel in card + drawer** | `ImageCarousel` component: left/right arrows, dot indicators, 1/N counter. Features (up to 3) or description shown on card. Drawer: Key Features first, then Property Description. `_features_list()` handles all storage formats + filters "ask agent". | — |
 | F-F3 | ✅ Fixed | **Mobile bottom nav** | Switch Chat ↔ Results on mobile | Implemented in responsive layout refactor. |
 | F-F4 | 🔴 Open | **Session rename** | Double-click session title to rename | Frontend only |
 | F-F5 | 🔴 Open | **Viewing checklist** | Per-listing checklist panel (legal + physical checks) | Roadmap Section 4 |
@@ -160,7 +163,7 @@ event: error     data: {"message": "..."}        # on failure
 | Dataset | Count | Quality | Next action |
 |---------|-------|---------|------------|
 | Rightmove London | 26,191 | Medium — postcodes used, some location misses | Re-crawl with area names |
-| Gallery images (`image_urls`) | 🔄 Backfilling | ~25,870 remaining — 20 concurrent, ~30 min. Monitor: `tail -f /tmp/backfill_images.log` | Wait for completion |
+| Gallery images (`image_urls`) | ✅ Done | 24,389 listings all have `image_url`; 2,005 dead listings (404/410) removed | — |
 | OpenRent | 0 | Not started | Build scraper (B-F2) |
 | Zoopla | 0 | Not started | Future |
 
