@@ -359,15 +359,33 @@ def extract_listing(html: str, url: str) -> ListingRecord:
     CROSS_CHARS    = {"✗", "✘", "☒"}
 
     def _cell_bool(cell) -> Optional[bool]:
-        """Read True/False/None from a value cell containing a tick or cross icon."""
+        """Read True/False/None from a value cell containing a tick or cross icon.
+
+        OpenRent uses SVG icons with CSS classes text-success / text-danger:
+          <svg class="text-success or-icon ...">  → True  (green checkmark)
+          <svg class="text-danger  or-icon ...">  → False (red cross)
+        Older pages may use Font Awesome <i> tags or unicode chars.
+        """
         if cell is None:
             return None
+
+        # Primary: SVG with text-success / text-danger (Bootstrap colour classes)
+        for svg in cell.find_all("svg"):
+            classes = set(svg.get("class") or [])
+            if "text-success" in classes:
+                return True
+            if "text-danger" in classes:
+                return False
+
+        # Font Awesome <i> / <span> icon classes
         for icon in cell.find_all(["i", "span"]):
             classes = set(icon.get("class") or [])
             if classes & TICK_CLASSES:
                 return True
             if classes & CROSS_CLASSES:
                 return False
+
+        # <img> src keywords
         for img in cell.find_all("img"):
             src = (img.get("src") or img.get("data-src") or "").lower()
             alt = (img.get("alt") or "").lower()
@@ -375,26 +393,83 @@ def extract_listing(html: str, url: str) -> ListingRecord:
                 return True
             if any(k in src or k in alt for k in ("cross", "times", "no", "false")):
                 return False
+
+        # Unicode tick/cross characters
         text = cell.get_text(strip=True)
         if any(c in text for c in TICK_CHARS):
             return True
         if any(c in text for c in CROSS_CHARS):
             return False
+
+        # Explicit yes/no text
         low = text.lower()
         if low in ("yes", "true", "included", "allowed"):
             return True
         if low in ("no", "false", "not included", "not allowed"):
             return False
+
+        # Empty cell = unticked; non-empty unknown = None (text value)
         return False if low == "" else None
 
     def _slug(s: str) -> str:
         """Normalise label to a consistent slug key."""
         return re.sub(r"[^a-z0-9]+", "_", s.lower()).strip("_")
 
+    def _label_text(cell) -> str:
+        """
+        Extract only the primary label text from a cell, ignoring tooltip text.
+
+        OpenRent puts tooltip text inside child <a data-content="..."> or
+        <span data-toggle="tooltip"> elements. get_text() merges everything,
+        corrupting the slug. Instead we collect only the direct (non-recursive)
+        text nodes of the cell — the label is a direct text node; tooltip text
+        lives inside a child element.
+
+        Fallback: if no direct text nodes, use the text of the first child
+        element that doesn't look like a tooltip/icon.
+        """
+        from bs4 import NavigableString, Tag
+
+        # Strategy 1: OpenRent uses <span class="fw-medium"> for all label text
+        fw = cell.find("span", class_=lambda c: c and "fw-medium" in c)
+        if fw:
+            return fw.get_text(strip=True)
+
+        # Strategy 2: direct text nodes of the cell (when label is bare text in <td>)
+        direct = " ".join(
+            str(t).strip()
+            for t in cell.children
+            if isinstance(t, NavigableString) and str(t).strip()
+        )
+        if direct:
+            return direct.strip()
+
+        # Strategy 3: first child element that isn't a tooltip, icon, or hidden div
+        TOOLTIP_ATTRS = {"data-content", "data-toggle", "data-tip",
+                         "data-placement", "data-original-title", "data-html",
+                         "data-bs-toggle", "data-bs-content", "data-bs-content-id"}
+        for child in cell.children:
+            if not isinstance(child, Tag):
+                continue
+            child_attrs = set(child.attrs.keys()) if child.attrs else set()
+            if child_attrs & TOOLTIP_ATTRS:
+                continue
+            child_classes = " ".join(child.get("class") or []).lower()
+            # Skip hidden/tooltip/icon elements
+            if any(k in child_classes for k in ("d-none", "tooltip", "info-icon", "help", "hint", "popover", "or-icon")):
+                continue
+            text = child.get_text(strip=True)
+            if text:
+                return text
+
+        # Fallback: full cell text
+        return cell.get_text(strip=True)
+
     def _extract_rows_from_container(container) -> dict:
         """
         Given a BeautifulSoup container (table, dl, div, section),
         extract all label/value pairs as {slug: bool_or_str}.
+        Labels are extracted via _label_text() to strip tooltip noise.
         """
         rows: dict = {}
 
@@ -403,7 +478,7 @@ def extract_listing(html: str, url: str) -> ListingRecord:
             cells = tr.find_all(["th", "td"])
             if len(cells) < 2:
                 continue
-            label_text = cells[0].get_text(strip=True)
+            label_text = _label_text(cells[0])
             if not label_text:
                 continue
             val_cell = cells[1]
@@ -417,7 +492,7 @@ def extract_listing(html: str, url: str) -> ListingRecord:
 
         # Definition list: <dt>Label</dt><dd>value</dd>
         for dt in container.find_all("dt"):
-            label_text = dt.get_text(strip=True)
+            label_text = _label_text(dt)
             if not label_text:
                 continue
             dd = dt.find_next_sibling("dd")
@@ -428,6 +503,33 @@ def extract_listing(html: str, url: str) -> ListingRecord:
                 rows[_slug(label_text)] = bool_val
             else:
                 text_val = dd.get_text(strip=True)
+                if text_val:
+                    rows[_slug(label_text)] = text_val
+
+        # Bootstrap flex rows: <div class="d-flex ..."><span>Label</span><a data-bs-toggle ...><svg/></a><span>value</span></div>
+        # Used by OpenRent for DSS/LHA and Online Viewings rows
+        from bs4 import Tag as _Tag
+        for div in container.find_all("div", class_=lambda c: c and "d-flex" in c):
+            # Find label: first <span> child (fw-medium or similar)
+            label_el = div.find("span")
+            if not label_el:
+                continue
+            label_text = label_el.get_text(strip=True)
+            if not label_text:
+                continue
+            # Value: last <span> or SVG icon in the div (after the label span)
+            # Look for SVG icon for bool, or trailing span for text
+            bool_val = _cell_bool(div)
+            if bool_val is not None:
+                rows[_slug(label_text)] = bool_val
+            else:
+                # Collect text from all spans except the label
+                text_parts = [
+                    s.get_text(strip=True)
+                    for s in div.find_all("span")
+                    if s is not label_el and s.get_text(strip=True)
+                ]
+                text_val = " ".join(text_parts)
                 if text_val:
                     rows[_slug(label_text)] = text_val
 
@@ -508,7 +610,17 @@ def extract_listing(html: str, url: str) -> ListingRecord:
     families_allowed = tp.get("families_allowed")
     pets_allowed     = tp.get("pets_allowed")
     smokers_allowed  = tp.get("smokers_allowed")
-    dss_covers_rent  = tp.get("dss_lha_covers_rent") or tp.get("dss_covers_rent")
+    def _get_bool(d: dict, *keys) -> Optional[bool]:
+        """Return first non-None value from dict for any of the given keys."""
+        for k in keys:
+            if k in d:
+                return d[k]
+        return None
+
+    dss_covers_rent  = _get_bool(tp, "dss_lha_covers_rent", "dss_covers_rent")
+    online_viewings  = _get_bool(av, "online_viewings")   # Availability section
+    live_in_landlord = _get_bool(tp, "live_in_landlord")
+    dss_income_accepted = _get_bool(tp, "dss_income_accepted")
 
     # Features
     garden    = feat.get("garden")
@@ -532,14 +644,19 @@ def extract_listing(html: str, url: str) -> ListingRecord:
         if m_epc:
             epc_rating = m_epc.group(1).upper()
 
+    # epc_not_required: text value when EPC is exempt (listed building, shared accom)
+    epc_not_required_raw = feat.get("epc_not_required")
+    epc_not_required: Optional[str] = str(epc_not_required_raw) if epc_not_required_raw and isinstance(epc_not_required_raw, str) else None
+
     # --- Collect unknown rows as openrent_extras ---
     # Any label we haven't explicitly mapped goes here for future use
     KNOWN_SLUGS = {
         "deposit", "rent_pcm", "bills_included", "broadband",
         "available_from", "available", "minimum_tenancy", "min_tenancy", "min__tenancy",
         "student_friendly", "families_allowed", "pets_allowed", "smokers_allowed",
-        "dss_lha_covers_rent", "dss_covers_rent",
-        "garden", "parking", "fireplace", "furnishing", "epc_rating",
+        "dss_lha_covers_rent", "dss_covers_rent", "dss_income_accepted",
+        "online_viewings", "live_in_landlord",
+        "garden", "parking", "fireplace", "furnishing", "epc_rating", "epc_not_required",
         "council_tax", "council_tax_band",
     }
     openrent_extras: dict = {}
@@ -559,21 +676,91 @@ def extract_listing(html: str, url: str) -> ListingRecord:
         size_sqm = float(sqm_m.group(1).replace(",", ""))
 
     # --- Description ---
-    description = None
-    for sel in [".description-text", "#description", "[itemprop='description']",
-                ".property-description", ".desc"]:
+    # OpenRent truncates description with a JS "Read more" button.
+    # The FULL text is always in the HTML — either in a hidden element,
+    # a JSON-LD script tag, or an inline JS variable. We try all sources
+    # and keep the longest result (most complete).
+
+    description_candidates: list[str] = []
+
+    # Strategy 1: JSON-LD structured data (most reliable — full text)
+    for script in soup.find_all("script", type="application/ld+json"):
+        try:
+            data = json.loads(script.string or "")
+            # May be a list or a single object
+            if isinstance(data, list):
+                data = data[0] if data else {}
+            desc = data.get("description", "")
+            if desc and len(desc) > 50:
+                description_candidates.append(desc.strip())
+        except (json.JSONDecodeError, AttributeError):
+            pass
+
+    # Strategy 2: inline JS variable — OpenRent often embeds full description
+    # as a JS string: var description = "..."; or model.description = "...";
+    for script in soup.find_all("script"):
+        src = script.string or ""
+        for pattern in [
+            r'["\']description["\']\s*:\s*["\']([^"\']{100,})["\']',
+            r'description\s*=\s*["\']([^"\']{100,})["\']',
+            r'\.description\s*=\s*["\']([^"\']{100,})["\']',
+        ]:
+            m = re.search(pattern, src, re.I | re.S)
+            if m:
+                text = m.group(1).replace("\\n", "\n").replace("\\'", "'").replace('\\"', '"')
+                if len(text) > 50:
+                    description_candidates.append(text.strip())
+
+    # Strategy 3: CSS selectors (including hidden containers — BS4 ignores CSS)
+    for sel in [
+        ".description-text", "#description", "[itemprop='description']",
+        ".property-description", ".desc", ".listing-description",
+        "[data-description]", ".more-text", ".full-description",
+    ]:
         el = soup.select_one(sel)
         if el:
-            description = el.get_text("\n", strip=True)
-            break
+            # data-description attribute holds full text on some OpenRent pages
+            attr_text = el.get("data-description", "")
+            if attr_text and len(attr_text) > 50:
+                description_candidates.append(attr_text.strip())
+            text = el.get_text("\n", strip=True)
+            if text and len(text) > 50:
+                description_candidates.append(text)
 
-    if not description:
-        # Fallback: find a long text block
-        for el in soup.find_all("p"):
-            text = el.get_text(strip=True)
-            if len(text) > 150:
-                description = text
-                break
+    # Strategy 4: adjacent hidden/collapsed spans next to visible description
+    # OpenRent pattern: <p>visible...</p><span class="more-text hidden">rest...</span>
+    for cls in ["more-text", "read-more-text", "description-more", "full-text"]:
+        for el in soup.find_all(class_=cls):
+            text = el.get_text("\n", strip=True)
+            if text and len(text) > 30:
+                description_candidates.append(text)
+
+    # Strategy 5: collect all <p> blocks in the description area and join them
+    # (handles multi-paragraph descriptions split across elements)
+    for container_sel in [".description-text", "#description", ".property-description", ".listing-description"]:
+        container = soup.select_one(container_sel)
+        if container:
+            paragraphs = [p.get_text(strip=True) for p in container.find_all("p") if p.get_text(strip=True)]
+            if paragraphs:
+                joined = "\n\n".join(paragraphs)
+                if len(joined) > 50:
+                    description_candidates.append(joined)
+
+    # Strategy 6: plain <p> fallback — join all long paragraphs
+    if not description_candidates:
+        long_paras = [p.get_text(strip=True) for p in soup.find_all("p") if len(p.get_text(strip=True)) > 80]
+        if long_paras:
+            description_candidates.append("\n\n".join(long_paras[:6]))
+
+    # Pick the longest candidate (most complete)
+    description = max(description_candidates, key=len) if description_candidates else None
+
+    # --- Max tenants ---
+    # OpenRent shows "N tenants max." in the header badges
+    max_tenants: Optional[int] = None
+    m_ten = re.search(r"(\d+)\s+tenants?\s+max", html, re.I)
+    if m_ten:
+        max_tenants = int(m_ten.group(1))
 
     # --- Features & Stations ---
     # OpenRent uses headings like <b>Property Details</b> → <ul> for features
@@ -722,6 +909,7 @@ def extract_listing(html: str, url: str) -> ListingRecord:
         stations=stations_json,
         schools="ask agent",
         added_date=added_date,
+        max_tenants=max_tenants,
         bills_included=bills_included,
         student_friendly=student_friendly,
         families_allowed=families_allowed,
@@ -732,6 +920,10 @@ def extract_listing(html: str, url: str) -> ListingRecord:
         parking=parking,
         fireplace=fireplace,
         epc_rating=epc_rating,
+        epc_not_required=epc_not_required,
+        online_viewings=online_viewings,
+        live_in_landlord=live_in_landlord,
+        dss_income_accepted=dss_income_accepted,
     )
 
     # Attach extra attributes (picked up by crawl_openrent when building the dict)

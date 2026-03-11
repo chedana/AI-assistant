@@ -74,9 +74,11 @@ PAYLOAD_FIELDS = [
     # Metadata
     "added_date", "discovery_paths",
     # OpenRent-exclusive / merged fields
+    "max_tenants",
     "bills_included", "student_friendly", "families_allowed",
     "pets_allowed", "smokers_allowed", "dss_covers_rent",
-    "garden", "parking", "fireplace", "epc_rating",
+    "garden", "parking", "fireplace", "epc_rating", "epc_not_required",
+    "online_viewings", "live_in_landlord", "dss_income_accepted",
     "openrent_url",
 ]
 

@@ -227,6 +227,7 @@ class ListingRecord:
     schools:          Optional[str] = None
 
     # OpenRent-specific fields (None for Rightmove records unless merged)
+    max_tenants:      Optional[int]  = None  # "3 tenants max."
     bills_included:   Optional[bool] = None
     student_friendly: Optional[bool] = None
     families_allowed: Optional[bool] = None
@@ -237,6 +238,10 @@ class ListingRecord:
     parking:          Optional[bool] = None
     fireplace:        Optional[bool] = None
     epc_rating:       Optional[str]  = None  # "A"–"G"
+    epc_not_required: Optional[str]  = None  # e.g. "Listed building", "Shared Accommodation"
+    online_viewings:  Optional[bool] = None
+    live_in_landlord: Optional[bool] = None
+    dss_income_accepted: Optional[bool] = None
 
 
 DTDD_MAP = {
