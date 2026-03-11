@@ -52,9 +52,14 @@ function FitBounds({ listings, skip }: { listings: ListingData[]; skip?: boolean
   return null;
 }
 
-function SearchAreaButton({ onSearch }: { onSearch: (geoBound: { lat: number; lng: number; radius_km: number }) => void }) {
+interface GeoBound {
+  lat: number; lng: number; radius_km: number;
+  min_lat: number; max_lat: number; min_lng: number; max_lng: number;
+}
+
+function SearchAreaButton({ onSearch }: { onSearch: (geoBound: GeoBound) => void }) {
   const [show, setShow] = useState(false);
-  const [geoBound, setGeoBound] = useState<{ lat: number; lng: number; radius_km: number } | null>(null);
+  const [geoBound, setGeoBound] = useState<GeoBound | null>(null);
   const timeoutRef = useRef<any>(null);
 
   const map = useMapEvents({
@@ -63,12 +68,18 @@ function SearchAreaButton({ onSearch }: { onSearch: (geoBound: { lat: number; ln
       timeoutRef.current = setTimeout(() => {
         const bounds = map.getBounds();
         const center = map.getCenter();
-
-        // Radius = center to corner of current viewport (fully dynamic with zoom)
+        const sw = bounds.getSouthWest();
         const ne = bounds.getNorthEast();
+        // Shrink bounds 10% inward so results feel centred within the viewport
+        const latPad = (ne.lat - sw.lat) * 0.10;
+        const lngPad = (ne.lng - sw.lng) * 0.10;
         const radius_km = center.distanceTo(ne) / 1000.0;
 
-        setGeoBound({ lat: center.lat, lng: center.lng, radius_km });
+        setGeoBound({
+          lat: center.lat, lng: center.lng, radius_km,
+          min_lat: sw.lat + latPad, max_lat: ne.lat - latPad,
+          min_lng: sw.lng + lngPad, max_lng: ne.lng - lngPad,
+        });
         setShow(true);
       }, 500);
     }
@@ -95,7 +106,7 @@ function SearchAreaButton({ onSearch }: { onSearch: (geoBound: { lat: number; ln
 interface MapViewProps {
   listings: ListingData[];
   onListingClick?: (listing: ListingData) => void;
-  onSearchArea?: (geoBound: { lat: number; lng: number; radius_km: number }) => void;
+  onSearchArea?: (geoBound: GeoBound) => void;
   skipFitBounds?: boolean;
 }
 

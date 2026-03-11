@@ -122,7 +122,7 @@ Implementation: RAG skill over indexed UK tenant law docs (GOV.UK, Shelter guide
 
 ## Current State
 
-_Last updated: 2026-03-08 · Branch: `openclaw` · Tip: see Phase 20_
+_Last updated: 2026-03-11 · Branch: `openclaw` · Tip: see Phase 21_
 
 ### Architecture
 
@@ -238,7 +238,7 @@ frontend/src/
 ### Not yet done
 - General domain skill (`general_node`) is wired but responses are minimal
 - No automated test runner — tests are JSON datasets validated manually
-- UI Phase 2 (map view)
+- UI Phase 2 (map view) ✅ done — see Phase 21
 - `feature/rental` not yet merged up to `restructure`
 - P2-B: location expansion when `prefilter_count == 0` (deferred — requires lat/lon data)
 - Cross-session memory (preferences survive server restart)
@@ -354,6 +354,44 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5173
 ---
 
 ## Changelog
+
+### Phase 21 · Map view, data backfill, listing card improvements (Mar 11)
+> Branch: `openclaw` | Commits: `39544ce` → (current)
+
+| Hash | Date | Type | Description |
+|------|------|------|-------------|
+| `39544ce` | 2026-03-11 | feat | Dynamic map search radius + smart geo scroll cap |
+| (current) | 2026-03-11 | feat | Exact viewport bounds for geo search; image carousel; features/description on cards |
+
+**Key deliverables this phase:**
+
+- **Qdrant data recovery**: Accidentally ran `sync_qdrant.py --mode sync` with a partial 1,146-listing file — deleted 25,045 listings. Recovered using local Qdrant at `/artifacts/skills/search/data/data/qdrant_local` (9,794 points) and upserted all to cloud. Net result: **26,394 listings** in Qdrant Cloud after new crawl (E3, SW3, SW4, SW5, SW10, E5, N6, N16, SE5, SW19) + image backfill.
+
+- **Image backfill**: `crawler/backfill_images.py` scraped image URLs for all 25,423 listings missing `image_urls`. Result: 23,418 updated, 2,005 failed (listings removed from Rightmove). Dead listings (404/410) subsequently deleted → **24,389 clean listings** remaining.
+
+- **Dead listing cleanup**: Scrolled all Qdrant points, identified 2,005 with no `image_url` (confirmed 404/410 on Rightmove), deleted them.
+
+- **Map "Search this area" — exact viewport bounds** (`skills/search/engine.py`, `frontend/src/components/MapView.tsx`):
+  - Previously sent `center + radius_km` (center-to-corner diagonal) → backend recomputed a square bbox that was ~41% larger than the viewport
+  - Now frontend sends `min_lat/max_lat/min_lng/max_lng` (exact Leaflet bounding box), shrunk 10% inward so results feel centred
+  - Backend uses exact bounds directly in Qdrant filter; skips haversine circle clipping when exact bounds are present
+  - `GEO_SCROLL_MAX=15000` cap prevents huge payloads; haversine also skipped when cap hit or radius >20km
+
+- **Image carousel on ListingCard** (`frontend/src/components/ListingCard.tsx`): new `ImageCarousel` sub-component shows all `image_urls` with left/right arrow buttons, dot indicators (up to 8), and `1/N` counter badge. Falls back to single `image_url` or placeholder.
+
+- **Features + description on cards and drawer** (`backend/api_server.py`, `frontend/src/components/ListingDetailDrawer.tsx`):
+  - `_features_list()` replaces `str()` conversion for features — handles JSON arrays, Python lists, and `\n`/`;`-separated strings
+  - Filters out placeholder values: "ask agent", "n/a", "none"
+  - Card shows features (up to 3) if available; falls back to description summary
+  - Drawer: Key Features section (all features) first, then Property Description
+  - `features` type changed from `string` to `string[]` in `frontend/src/types/chat.ts`
+
+**Data state after this phase:**
+- Qdrant Cloud `rent_listings`: **24,389 listings**, all with `image_url`
+- Coverage: 35+ London areas including newly crawled E3/SW3/SW4/SW5/SW10/E5/N6/N16/SE5/SW19
+- All listings have lat/lon coordinates for map display
+
+---
 
 ### Phase 20 · OpenClaw — UX fixes, local hosting, GPT-5 Mini tuning (Mar 8)
 > Branch: `openclaw` | Commits: `569e813` → `efabb11`

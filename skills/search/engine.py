@@ -154,25 +154,41 @@ def qdrant_search(
         must: List[Any] = []
 
         # Geo-bound: add bounding box pre-filter on latitude/longitude payload fields.
-        # This ensures Qdrant returns listings IN the area, not just semantically similar ones.
+        # Prefer exact viewport bounds (min/max lat/lng) sent by frontend; fall back to
+        # approximate bbox derived from center+radius for backward compat.
         import math as _math
         geo = c.get("geo_bound")
         if isinstance(geo, dict):
-            glat = _to_float(geo.get("lat"))
-            glon = _to_float(geo.get("lng") or geo.get("lon"))
-            grad = _to_float(geo.get("radius_km"))
-            if glat is not None and glon is not None and grad is not None:
-                # Approximate bounding box from center + radius
-                lat_delta = grad / 111.32
-                lon_delta = grad / (111.32 * _math.cos(_math.radians(glat)))
+            min_lat = _to_float(geo.get("min_lat"))
+            max_lat = _to_float(geo.get("max_lat"))
+            min_lng = _to_float(geo.get("min_lng"))
+            max_lng = _to_float(geo.get("max_lng"))
+            if min_lat is not None and max_lat is not None and min_lng is not None and max_lng is not None:
+                # Exact viewport bounds — use directly
                 must.append(models.FieldCondition(
                     key="latitude",
-                    range=models.Range(gte=glat - lat_delta, lte=glat + lat_delta),
+                    range=models.Range(gte=min_lat, lte=max_lat),
                 ))
                 must.append(models.FieldCondition(
                     key="longitude",
-                    range=models.Range(gte=glon - lon_delta, lte=glon + lon_delta),
+                    range=models.Range(gte=min_lng, lte=max_lng),
                 ))
+            else:
+                glat = _to_float(geo.get("lat"))
+                glon = _to_float(geo.get("lng") or geo.get("lon"))
+                grad = _to_float(geo.get("radius_km"))
+                if glat is not None and glon is not None and grad is not None:
+                    # Fallback: approximate bounding box from center + radius
+                    lat_delta = grad / 111.32
+                    lon_delta = grad / (111.32 * _math.cos(_math.radians(glat)))
+                    must.append(models.FieldCondition(
+                        key="latitude",
+                        range=models.Range(gte=glat - lat_delta, lte=glat + lat_delta),
+                    ))
+                    must.append(models.FieldCondition(
+                        key="longitude",
+                        range=models.Range(gte=glon - lon_delta, lte=glon + lon_delta),
+                    ))
 
         # 2. Token-based Location Prefilter
         loc_values: List[str] = []
@@ -339,9 +355,10 @@ def qdrant_search(
         print(f"[TIMING] qdrant_geo_scroll={time.perf_counter()-_t_scroll:.2f}s total={len(all_points)} hit_cap={hit_cap}")
 
         rows = []
-        # If we hit the cap we're sampling — skip haversine (circle refinement would just make gaps)
-        # Also skip haversine for very large radius (zoomed out) — bbox is good enough
-        skip_haversine = hit_cap or (grad is not None and grad > 20.0)
+        # Skip haversine when: exact viewport bounds were used (min/max lat/lng) — no circle needed;
+        # or when cap was hit (sampling); or for very large radius (zoomed out).
+        has_exact_bounds = all(geo.get(k) is not None for k in ("min_lat", "max_lat", "min_lng", "max_lng"))
+        skip_haversine = has_exact_bounds or hit_cap or (grad is not None and grad > 20.0)
         for pt in all_points:
             payload = dict(pt.payload or {})
             plat = _to_float(payload.get("latitude"))

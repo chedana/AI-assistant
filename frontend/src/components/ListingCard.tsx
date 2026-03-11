@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { ListingData } from "../types/chat";
 
 type Props = {
@@ -16,6 +17,51 @@ function toArray(val: string[] | string | undefined): string[] {
   return [];
 }
 
+function ImageCarousel({ images, title, price, weeklyPrice }: { images: string[]; title: string; price: number; weeklyPrice: number }) {
+  const [idx, setIdx] = useState(0);
+  const prev = (e: React.MouseEvent) => { e.stopPropagation(); setIdx(i => (i - 1 + images.length) % images.length); };
+  const next = (e: React.MouseEvent) => { e.stopPropagation(); setIdx(i => (i + 1) % images.length); };
+  return (
+    <div className="relative h-64 w-72 shrink-0 overflow-hidden bg-white/5 md:w-80 lg:w-96">
+      {images.length > 0 ? (
+        <img key={idx} src={images[idx]} alt={title}
+          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center text-white/10">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>
+        </div>
+      )}
+      {images.length > 1 && (
+        <>
+          <button onClick={prev} className="absolute left-2 top-1/2 -translate-y-1/2 z-10 bg-black/50 hover:bg-black/75 text-white rounded-full w-7 h-7 flex items-center justify-center transition-colors">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <button onClick={next} className="absolute right-2 top-1/2 -translate-y-1/2 z-10 bg-black/50 hover:bg-black/75 text-white rounded-full w-7 h-7 flex items-center justify-center transition-colors">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+          <div className="absolute bottom-14 left-1/2 -translate-x-1/2 flex gap-1 z-10">
+            {images.slice(0, 8).map((_, i) => (
+              <button key={i} onClick={(e) => { e.stopPropagation(); setIdx(i); }}
+                className={`w-1.5 h-1.5 rounded-full transition-colors ${i === idx ? 'bg-white' : 'bg-white/40'}`} />
+            ))}
+          </div>
+          <span className="absolute top-2 right-2 z-10 bg-black/60 text-white/80 text-[10px] font-bold px-2 py-0.5 rounded-full">{idx + 1}/{images.length}</span>
+        </>
+      )}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/20 to-transparent pointer-events-none" />
+      <div className="absolute bottom-4 left-4">
+        <div className="flex flex-col">
+          <div className="flex items-baseline gap-1">
+            <span className="text-2xl font-black text-white">£{price.toLocaleString()}</span>
+            <span className="text-xs font-medium text-white/60">pcm</span>
+          </div>
+          <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider">£{weeklyPrice} pw</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ListingCard({ listing, isSaved, compact, displayScore, onSave, onRemove, onClick }: Props) {
   const penalties = toArray(listing.penalty_reasons);
   const hits = toArray(listing.preference_hits);
@@ -28,7 +74,7 @@ export default function ListingCard({ listing, isSaved, compact, displayScore, o
 
   // New Data Points
   const weeklyPrice = Math.round((listing.price_pcm * 12) / 52);
-  const propertyFeatures = toArray(listing.features).slice(0, 3);
+  const propertyFeatures = (listing.features || []).slice(0, 3);
   
   // Format description: collapse broken <PARA> tags into spaces, otherwise use space.
   // For the card summary, we don't need newlines at all, just a clean string.
@@ -88,33 +134,13 @@ export default function ListingCard({ listing, isSaved, compact, displayScore, o
         </div>
       )}
 
-      {/* Image Section - Enforced height to prevent stretching */}
-      <div className="relative h-64 w-72 shrink-0 overflow-hidden bg-white/5 md:w-80 lg:w-96">
-        {listing.image_url ? (
-          <img
-            src={listing.image_url}
-            alt={listing.title}
-            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-            loading="lazy"
-          />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center text-white/10">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1">
-              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-            </svg>
-          </div>
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/20 to-transparent" />
-        <div className="absolute bottom-4 left-4">
-          <div className="flex flex-col">
-            <div className="flex items-baseline gap-1">
-              <span className="text-2xl font-black text-white">£{listing.price_pcm.toLocaleString()}</span>
-              <span className="text-xs font-medium text-white/60">pcm</span>
-            </div>
-            <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider">£{weeklyPrice} pw</span>
-          </div>
-        </div>
-      </div>
+      {/* Image Section - Carousel if multiple images */}
+      <ImageCarousel
+        images={(listing.image_urls && listing.image_urls.length > 0) ? listing.image_urls : listing.image_url ? [listing.image_url] : []}
+        title={listing.title}
+        price={listing.price_pcm}
+        weeklyPrice={weeklyPrice}
+      />
 
       {/* Details Section */}
       <div className="flex min-w-0 flex-1 flex-col p-4 md:p-6">

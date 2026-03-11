@@ -10,8 +10,14 @@ type Props = {
 };
 
 function toArray(val: string[] | string | undefined): string[] {
-  if (Array.isArray(val)) return val;
-  if (typeof val === "string" && val.trim()) return val.split(/[;\n]+/).map(s => s.trim()).filter(Boolean);
+  if (Array.isArray(val)) return val.filter(Boolean);
+  if (typeof val === "string" && val.trim()) {
+    // Try JSON parse first (backend sends proper JSON arrays now)
+    if (val.startsWith("[")) {
+      try { const p = JSON.parse(val); if (Array.isArray(p)) return p.map(String).filter(Boolean); } catch {}
+    }
+    return val.split(/[;\n]+/).map(s => s.trim()).filter(Boolean);
+  }
   return [];
 }
 
@@ -51,7 +57,7 @@ export default function ListingDetailDrawer({ listing, onClose }: Props) {
     setCurrentImageIndex((prev) => (prev + 1) % images.length);
   };
 
-  const features = toArray(listing.features);
+  const features = toArray(listing.features).filter(f => !["ask agent", "n/a", "none"].includes(f.toLowerCase().trim()));
   const penalties = toArray(listing.penalty_reasons);
   const hits = toArray(listing.preference_hits);
   const weeklyPrice = Math.round((listing.price_pcm * 12) / 52);

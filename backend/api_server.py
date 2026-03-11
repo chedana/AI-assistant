@@ -88,6 +88,27 @@ def _json_list(val: object) -> list[str]:
     return []
 
 
+def _features_list(val: object) -> list[str]:
+    """Parse features — handles JSON arrays, Python lists, and newline/semicolon-separated strings."""
+    _skip = {"ask agent", "n/a", "none", ""}
+    if isinstance(val, list):
+        return [str(x).strip() for x in val if str(x).strip().lower() not in _skip]
+    if isinstance(val, str) and val.strip():
+        if val.strip().lower() in _skip:
+            return []
+        # Try JSON array first
+        if val.strip().startswith("["):
+            try:
+                parsed = json.loads(val)
+                if isinstance(parsed, list):
+                    return [str(x).strip() for x in parsed if str(x).strip().lower() not in _skip]
+            except Exception:
+                pass
+        # Newline or semicolon separated
+        return [x.strip() for x in val.replace(";", "\n").split("\n") if x.strip() and x.strip().lower() not in _skip]
+    return []
+
+
 def _to_list(val: object) -> list[str]:
     """Normalise a field that may be str, list, or None into list[str]."""
     if isinstance(val, list):
@@ -147,7 +168,7 @@ def build_metadata(state: AgentState) -> dict | None:
             "bathrooms": _num(r.get("bathrooms")),
             "available_from": str(r.get("available_from", "")),
             "description": str(r.get("description", "")),
-            "features": str(r.get("features", "")),
+            "features": _features_list(r.get("features")),
             "property_type": str(r.get("property_type", "")),
             "furnish_type": str(r.get("furnish_type", "")),
             "lat": _num(r.get("latitude"), None),

@@ -28,7 +28,7 @@ export type ListingData = {
   bathrooms: number;
   available_from?: string;
   description?: string;
-  features?: string;
+  features?: string[];
   property_type?: string;
   furnish_type?: string;
   deposit?: number;
