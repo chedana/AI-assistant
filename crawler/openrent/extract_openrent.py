@@ -459,48 +459,130 @@ def extract_listing(html: str, url: str) -> ListingRecord:
     stations_json = json.dumps(stations_list, ensure_ascii=False) if stations_list else "ask agent"
 
     # --- OpenRent-specific: Tenant Preference + Property Features + EPC ---
-    # These appear as label/value rows in OpenRent's "Price & Bills", "Tenant Preference",
-    # and "Features" sections. A tick icon or "Yes" means True; absent or cross means False.
-    # We detect presence of a tick by looking for fa-check, ✓, "yes", or an <i>/<span> icon
-    # near the label text.
+    # OpenRent renders checkboxes as Font Awesome icons:
+    #   Ticked:   <i class="fa fa-check-circle ...">  or  <i class="fa fa-check ...">
+    #   Unticked: <i class="fa fa-times-circle ...">  or  no icon / empty cell
+    #
+    # soup.get_text() strips all icons so plain-text detection cannot distinguish
+    # ticked from unticked. We must inspect the HTML element near each label.
 
-    def _bool_field(section_text: str, label: str) -> Optional[bool]:
+    TICK_CLASSES   = {"fa-check-circle", "fa-check", "glyphicon-ok", "icon-check"}
+    CROSS_CLASSES  = {"fa-times-circle", "fa-times", "glyphicon-remove", "icon-times"}
+    TICK_CHARS     = {"✓", "✔", "☑"}
+    CROSS_CHARS    = {"✗", "✘", "☒"}
+
+    def _cell_bool(cell) -> Optional[bool]:
         """
-        Search for `label` in section_text and determine True/False/None.
-        OpenRent renders ticked rows as: "Label  ✓" or with fa-check icon.
-        Unticked rows either absent or have an × / fa-times icon.
+        Determine True/False/None from a BeautifulSoup element (td/dd/span)
+        that represents the value side of a label/value pair.
+
+        OpenRent renders as green tick (✓) or red cross (✗) — either as:
+          - <i class="fa fa-check ..."> / <i class="fa fa-times ...">
+          - <img src="...tick..." / "...check..." / "...cross..." / "...times...">
+          - Unicode characters ✓ / ✗
+          - Plain text "Yes" / "No"
+        An empty cell = False (unticked checkbox).
         """
-        pattern = re.compile(
-            rf"{re.escape(label)}\s*[:\-]?\s*([^\n<]{{0,30}})", re.I
-        )
-        m = pattern.search(section_text)
-        if not m:
+        if cell is None:
             return None
-        val = m.group(1).strip().lower()
-        if any(tok in val for tok in ("yes", "✓", "✔", "true", "included", "allowed", "covers")):
+
+        # Check <i> and <span> icon classes (Font Awesome etc.)
+        for icon in cell.find_all(["i", "span"]):
+            classes = set(icon.get("class") or [])
+            if classes & TICK_CLASSES:
+                return True
+            if classes & CROSS_CLASSES:
+                return False
+
+        # Check <img> src for tick/check/cross/times keywords
+        for img in cell.find_all("img"):
+            src = (img.get("src") or img.get("data-src") or "").lower()
+            alt = (img.get("alt") or "").lower()
+            if any(k in src or k in alt for k in ("tick", "check", "yes", "true")):
+                return True
+            if any(k in src or k in alt for k in ("cross", "times", "no", "false")):
+                return False
+
+        # Check unicode tick/cross in text
+        text = cell.get_text(strip=True)
+        if any(c in text for c in TICK_CHARS):
             return True
-        if any(tok in val for tok in ("no", "✗", "✘", "false", "not", "excluded")):
+        if any(c in text for c in CROSS_CHARS):
             return False
-        # Presence of the row with no explicit no/false is treated as True (ticked checkbox)
-        return True
 
-    page_text = soup.get_text(" ")
+        # Explicit yes/no text
+        low = text.lower()
+        if low in ("yes", "true", "included", "allowed"):
+            return True
+        if low in ("no", "false", "not included", "not allowed"):
+            return False
 
-    bills_included   = _bool_field(page_text, "Bills Included")
-    student_friendly = _bool_field(page_text, "Student Friendly")
-    families_allowed = _bool_field(page_text, "Families Allowed")
-    pets_allowed     = _bool_field(page_text, "Pets Allowed")
-    smokers_allowed  = _bool_field(page_text, "Smokers Allowed")
-    dss_covers_rent  = _bool_field(page_text, "DSS/LHA Covers Rent")
-    garden           = _bool_field(page_text, "Garden")
-    parking          = _bool_field(page_text, "Parking")
-    fireplace        = _bool_field(page_text, "Fireplace")
+        # Empty cell = unticked (False), non-empty unknown text = None
+        return False if low == "" else None
 
-    # EPC Rating: a letter A–G
+    def _find_bool_field(label: str) -> Optional[bool]:
+        """
+        Locate the label string in the page's dt/td elements and return
+        the bool value of its sibling dd/td.
+        """
+        # Strategy 1: definition list  <dt>Label</dt><dd>value</dd>
+        for dt in soup.find_all("dt"):
+            if label.lower() in dt.get_text(strip=True).lower():
+                dd = dt.find_next_sibling("dd")
+                result = _cell_bool(dd)
+                if result is not None:
+                    return result
+                # dd exists but no signal — means unticked (blank)
+                if dd is not None:
+                    return False
+
+        # Strategy 2: table row  <tr><td>Label</td><td>value</td></tr>
+        for row in soup.find_all("tr"):
+            cells = row.find_all(["th", "td"])
+            if len(cells) >= 2 and label.lower() in cells[0].get_text(strip=True).lower():
+                result = _cell_bool(cells[1])
+                if result is not None:
+                    return result
+                if cells[1] is not None:
+                    return False
+
+        # Strategy 3: any element whose text is exactly the label,
+        # inspect the next sibling element for an icon
+        for el in soup.find_all(string=re.compile(rf"^\s*{re.escape(label)}\s*$", re.I)):
+            sibling = el.parent.find_next_sibling() if el.parent else None
+            result = _cell_bool(sibling)
+            if result is not None:
+                return result
+            if sibling is not None:
+                return False
+
+        return None  # label not found on page
+
+    bills_included   = _find_bool_field("Bills Included")
+    student_friendly = _find_bool_field("Student Friendly")
+    families_allowed = _find_bool_field("Families Allowed")
+    pets_allowed     = _find_bool_field("Pets Allowed")
+    smokers_allowed  = _find_bool_field("Smokers Allowed")
+    dss_covers_rent  = _find_bool_field("DSS/LHA Covers Rent")
+    garden           = _find_bool_field("Garden")
+    parking          = _find_bool_field("Parking")
+    fireplace        = _find_bool_field("Fireplace")
+
+    # EPC Rating: a letter A–G (appears as text value, not a checkbox)
     epc_rating: Optional[str] = None
-    epc_m = re.search(r"EPC\s*Rating\s*[:\-]?\s*([A-G])\b", page_text, re.I)
-    if epc_m:
-        epc_rating = epc_m.group(1).upper()
+    for el in soup.find_all(string=re.compile(r"EPC\s*Rating", re.I)):
+        sibling = el.parent.find_next_sibling() if el.parent else None
+        if sibling:
+            val = sibling.get_text(strip=True)
+            m_epc = re.match(r"^([A-G])\b", val, re.I)
+            if m_epc:
+                epc_rating = m_epc.group(1).upper()
+                break
+    if not epc_rating:
+        # Fallback: regex on raw HTML
+        m_epc = re.search(r"EPC\s*Rating\s*[:\-]?\s*([A-G])\b", html, re.I)
+        if m_epc:
+            epc_rating = m_epc.group(1).upper()
 
     # --- Coordinates ---
     lat, lon = _extract_lat_lon(html)

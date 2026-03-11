@@ -46,9 +46,55 @@ OPENRENT_EXTRA_FIELDS = [
 # Fields to backfill from OpenRent if missing/null in Rightmove
 BACKFILL_FIELDS = [
     "deposit", "deposit_amount", "available_from", "min_tenancy",
-    "furnish_type", "let_type", "council_tax", "features",
+    "furnish_type", "let_type", "council_tax",
     "stations", "description", "image_url", "image_urls",
+    # Note: features handled separately below
 ]
+
+# Boolean fields that translate to human-readable feature bullets
+BOOL_FEATURE_LABELS: list[tuple[str, str]] = [
+    ("garden",           "Garden"),
+    ("parking",          "Parking"),
+    ("fireplace",        "Fireplace"),
+    ("bills_included",   "Bills Included"),
+    ("pets_allowed",     "Pets Allowed"),
+    ("student_friendly", "Student Friendly"),
+    ("families_allowed", "Families Allowed"),
+    ("smokers_allowed",  "Smokers Allowed"),
+    ("dss_covers_rent",  "DSS/Housing Benefit Accepted"),
+]
+
+
+def synthesize_features_from_booleans(rec: dict) -> str | None:
+    """Convert OpenRent boolean fields → newline-joined feature bullets."""
+    lines = [label for field, label in BOOL_FEATURE_LABELS if rec.get(field) is True]
+    epc = rec.get("epc_rating")
+    if epc:
+        lines.append(f"EPC Rating: {epc}")
+    return "\n".join(lines) if lines else None
+
+
+def merge_features(rm_rec: dict, or_rec: dict) -> str | None:
+    """
+    For a merged listing:
+    - Keep Rightmove's natural-language bullet points as-is
+    - Append OpenRent's structured features (synthesised from booleans)
+      as a separate section so they don't get mixed up
+    For OpenRent-only: use synthesised features if no text features exist.
+    """
+    rm_features = rm_rec.get("features") or ""
+    or_bool_features = synthesize_features_from_booleans(or_rec) or ""
+    or_text_features = or_rec.get("features") or ""
+
+    parts = []
+    if rm_features.strip():
+        parts.append(rm_features.strip())
+    # Prefer OR boolean synthesis over OR sparse text
+    or_features = or_bool_features or or_text_features
+    if or_features.strip():
+        parts.append(or_features.strip())
+
+    return "\n".join(parts) if parts else None
 
 
 def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -129,6 +175,9 @@ def merge_records(rm_rec: dict, or_rec: dict) -> dict:
     for field in BACKFILL_FIELDS:
         if _is_blank(merged.get(field)) and not _is_blank(or_rec.get(field)):
             merged[field] = or_rec[field]
+
+    # --- Features: keep Rightmove NL bullets + append OpenRent boolean features ---
+    merged["features"] = merge_features(rm_rec, or_rec)
 
     # --- Merge image_urls list (combine both, deduplicate) ---
     rm_imgs = merged.get("image_urls") or []
@@ -254,6 +303,11 @@ def main() -> None:
             rec = dict(or_rec)
             if not rec.get("source_site"):
                 rec["source_site"] = "openrent"
+            # Synthesize features text from booleans if no text features
+            if _is_blank(rec.get("features")):
+                synth = synthesize_features_from_booleans(rec)
+                if synth:
+                    rec["features"] = synth
             output.append(rec)
             or_only += 1
 
