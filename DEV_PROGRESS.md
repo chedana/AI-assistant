@@ -856,6 +856,7 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5173
 |------|------|------|-------------|
 | TBD | 2026-03-11 | feat | OpenRent crawler with rate limiting + user agent rotation (6,539 listings scraped) |
 | TBD | 2026-03-11 | data | organize local datasets: 26,191 Rightmove + 6,539 OpenRent (not yet synced to Qdrant) |
+| TBD | 2026-03-11 | feat | crawl_openrent: add --from-file flag to resume scraping from saved URL list; add --urls-only workflow docs |
 
 ---
 

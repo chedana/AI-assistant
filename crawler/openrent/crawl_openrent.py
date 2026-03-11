@@ -7,6 +7,12 @@ in the same format as the Rightmove crawler output, ready for sync_qdrant.py.
 Usage:
     python -m crawler.openrent.crawl_openrent [--workers 8] [--output PATH] [--dry-run]
 
+    # Collect URLs only (fast, ~10 min) and save to file:
+    python -m crawler.openrent.crawl_openrent --urls-only
+
+    # Resume scraping from a previously saved URL list:
+    python -m crawler.openrent.crawl_openrent --from-file crawler/artifacts/openrent/listing_urls.txt
+
 Output:
     crawler/artifacts/openrent/properties_final.jsonl
 """
@@ -236,19 +242,25 @@ def write_jsonl(records: list[dict], output_path: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Crawl OpenRent London listings")
-    parser.add_argument("--workers",  type=int, default=DEFAULT_WORKERS, help="Parallel scrape workers")
+    parser.add_argument("--workers",   type=int, default=DEFAULT_WORKERS, help="Parallel scrape workers")
     parser.add_argument("--max-pages", type=int, default=MAX_PAGES, help="Max search result pages")
-    parser.add_argument("--output",   default=str(ARTIFACTS_DIR / "properties_final.jsonl"))
-    parser.add_argument("--urls-only", action="store_true", help="Only collect URLs, don't scrape details")
-    parser.add_argument("--dry-run",  action="store_true", help="Collect URLs but skip scraping")
-    parser.add_argument("--limit",    type=int, default=0, help="Limit number of listings to scrape (0=all)")
+    parser.add_argument("--output",    default=str(ARTIFACTS_DIR / "properties_final.jsonl"))
+    parser.add_argument("--urls-only", action="store_true", help="Only collect URLs, save to listing_urls.txt")
+    parser.add_argument("--from-file", default=None, help="Skip URL collection; load URLs from this file")
+    parser.add_argument("--dry-run",   action="store_true", help="Collect URLs but skip scraping")
+    parser.add_argument("--limit",     type=int, default=0, help="Limit number of listings to scrape (0=all)")
     args = parser.parse_args()
 
     start = datetime.utcnow()
     output_path = Path(args.output)
 
-    # Step 1: collect URLs
-    urls = collect_all_urls(max_pages=args.max_pages)
+    # Step 1: collect or load URLs
+    if args.from_file:
+        url_file = Path(args.from_file)
+        urls = [u.strip() for u in url_file.read_text(encoding="utf-8").splitlines() if u.strip()]
+        print(f"[openrent] Loaded {len(urls):,} URLs from {url_file}")
+    else:
+        urls = collect_all_urls(max_pages=args.max_pages)
 
     if args.urls_only:
         url_file = output_path.parent / "listing_urls.txt"

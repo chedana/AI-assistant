@@ -40,6 +40,8 @@ _Covers: `crawler/`, `artifacts/`, Qdrant collection, embedding scripts_
 
 - [ ] **Re-crawl London with fixed scraper** — run `crawl_london.py` then `sync_qdrant.py --mode sync` to populate Qdrant Cloud with real London listings. (May be handled by the automation above once installed.)
 - [ ] **Re-crawl OpenRent** — re-run `crawl_openrent.py` to populate new amenity fields (pets_allowed, garden, epc_rating, etc.), then re-run `merge_listings.py` + `sync_qdrant.py --mode full` to push enriched payloads.
+  - Use `--urls-only` first to save URL list, then `--from-file` to scrape (allows resuming across sessions)
+  - Command: `python -m crawler.openrent.crawl_openrent --urls-only` then `python -m crawler.openrent.crawl_openrent --from-file crawler/artifacts/openrent/listing_urls.txt`
 
 ---
 
