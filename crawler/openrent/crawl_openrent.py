@@ -170,6 +170,7 @@ def _scrape_one(url: str) -> Optional[dict]:
                 d["image_urls"] = rec.__dict__["image_urls"]
             # Add discovery_paths (parallel to Rightmove format)
             d["discovery_paths"] = ["openrent:london"]
+            d["source_site"] = "openrent"
             # Add delay after successful request to avoid rate limiting
             time.sleep(DELAY_BETWEEN_REQUESTS)
             return d

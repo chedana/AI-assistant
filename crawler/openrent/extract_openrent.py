@@ -458,6 +458,50 @@ def extract_listing(html: str, url: str) -> ListingRecord:
     features = "\n".join(features_list) if features_list else None
     stations_json = json.dumps(stations_list, ensure_ascii=False) if stations_list else "ask agent"
 
+    # --- OpenRent-specific: Tenant Preference + Property Features + EPC ---
+    # These appear as label/value rows in OpenRent's "Price & Bills", "Tenant Preference",
+    # and "Features" sections. A tick icon or "Yes" means True; absent or cross means False.
+    # We detect presence of a tick by looking for fa-check, ✓, "yes", or an <i>/<span> icon
+    # near the label text.
+
+    def _bool_field(section_text: str, label: str) -> Optional[bool]:
+        """
+        Search for `label` in section_text and determine True/False/None.
+        OpenRent renders ticked rows as: "Label  ✓" or with fa-check icon.
+        Unticked rows either absent or have an × / fa-times icon.
+        """
+        pattern = re.compile(
+            rf"{re.escape(label)}\s*[:\-]?\s*([^\n<]{{0,30}})", re.I
+        )
+        m = pattern.search(section_text)
+        if not m:
+            return None
+        val = m.group(1).strip().lower()
+        if any(tok in val for tok in ("yes", "✓", "✔", "true", "included", "allowed", "covers")):
+            return True
+        if any(tok in val for tok in ("no", "✗", "✘", "false", "not", "excluded")):
+            return False
+        # Presence of the row with no explicit no/false is treated as True (ticked checkbox)
+        return True
+
+    page_text = soup.get_text(" ")
+
+    bills_included   = _bool_field(page_text, "Bills Included")
+    student_friendly = _bool_field(page_text, "Student Friendly")
+    families_allowed = _bool_field(page_text, "Families Allowed")
+    pets_allowed     = _bool_field(page_text, "Pets Allowed")
+    smokers_allowed  = _bool_field(page_text, "Smokers Allowed")
+    dss_covers_rent  = _bool_field(page_text, "DSS/LHA Covers Rent")
+    garden           = _bool_field(page_text, "Garden")
+    parking          = _bool_field(page_text, "Parking")
+    fireplace        = _bool_field(page_text, "Fireplace")
+
+    # EPC Rating: a letter A–G
+    epc_rating: Optional[str] = None
+    epc_m = re.search(r"EPC\s*Rating\s*[:\-]?\s*([A-G])\b", page_text, re.I)
+    if epc_m:
+        epc_rating = epc_m.group(1).upper()
+
     # --- Coordinates ---
     lat, lon = _extract_lat_lon(html)
 
@@ -505,6 +549,16 @@ def extract_listing(html: str, url: str) -> ListingRecord:
         stations=stations_json,
         schools="ask agent",
         added_date=added_date,
+        bills_included=bills_included,
+        student_friendly=student_friendly,
+        families_allowed=families_allowed,
+        pets_allowed=pets_allowed,
+        smokers_allowed=smokers_allowed,
+        dss_covers_rent=dss_covers_rent,
+        garden=garden,
+        parking=parking,
+        fireplace=fireplace,
+        epc_rating=epc_rating,
     )
 
     # Attach image_urls list as extra attribute (picked up by sync_qdrant if present)

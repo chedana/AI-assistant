@@ -226,6 +226,18 @@ class ListingRecord:
     stations:         Optional[str] = None   # json.dumps([{"name": ..., "miles": ...}])
     schools:          Optional[str] = None
 
+    # OpenRent-specific fields (None for Rightmove records unless merged)
+    bills_included:   Optional[bool] = None
+    student_friendly: Optional[bool] = None
+    families_allowed: Optional[bool] = None
+    pets_allowed:     Optional[bool] = None
+    smokers_allowed:  Optional[bool] = None
+    dss_covers_rent:  Optional[bool] = None
+    garden:           Optional[bool] = None
+    parking:          Optional[bool] = None
+    fireplace:        Optional[bool] = None
+    epc_rating:       Optional[str]  = None  # "A"–"G"
+
 
 DTDD_MAP = {
     "let available date": "available_from",
