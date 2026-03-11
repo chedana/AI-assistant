@@ -27,7 +27,8 @@ Surface the right listings before the user knows exactly what they want. Convers
 | Rightmove scraper | ✅ done | Bug: postcode typeahead resolves wrong — must use area names |
 | Qdrant Cloud vector search | ✅ done | 9,794 listings (initial); needs refresh with area-name crawl |
 | Conversational search + constraints | ✅ done | GPT-5 Mini, LangGraph orchestration |
-| OpenRent scraper | ✅ done | `crawler/openrent/` — plain HTTP, 6,704 London listings, full field parity with Rightmove |
+| OpenRent scraper | ✅ done | `crawler/openrent/` — plain HTTP, 6,539 London listings, full field parity with Rightmove |
+| OpenRent merge pipeline | ✅ done | `merge_listings.py` — merges Rightmove+OpenRent; 1,409 enriched, 5,427 OR-only; 31,820 pts in Qdrant |
 | Zoopla integration | ❌ future | Broader coverage |
 | SpareRoom integration | ❌ future | Rooms / HMO market |
 | Geo-radius fallback | ❌ deferred | When location miss → lat/lon radius in Qdrant |
@@ -260,8 +261,9 @@ frontend/src/
 | `4aefaac` | 2026-03-11 | docs | Add agent ownership boundaries to PROJECT.md |
 | `8149ab0` | 2026-03-11 | docs | Mark B-F1 listing detail endpoint as not needed |
 | `1f3795b` | 2026-03-11 | fix | Strip `- ` prefix from features; exclude parking/non-residential listings |
-| `(current)` | 2026-03-11 | fix | Optimistic save/unsave UX — instant green toggle, header count, no flash |
-| `(current)` | 2026-03-11 | feat | OpenRent scraper — extract_openrent.py + crawl_openrent.py |
+| `5a653be` | 2026-03-11 | fix | Optimistic save/unsave UX — instant green toggle, header count, no flash |
+| `76213da` | 2026-03-11 | feat | OpenRent scraper — extract_openrent.py + crawl_openrent.py |
+| `20e9fbc` | 2026-03-11 | feat | OpenRent merge pipeline + new amenity fields; sync 31,820 pts to Qdrant Cloud |
 
 **Key deliverables this phase:**
 
