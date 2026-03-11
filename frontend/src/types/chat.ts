@@ -22,11 +22,11 @@ export type ListingData = {
   url: string;
   image_url: string;
   image_urls?: string[];
-  address: string;
+  address?: string;
   price_pcm: number;
   bedrooms: number;
   bathrooms: number;
-  available_from: string;
+  available_from?: string;
   description?: string;
   features?: string;
   property_type?: string;
@@ -34,9 +34,9 @@ export type ListingData = {
   deposit?: number;
   lat?: number | null;
   lon?: number | null;
-  final_score: number;
-  penalty_reasons: string[];
-  preference_hits: string[];
+  final_score?: number;
+  penalty_reasons?: string[];
+  preference_hits?: string[];
 };
 
 export type SearchResultsMeta = {

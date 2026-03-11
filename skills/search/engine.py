@@ -153,23 +153,26 @@ def qdrant_search(
         c = c or {}
         must: List[Any] = []
 
-        # 1. Native Geo-Radius Filter (Primary geometric constraint)
+        # Geo-bound: add bounding box pre-filter on latitude/longitude payload fields.
+        # This ensures Qdrant returns listings IN the area, not just semantically similar ones.
+        import math as _math
         geo = c.get("geo_bound")
         if isinstance(geo, dict):
             glat = _to_float(geo.get("lat"))
             glon = _to_float(geo.get("lng") or geo.get("lon"))
             grad = _to_float(geo.get("radius_km"))
             if glat is not None and glon is not None and grad is not None:
-                # Qdrant GeoRadius filter (radius is in meters)
-                must.append(
-                    models.FieldCondition(
-                        key="location",
-                        geo_radius=models.GeoRadius(
-                            center=models.GeoPoint(lat=glat, lon=glon),
-                            radius=grad * 1000.0,
-                        ),
-                    )
-                )
+                # Approximate bounding box from center + radius
+                lat_delta = grad / 111.32
+                lon_delta = grad / (111.32 * _math.cos(_math.radians(glat)))
+                must.append(models.FieldCondition(
+                    key="latitude",
+                    range=models.Range(gte=glat - lat_delta, lte=glat + lat_delta),
+                ))
+                must.append(models.FieldCondition(
+                    key="longitude",
+                    range=models.Range(gte=glon - lon_delta, lte=glon + lon_delta),
+                ))
 
         # 2. Token-based Location Prefilter
         loc_values: List[str] = []
@@ -306,60 +309,101 @@ def qdrant_search(
         else:
             log_message("DEBUG", "stageA location keywords=[]")
 
-    _t_qdrant = time.perf_counter()
-    if hasattr(client, "search"):
-        hits = client.search(
-            collection_name=QDRANT_COLLECTION,
-            query_vector=qx,
-            query_filter=qfilter,
-            limit=recall,
-            with_payload=True,
-            with_vectors=False,
-        )
-    else:
-        qp = client.query_points(
-            collection_name=QDRANT_COLLECTION,
-            query=qx,
-            query_filter=qfilter,
-            limit=recall,
-            with_payload=True,
-            with_vectors=False,
-        )
-        hits = list(getattr(qp, "points", []) or [])
-    print(f"[TIMING] qdrant_search={time.perf_counter()-_t_qdrant:.2f}s recall={recall} hits={len(hits)}")
-
-    rows = []
-    # 1. Post-filter for geometric radius if geo_bound is present but primary filter returned too many or lacked index
+    # Detect pure geo-bound mode: geo_bound present, no location keywords.
+    # In this mode, use scroll to fetch ALL listings in the bounding box (no recall cap).
     geo = (c or {}).get("geo_bound")
-    if isinstance(geo, dict):
+    loc_kws = [str(x).strip() for x in (c or {}).get("location_keywords") or [] if str(x).strip()]
+    is_pure_geo = isinstance(geo, dict) and not loc_kws
+
+    if is_pure_geo and qfilter is not None:
         glat = _to_float(geo.get("lat"))
         glon = _to_float(geo.get("lng") or geo.get("lon"))
         grad = _to_float(geo.get("radius_km"))
-        if glat is not None and glon is not None and grad is not None:
+        _t_scroll = time.perf_counter()
+        all_points = []
+        offset = None
+        while True:
+            points, offset = client.scroll(
+                collection_name=QDRANT_COLLECTION,
+                scroll_filter=qfilter,
+                limit=512,
+                offset=offset,
+                with_payload=True,
+                with_vectors=False,
+            )
+            all_points.extend(points or [])
+            if offset is None:
+                break
+        print(f"[TIMING] qdrant_geo_scroll={time.perf_counter()-_t_scroll:.2f}s total={len(all_points)}")
+
+        rows = []
+        for pt in all_points:
+            payload = dict(pt.payload or {})
+            plat = _to_float(payload.get("latitude"))
+            plon = _to_float(payload.get("longitude"))
+            # Haversine circle refinement (bounding box is square, we want circle)
+            if plat is not None and plon is not None and glat is not None and glon is not None and grad is not None:
+                dist = _haversine_km(glat, glon, plat, plon)
+                if dist > grad:
+                    continue
+            payload["retrieval_score"] = 1.0
+            payload["qdrant_score"] = 1.0
+            payload["_qdrant_id"] = pt.id
+            rows.append(payload)
+        log_message("INFO", f"stageA geo_scroll: {len(rows)} listings within {grad}km (scrolled {len(all_points)} from bbox)")
+    else:
+        # Standard vector search path
+        _t_qdrant = time.perf_counter()
+        if hasattr(client, "search"):
+            hits = client.search(
+                collection_name=QDRANT_COLLECTION,
+                query_vector=qx,
+                query_filter=qfilter,
+                limit=recall,
+                with_payload=True,
+                with_vectors=False,
+            )
+        else:
+            qp = client.query_points(
+                collection_name=QDRANT_COLLECTION,
+                query=qx,
+                query_filter=qfilter,
+                limit=recall,
+                with_payload=True,
+                with_vectors=False,
+            )
+            hits = list(getattr(qp, "points", []) or [])
+        print(f"[TIMING] qdrant_search={time.perf_counter()-_t_qdrant:.2f}s recall={recall} hits={len(hits)}")
+
+        rows = []
+        # Post-filter for geometric radius if geo_bound + location_keywords combo
+        if isinstance(geo, dict):
+            glat = _to_float(geo.get("lat"))
+            glon = _to_float(geo.get("lng") or geo.get("lon"))
+            grad = _to_float(geo.get("radius_km"))
+            if glat is not None and glon is not None and grad is not None:
+                for h in hits:
+                    payload = dict(h.payload or {})
+                    plat = _to_float(payload.get("latitude"))
+                    plon = _to_float(payload.get("longitude"))
+                    if plat is not None and plon is not None:
+                        dist = _haversine_km(glat, glon, plat, plon)
+                        if dist <= grad:
+                            score = float(h.score)
+                            payload["retrieval_score"] = score
+                            payload["qdrant_score"] = score
+                            payload["_qdrant_id"] = h.id
+                            rows.append(payload)
+                log_message("INFO", f"stageA geo_postfilter: {len(rows)} listings within {grad}km of center")
+        else:
+            # Standard processing — no geo filtering
             for h in hits:
                 payload = dict(h.payload or {})
-                # Try location object first (native), then fallback to latitude/longitude fields
-                plat = _to_float(payload.get("location", {}).get("lat") if isinstance(payload.get("location"), dict) else payload.get("latitude"))
-                plon = _to_float(payload.get("location", {}).get("lon") if isinstance(payload.get("location"), dict) else payload.get("longitude"))
-                
-                if plat is not None and plon is not None:
-                    dist = _haversine_km(glat, glon, plat, plon)
-                    if dist <= grad:
-                        score = float(h.score)
-                        payload["retrieval_score"] = score
-                        payload["qdrant_score"] = score
-                        payload["_qdrant_id"] = h.id
-                        rows.append(payload)
-            log_message("INFO", f"stageA geo_postfilter: {len(rows)} listings within {grad}km of center")
-    else:
-        # Standard processing
-        for h in hits:
-            payload = dict(h.payload or {})
-            score = float(h.score)
-            payload["retrieval_score"] = score
-            payload["qdrant_score"] = score
-            payload["_qdrant_id"] = h.id
-            rows.append(payload)
+                score = float(h.score)
+                payload["retrieval_score"] = score
+                payload["qdrant_score"] = score
+                payload["_qdrant_id"] = h.id
+                rows.append(payload)
 
     # Geo-radius fallback: search returned nothing but user specified a location keyword.
     # Triggers when token index misses. Skip if we already used an explicit geometric bound.

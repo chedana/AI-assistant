@@ -3,7 +3,6 @@ import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 're
 import { useEffect, useState, useRef } from 'react';
 import MarkerClusterGroup from 'react-leaflet-cluster';
 import type { ListingData } from '../types/chat';
-import { LONDON_REGIONS } from '../lib/london_regions';
 
 // Create a custom modern marker icon using DivIcon
 const createCustomIcon = (price: number) => {
@@ -14,7 +13,7 @@ const createCustomIcon = (price: number) => {
         £${(price / 1000).toFixed(1)}k
       </div>
     `,
-    iconSize: [0, 0], 
+    iconSize: [0, 0],
     iconAnchor: [0, 0],
   });
 };
@@ -27,109 +26,67 @@ const createClusterCustomIcon = function (cluster: any) {
   });
 };
 
-// Internal component to handle automatic map bounds fitting
-function FitBounds({ listings }: { listings: ListingData[] }) {
+// Internal component to handle automatic map bounds fitting (initial load only)
+function FitBounds({ listings, skip }: { listings: ListingData[]; skip?: boolean }) {
   const map = useMap();
   const initialized = useRef(false);
 
   useEffect(() => {
-    if (initialized.current) return;
-    // Collect all valid lat/lon points
+    if (initialized.current || skip) return;
     const points = listings
       .filter(l => typeof l.lat === 'number' && typeof l.lon === 'number')
       .map(l => [l.lat!, l.lon!] as [number, number]);
 
     if (points.length > 0) {
       const bounds = L.latLngBounds(points);
-      map.fitBounds(bounds, { 
-        padding: [50, 50], 
+      map.fitBounds(bounds, {
+        padding: [50, 50],
         maxZoom: 16,
         animate: true,
         duration: 1
       });
       initialized.current = true;
     }
-  }, [listings, map]);
+  }, [listings, map, skip]);
 
   return null;
 }
 
-function SearchAreaButton({ onSearch }: { onSearch: (areas: string[], geoBound?: { lat: number; lng: number; radius_km: number }) => void }) {
+function SearchAreaButton({ onSearch }: { onSearch: (geoBound: { lat: number; lng: number; radius_km: number }) => void }) {
   const [show, setShow] = useState(false);
-  const [areaNames, setAreaNames] = useState<string[]>([]);
   const [geoBound, setGeoBound] = useState<{ lat: number; lng: number; radius_km: number } | null>(null);
   const timeoutRef = useRef<any>(null);
 
   const map = useMapEvents({
     moveend: () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      timeoutRef.current = setTimeout(async () => {
+      timeoutRef.current = setTimeout(() => {
         const bounds = map.getBounds();
         const center = map.getCenter();
-        
-        // Calculate a suitable search radius based on map bounds (center to corner)
+
+        // Calculate search radius from map bounds (center to corner), cap at 5km
         const ne = bounds.getNorthEast();
-        const radius_km = center.distanceTo(ne) / 1000.0;
-        
-        const currentGeoBound = { 
-            lat: center.lat, 
-            lng: center.lng, 
-            radius_km: Math.min(radius_km, 5.0) // Cap at 5km for precision
-        };
-        setGeoBound(currentGeoBound);
+        const radius_km = Math.min(center.distanceTo(ne) / 1000.0, 5.0);
 
-        // 1. Find regions from our internal database for display only
-        const visibleRegions: string[] = [];
-        for (const [name, data] of Object.entries(LONDON_REGIONS)) {
-          if (bounds.contains([data.lat, data.lng])) {
-            visibleRegions.push(name);
-          }
-        }
-
-        // 2. Also reverse geocode center for granularity
-        let centerArea: string | null = null;
-        try {
-          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${center.lat}&lon=${center.lng}&format=json&zoom=14`);
-          const data = await res.json();
-          centerArea = data.address?.suburb || data.address?.neighbourhood || data.address?.city_district || data.address?.town || null;
-        } catch (e) {
-          // ignore
-        }
-
-        const finalAreas = [...visibleRegions];
-        if (centerArea && !finalAreas.includes(centerArea)) {
-            if (finalAreas.length < 3) finalAreas.unshift(centerArea);
-        }
-
-        if (finalAreas.length > 0 || currentGeoBound) {
-          setAreaNames(finalAreas.slice(0, 3));
-          setShow(true);
-        }
-      }, 800);
+        setGeoBound({ lat: center.lat, lng: center.lng, radius_km });
+        setShow(true);
+      }, 500);
     }
   });
 
-  if (!show) return null;
-
-  const displayLabel = areaNames.length === 2
-    ? `${areaNames[0]} & ${areaNames[1]}`
-    : areaNames.length > 2 
-    ? `${areaNames[0]} & ${areaNames.length - 1} others` 
-    : areaNames.length === 1
-    ? areaNames[0]
-    : "this area";
+  if (!show || !geoBound) return null;
 
   return (
     <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[1000]">
-      <button 
+      <button
         onClick={() => {
           setShow(false);
-          onSearch(areaNames, geoBound || undefined);
+          onSearch(geoBound);
         }}
         className="bg-panel/90 backdrop-blur-md text-text text-sm font-bold px-5 py-2.5 rounded-full shadow-2xl border border-border flex items-center gap-2 hover:bg-neutral-800 transition-all hover:scale-105 active:scale-95"
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        Search {displayLabel}
+        Search this area
       </button>
     </div>
   );
@@ -138,10 +95,11 @@ function SearchAreaButton({ onSearch }: { onSearch: (areas: string[], geoBound?:
 interface MapViewProps {
   listings: ListingData[];
   onListingClick?: (listing: ListingData) => void;
-  onSearchArea?: (areas: string[], geoBound?: { lat: number; lng: number; radius_km: number }) => void;
+  onSearchArea?: (geoBound: { lat: number; lng: number; radius_km: number }) => void;
+  skipFitBounds?: boolean;
 }
 
-export default function MapView({ listings, onListingClick, onSearchArea }: MapViewProps) {
+export default function MapView({ listings, onListingClick, onSearchArea, skipFitBounds }: MapViewProps) {
   // Defensive check: extract listings with valid coordinates
   const validListings = listings.filter(
     (l) => typeof l.lat === 'number' && typeof l.lon === 'number'
@@ -231,7 +189,7 @@ export default function MapView({ listings, onListingClick, onSearchArea }: MapV
           url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
         />
         
-        {onSearchArea && <SearchAreaButton onSearch={(areas, geo) => onSearchArea?.(areas, geo)} />}
+        {onSearchArea && <SearchAreaButton onSearch={(geo) => onSearchArea(geo)} />}
 
         <MarkerClusterGroup
           chunkedLoading
@@ -292,7 +250,7 @@ export default function MapView({ listings, onListingClick, onSearchArea }: MapV
           ))}
         </MarkerClusterGroup>
         
-        <FitBounds listings={validListings} />
+        <FitBounds listings={validListings} skip={skipFitBounds} />
       </MapContainer>
     </div>
   );

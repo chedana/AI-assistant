@@ -4,7 +4,7 @@ import asyncio
 import json
 import os
 from threading import Lock
-from typing import AsyncGenerator, Literal
+from typing import AsyncGenerator, Dict, List, Literal, Optional, Union
 
 from cachetools import TTLCache
 from fastapi import FastAPI, Request
@@ -29,9 +29,9 @@ class ChatMessage(BaseModel):
 
 class ChatStreamRequest(BaseModel):
     session_id: str = Field(min_length=1)
-    user_text: str | None = None
-    messages: list[ChatMessage] = Field(default_factory=list)
-    route_hint: dict | None = None
+    user_text: Optional[str] = None
+    messages: List[ChatMessage] = Field(default_factory=list)
+    route_hint: Optional[Dict] = None
 
 
 app = FastAPI(title="AI Assistant Backend Proxy", version="0.1.0")
@@ -159,10 +159,24 @@ def build_metadata(state: AgentState) -> dict | None:
             "preference_hits": _to_list(r.get("preference_hits")),
         }
 
+    def _map_listing_light(r: dict) -> dict:
+        """Lightweight listing for map pins — only fields needed for markers + popups."""
+        return {
+            "title": str(r.get("title", "")),
+            "url": str(r.get("url", "")),
+            "image_url": str(r.get("image_url", "")),
+            "price_pcm": _num(r.get("price_pcm")),
+            "bedrooms": _num(r.get("bedrooms")),
+            "bathrooms": _num(r.get("bathrooms")),
+            "property_type": str(r.get("property_type", "")),
+            "lat": _num(r.get("latitude"), None),
+            "lon": _num(r.get("longitude"), None),
+        }
+
     # Search results
     if state.last_results:
         listings = [_map_listing(r) for r in state.last_results]
-        all_listings = [_map_listing(r) for r in state.search_full_results] if state.search_full_results else listings
+        all_listings = [_map_listing_light(r) for r in state.search_full_results] if state.search_full_results else listings
         total = len(state.search_full_results)
         k = int((state.constraints or {}).get("k") or 5)
         shown_so_far = (state.page_index + 1) * k

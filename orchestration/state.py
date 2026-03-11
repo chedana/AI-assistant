@@ -50,6 +50,7 @@ class QuerySnapshot:
             "let_type": self.let_type,
             "min_tenancy_months": self._norm_num(self.min_tenancy_months),
             "min_size_sqm": self._norm_num(self.min_size_sqm),
+            "geo_bound": self.geo_bound,
         }
 
     def get_hash(self) -> str:

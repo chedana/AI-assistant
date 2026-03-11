@@ -53,6 +53,7 @@ export default function ListingsPanel({
 }: Props) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [selectedListing, setSelectedListing] = useState<ListingData | null>(null);
+  const [didGeoSearch, setDidGeoSearch] = useState(false);
   
   const results = metadata?.search_results;
   const compare = metadata?.compare_data;
@@ -240,13 +241,17 @@ export default function ListingsPanel({
                 </div>
               </div>
             ) : (
-              <MapView 
-                listings={results.all_listings || results.listings} 
-                onListingClick={setSelectedListing} 
-                onSearchArea={(areas, geo) => onSuggestionClick(
-                    `Show me rentals in ${areas.length > 0 ? areas.join(' and ') : 'this area'}`,
-                    geo ? { intent: "Search", set_constraints: { geo_bound: geo }, clear_fields: ["location_keywords"] } : { intent: "Search", clear_fields: ["location_keywords"] }
-                )}
+              <MapView
+                listings={results.all_listings || results.listings}
+                onListingClick={setSelectedListing}
+                skipFitBounds={didGeoSearch}
+                onSearchArea={(geo) => {
+                    setDidGeoSearch(true);
+                    onSuggestionClick(
+                      `Search rentals near this area`,
+                      { intent: "Search", set_constraints: { geo_bound: geo }, clear_fields: ["location_keywords"] }
+                    );
+                }}
               />
             )
           ) : isGenerating ? (
