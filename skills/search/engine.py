@@ -322,6 +322,7 @@ def qdrant_search(
         _t_scroll = time.perf_counter()
         all_points = []
         offset = None
+        GEO_SCROLL_MAX = 15000
         while True:
             points, offset = client.scroll(
                 collection_name=QDRANT_COLLECTION,
@@ -332,17 +333,20 @@ def qdrant_search(
                 with_vectors=False,
             )
             all_points.extend(points or [])
-            if offset is None:
+            if offset is None or len(all_points) >= GEO_SCROLL_MAX:
                 break
-        print(f"[TIMING] qdrant_geo_scroll={time.perf_counter()-_t_scroll:.2f}s total={len(all_points)}")
+        hit_cap = len(all_points) >= GEO_SCROLL_MAX
+        print(f"[TIMING] qdrant_geo_scroll={time.perf_counter()-_t_scroll:.2f}s total={len(all_points)} hit_cap={hit_cap}")
 
         rows = []
+        # If we hit the cap we're sampling — skip haversine (circle refinement would just make gaps)
+        # Also skip haversine for very large radius (zoomed out) — bbox is good enough
+        skip_haversine = hit_cap or (grad is not None and grad > 20.0)
         for pt in all_points:
             payload = dict(pt.payload or {})
             plat = _to_float(payload.get("latitude"))
             plon = _to_float(payload.get("longitude"))
-            # Haversine circle refinement (bounding box is square, we want circle)
-            if plat is not None and plon is not None and glat is not None and glon is not None and grad is not None:
+            if not skip_haversine and plat is not None and plon is not None and glat is not None and glon is not None and grad is not None:
                 dist = _haversine_km(glat, glon, plat, plon)
                 if dist > grad:
                     continue

@@ -64,9 +64,9 @@ function SearchAreaButton({ onSearch }: { onSearch: (geoBound: { lat: number; ln
         const bounds = map.getBounds();
         const center = map.getCenter();
 
-        // Calculate search radius from map bounds (center to corner), cap at 5km
+        // Radius = center to corner of current viewport (fully dynamic with zoom)
         const ne = bounds.getNorthEast();
-        const radius_km = Math.min(center.distanceTo(ne) / 1000.0, 5.0);
+        const radius_km = center.distanceTo(ne) / 1000.0;
 
         setGeoBound({ lat: center.lat, lng: center.lng, radius_km });
         setShow(true);
