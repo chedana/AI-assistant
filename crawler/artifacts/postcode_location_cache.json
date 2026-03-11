@@ -526,9 +526,5 @@
   "Uxbridge, London": {
     "location_identifier": "REGION^1380",
     "display_location_identifier": null
-  },
-  "Mile End, London": {
-    "location_identifier": "REGION^85206",
-    "display_location_identifier": null
   }
 }

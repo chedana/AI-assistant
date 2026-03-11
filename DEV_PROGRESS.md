@@ -848,6 +848,15 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5173
 
 ---
 
+## Phase 22 — OpenRent Crawler (2026-03-11)
+
+| Hash | Date | Type | Description |
+|------|------|------|-------------|
+| TBD | 2026-03-11 | feat | OpenRent crawler with rate limiting + user agent rotation (6,539 listings scraped) |
+| TBD | 2026-03-11 | data | organize local datasets: 26,191 Rightmove + 6,539 OpenRent (not yet synced to Qdrant) |
+
+---
+
 ## Stats
 
 | Metric | Value |

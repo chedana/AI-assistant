@@ -38,23 +38,60 @@ BASE_URL = "https://www.openrent.co.uk"
 SEARCH_URL = "https://www.openrent.co.uk/properties-to-rent/london"
 PAGE_SIZE = 20          # OpenRent shows 20 listings per page
 MAX_PAGES = 400         # Safety cap (~8,000 listings)
-DEFAULT_WORKERS = 8
-DELAY_BETWEEN_REQUESTS = 0.5   # seconds between requests per worker
+DEFAULT_WORKERS = 2     # Reduced to avoid rate limiting
+DELAY_BETWEEN_PAGES = 3.0    # Delay between search result pages
+DELAY_BETWEEN_REQUESTS = 2.0  # Delay between detail page requests
+MAX_RETRIES = 5         # Number of retries for 429 errors
+RETRY_BACKOFF = 10.0    # Initial backoff delay in seconds (doubles each retry)
 ARTIFACTS_DIR = Path(__file__).resolve().parents[2] / "crawler" / "artifacts" / "openrent"
+
+# Rotate user agents to avoid fingerprinting
+USER_AGENTS = [
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+]
 
 
 # ---------------------------------------------------------------------------
 # URL collection
 # ---------------------------------------------------------------------------
 
+def _random_headers() -> dict:
+    """Return headers with a randomly chosen user agent."""
+    import random
+    return {
+        "User-Agent": random.choice(USER_AGENTS),
+        "Accept-Language": "en-GB,en;q=0.9",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+    }
+
+
 def _collect_urls_page(skip: int, client: httpx.Client) -> list[str]:
-    """Fetch one search results page and return listing URLs found."""
+    """Fetch one search results page and return listing URLs found. Retries on 429."""
     params = {"skip": skip} if skip > 0 else {}
-    try:
-        resp = client.get(SEARCH_URL, params=params, timeout=20)
-        resp.raise_for_status()
-    except Exception as e:
-        print(f"  [warn] failed to fetch skip={skip}: {e}", file=sys.stderr)
+    for attempt in range(MAX_RETRIES):
+        try:
+            # Rotate user agent on each attempt
+            client.headers.update(_random_headers())
+            resp = client.get(SEARCH_URL, params=params, timeout=20)
+            resp.raise_for_status()
+            break
+        except Exception as e:
+            error_msg = str(e)
+            if "429" in error_msg and attempt < MAX_RETRIES - 1:
+                backoff = RETRY_BACKOFF * (2 ** attempt)
+                print(f"  [warn] skip={skip}: Rate limited, waiting {backoff:.0f}s (attempt {attempt + 1}/{MAX_RETRIES})", file=sys.stderr)
+                time.sleep(backoff)
+            else:
+                print(f"  [warn] failed to fetch skip={skip}: {e}", file=sys.stderr)
+                return []
+    else:
         return []
 
     soup = BeautifulSoup(resp.text, "html.parser")
@@ -75,7 +112,7 @@ def collect_all_urls(max_pages: int = MAX_PAGES) -> list[str]:
     all_urls: list[str] = []
     seen: set[str] = set()
 
-    with httpx.Client(headers=HEADERS, follow_redirects=True) as client:
+    with httpx.Client(headers=_random_headers(), follow_redirects=True) as client:
         # First: find total count from page 1
         try:
             resp = client.get(SEARCH_URL, timeout=20)
@@ -111,7 +148,7 @@ def collect_all_urls(max_pages: int = MAX_PAGES) -> list[str]:
                 print("[openrent] No new URLs on this page — stopping pagination.")
                 break
 
-            time.sleep(DELAY_BETWEEN_REQUESTS)
+            time.sleep(DELAY_BETWEEN_PAGES)
 
     print(f"[openrent] Collected {len(all_urls):,} unique listing URLs.")
     return all_urls
@@ -122,20 +159,31 @@ def collect_all_urls(max_pages: int = MAX_PAGES) -> list[str]:
 # ---------------------------------------------------------------------------
 
 def _scrape_one(url: str) -> Optional[dict]:
-    """Fetch and extract a single listing. Returns dict or None on failure."""
-    try:
-        html = fetch_listing(url)
-        rec = extract_listing(html, url)
-        d = asdict(rec)
-        # Attach image_urls if present (added as __dict__ extra in extractor)
-        if hasattr(rec, "__dict__") and "image_urls" in rec.__dict__:
-            d["image_urls"] = rec.__dict__["image_urls"]
-        # Add discovery_paths (parallel to Rightmove format)
-        d["discovery_paths"] = ["openrent:london"]
-        return d
-    except Exception as e:
-        print(f"  [error] {url}: {e}", file=sys.stderr)
-        return None
+    """Fetch and extract a single listing with retry logic for rate limiting."""
+    for attempt in range(MAX_RETRIES):
+        try:
+            html = fetch_listing(url)
+            rec = extract_listing(html, url)
+            d = asdict(rec)
+            # Attach image_urls if present (added as __dict__ extra in extractor)
+            if hasattr(rec, "__dict__") and "image_urls" in rec.__dict__:
+                d["image_urls"] = rec.__dict__["image_urls"]
+            # Add discovery_paths (parallel to Rightmove format)
+            d["discovery_paths"] = ["openrent:london"]
+            # Add delay after successful request to avoid rate limiting
+            time.sleep(DELAY_BETWEEN_REQUESTS)
+            return d
+        except Exception as e:
+            error_msg = str(e)
+            if "429" in error_msg and attempt < MAX_RETRIES - 1:
+                # Exponential backoff for rate limiting
+                backoff = RETRY_BACKOFF * (2 ** attempt)
+                print(f"  [warn] {url}: Rate limited, retrying in {backoff:.0f}s (attempt {attempt + 1}/{MAX_RETRIES})", file=sys.stderr)
+                time.sleep(backoff)
+            else:
+                print(f"  [error] {url}: {e}", file=sys.stderr)
+                return None
+    return None
 
 
 def scrape_listings(
