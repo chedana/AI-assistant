@@ -4,6 +4,11 @@
 > This is the single source of truth: living task tracker + full technical reference.
 > **Rule:** Mark tasks `✅` when done, `🔄` when in progress. Add bugs as you find them.
 > **Branch:** `openclaw`
+>
+> ⚠️ **IMPORTANT — Agent boundaries:**
+> - **Gemini** → only work on tasks in "Frontend Tasks" section. Only edit `frontend/src/` files.
+> - **Claude** → only work on tasks in "Backend Tasks" section. Only edit `backend/`, `skills/`, `orchestration/`, `core/`, `crawler/` files.
+> - **Do not start work autonomously.** Wait for the user to assign a task.
 
 ---
 
@@ -20,24 +25,30 @@
 
 ---
 
+## Agent Ownership
+
+> **Rule:** Only work on tasks assigned to your agent. Do not touch the other agent's files.
+
+| Agent | Owns | Files |
+|-------|------|-------|
+| **Claude** | Backend, data, infrastructure | `backend/`, `skills/`, `orchestration/`, `core/`, `crawler/` |
+| **Gemini** | Frontend UI only | `frontend/src/` |
+
+---
+
 ## Immediate Next Priority
 
 ```
-1. ✅ [BACKEND]  lat/lon in SSE metadata             → unblocked map view
-2. ✅ [BACKEND]  Geo-radius fallback                 → fixes location misses for unknown area names
-3. ✅ [BACKEND]  image_urls gallery in SSE metadata  → unblocked image carousel
-4. ✅ [FRONTEND] Implement Leaflet map view           → done (map tab, clusters, Search this area)
-5. ✅ [FRONTEND] Image carousel in drawer/card        → done (ImageCarousel component, arrows + dots)
-6. ✅ [FRONTEND] Features + description on cards      → done (_features_list, filters "ask agent")
-7. ✅ [DATA]     Dead listing cleanup                 → 2,005 removed (404/410 on Rightmove)
-8. ✅ [DATA]     Image backfill                       → 23,418 listings updated
-9. [BACKEND]  OpenRent scraper                      → adds private landlords (next priority)
-10. [BACKEND]  Re-crawl outer London                 → more coverage (SW11, E10, SE22, etc.)
+[CLAUDE]  1. Re-crawl outer London with area names (B-B2)  → more coverage
+[CLAUDE]  2. OpenRent scraper (B-F2)                       → private landlords
+[CLAUDE]  3. Red flag detection (B-F3)                     → quick win, no new data
+[GEMINI]  1. Session rename (F-F4)                         → double-click to rename
+[GEMINI]  2. Viewing checklist UI (F-F5)                   → per-listing checklist panel
 ```
 
 ---
 
-## Frontend Tasks (Gemini)
+## Frontend Tasks (Gemini only — do not modify backend files)
 
 ### Bugs
 
@@ -60,19 +71,19 @@
 
 ### Features
 
-| # | Status | Feature | Detail | Needs |
-|---|--------|---------|--------|-------|
-| F-F1 | ✅ Done | **Map view** | Leaflet map tab with cluster markers, popups, Search this area (exact viewport bounds, 10% inward shrink), skipFitBounds after geo search | — |
-| F-F2 | ✅ Fixed | **Listing detail drawer** | Click card → slide-out with full info. Includes Portal rendering, scroll lock, and keyboard focus trap. | — |
-| F-F7 | ✅ Done | **Image carousel in card + drawer** | `ImageCarousel` component: left/right arrows, dot indicators, 1/N counter. Features (up to 3) or description shown on card. Drawer: Key Features first, then Property Description. `_features_list()` handles all storage formats + filters "ask agent". | — |
-| F-F3 | ✅ Fixed | **Mobile bottom nav** | Switch Chat ↔ Results on mobile | Implemented in responsive layout refactor. |
-| F-F4 | 🔴 Open | **Session rename** | Double-click session title to rename | Frontend only |
-| F-F5 | 🔴 Open | **Viewing checklist** | Per-listing checklist panel (legal + physical checks) | Roadmap Section 4 |
-| F-F6 | 🔴 Open | **Contract upload UI** | File upload → send to contract analysis endpoint | Roadmap Section 5 + B-F6 |
+| # | Agent | Status | Feature | Detail | Needs |
+|---|-------|--------|---------|--------|-------|
+| F-F1 | Gemini | ✅ Done | **Map view** | Leaflet map tab with cluster markers, popups, Search this area (exact viewport bounds, 10% inward shrink), skipFitBounds after geo search | — |
+| F-F2 | Gemini | ✅ Fixed | **Listing detail drawer** | Click card → slide-out with full info. Includes Portal rendering, scroll lock, and keyboard focus trap. | — |
+| F-F7 | Gemini | ✅ Done | **Image carousel in card + drawer** | `ImageCarousel` component: left/right arrows, dot indicators, 1/N counter. Features (up to 3) or description shown on card. Drawer: Key Features first, then Property Description. `_features_list()` handles all storage formats + filters "ask agent". | — |
+| F-F3 | Gemini | ✅ Fixed | **Mobile bottom nav** | Switch Chat ↔ Results on mobile | Implemented in responsive layout refactor. |
+| F-F4 | Gemini | 🔴 Open | **Session rename** | Double-click session title to rename | Frontend only |
+| F-F5 | Gemini | 🔴 Open | **Viewing checklist** | Per-listing checklist panel (legal + physical checks) | Roadmap Section 4 |
+| F-F6 | Gemini | 🔴 Open | **Contract upload UI** | File upload → send to contract analysis endpoint | Roadmap Section 5 + B-F6 |
 
 ---
 
-## Backend Tasks (Claude)
+## Backend Tasks (Claude only — do not modify frontend files)
 
 ### Concerns / Coordination
 > **🚨 GEMINI NOTE regarding B-F1:** I have temporarily patched `api_server.py` and `candidate_snapshot` to send `description`, `features`, `deposit`, and `property_type` inside the standard `search_results` listing object. This unblocked the frontend summaries and the v1 Detail Drawer. When building `B-F1` (Detail Endpoint), please ensure these fields remain available in the standard search stream, or let me know if we need to switch entirely to fetching them dynamically on click.
@@ -93,15 +104,15 @@
 
 ### Features
 
-| # | Status | Feature | Section |
-|---|--------|---------|---------|
-| B-F1 | 🔴 Open | **Listing detail endpoint** — `GET /api/listing/{id}` returns full listing dict | 1 |
-| B-F2 | 🔴 Open | **OpenRent scraper** — private landlords, no agent fees (`crawler/openrent.py`) | 1 |
-| B-F3 | 🔴 Open | **Red flag detection** — scan description for: no DSS, admin fees, no deposit protection | 3 |
-| B-F4 | 🔴 Open | **Draft viewing request** — `POST /api/contact/draft`, LLM + listing context | 3 |
-| B-F5 | 🔴 Open | **Commute time** — TfL API: listing lat/lon + workplace → journey time | 2 |
-| B-F6 | 🔴 Open | **Contract analysis** — `POST /api/contract/analyse`, PDF → plain-English summary + clause flags | 5 |
-| B-F7 | 🔴 Open | **Tenant rights RAG** — index GOV.UK + Shelter + Renters Reform Act | 6 |
+| # | Agent | Status | Feature | Section |
+|---|-------|--------|---------|---------|
+| B-F1 | Claude | 🔴 Open | **Listing detail endpoint** — `GET /api/listing/{id}` returns full listing dict | 1 |
+| B-F2 | Claude | 🔴 Open | **OpenRent scraper** — private landlords, no agent fees (`crawler/openrent.py`) | 1 |
+| B-F3 | Claude | 🔴 Open | **Red flag detection** — scan description for: no DSS, admin fees, no deposit protection | 3 |
+| B-F4 | Claude | 🔴 Open | **Draft viewing request** — `POST /api/contact/draft`, LLM + listing context | 3 |
+| B-F5 | Claude | 🔴 Open | **Commute time** — TfL API: listing lat/lon + workplace → journey time | 2 |
+| B-F6 | Claude | 🔴 Open | **Contract analysis** — `POST /api/contract/analyse`, PDF → plain-English summary + clause flags | 5 |
+| B-F7 | Claude | 🔴 Open | **Tenant rights RAG** — index GOV.UK + Shelter + Renters Reform Act | 6 |
 
 ---
 
