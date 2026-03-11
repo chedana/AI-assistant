@@ -165,9 +165,10 @@ def _scrape_one(url: str) -> Optional[dict]:
             html = fetch_listing(url)
             rec = extract_listing(html, url)
             d = asdict(rec)
-            # Attach image_urls if present (added as __dict__ extra in extractor)
-            if hasattr(rec, "__dict__") and "image_urls" in rec.__dict__:
-                d["image_urls"] = rec.__dict__["image_urls"]
+            # Attach extra __dict__ fields from extractor
+            for extra_key in ("image_urls", "openrent_extras"):
+                if hasattr(rec, "__dict__") and extra_key in rec.__dict__:
+                    d[extra_key] = rec.__dict__[extra_key]
             # Add discovery_paths (parallel to Rightmove format)
             d["discovery_paths"] = ["openrent:london"]
             d["source_site"] = "openrent"

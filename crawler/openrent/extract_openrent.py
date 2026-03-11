@@ -340,61 +340,213 @@ def extract_listing(html: str, url: str) -> ListingRecord:
             furnish_type = let_type = m.group(1).capitalize()
             break
 
-    # --- Key details table: available from, min tenancy, deposit ---
-    available_from = min_tenancy = deposit_str = council_tax = None
-    deposit_amount = None
+    # -----------------------------------------------------------------------
+    # Dynamic section extraction
+    # -----------------------------------------------------------------------
+    # OpenRent structures each listing as named sections (Price & Bills,
+    # Tenant Preference, Availability, Features) each with a heading followed
+    # by label/value rows.  The specific rows vary per listing — we extract
+    # ALL of them dynamically rather than hardcoding labels.
+    #
+    # Output:
+    #   section_rows: dict[section_slug, dict[label_slug, raw_value]]
+    #   where raw_value is True/False (bool checkbox) or str (text cell).
+    # -----------------------------------------------------------------------
 
-    # OpenRent uses a definition list or table for key facts
-    # Look for labeled rows
-    label_map = {
-        "available from":   "available_from",
-        "available":        "available_from",
-        "minimum tenancy":  "min_tenancy",
-        "min. tenancy":     "min_tenancy",
-        "min tenancy":      "min_tenancy",
-        "deposit":          "deposit",
-        "council tax":      "council_tax",
-        "council tax band": "council_tax",
+    TICK_CLASSES   = {"fa-check-circle", "fa-check", "glyphicon-ok", "icon-check"}
+    CROSS_CLASSES  = {"fa-times-circle", "fa-times", "glyphicon-remove", "icon-times"}
+    TICK_CHARS     = {"✓", "✔", "☑"}
+    CROSS_CHARS    = {"✗", "✘", "☒"}
+
+    def _cell_bool(cell) -> Optional[bool]:
+        """Read True/False/None from a value cell containing a tick or cross icon."""
+        if cell is None:
+            return None
+        for icon in cell.find_all(["i", "span"]):
+            classes = set(icon.get("class") or [])
+            if classes & TICK_CLASSES:
+                return True
+            if classes & CROSS_CLASSES:
+                return False
+        for img in cell.find_all("img"):
+            src = (img.get("src") or img.get("data-src") or "").lower()
+            alt = (img.get("alt") or "").lower()
+            if any(k in src or k in alt for k in ("tick", "check", "yes", "true")):
+                return True
+            if any(k in src or k in alt for k in ("cross", "times", "no", "false")):
+                return False
+        text = cell.get_text(strip=True)
+        if any(c in text for c in TICK_CHARS):
+            return True
+        if any(c in text for c in CROSS_CHARS):
+            return False
+        low = text.lower()
+        if low in ("yes", "true", "included", "allowed"):
+            return True
+        if low in ("no", "false", "not included", "not allowed"):
+            return False
+        return False if low == "" else None
+
+    def _slug(s: str) -> str:
+        """Normalise label to a consistent slug key."""
+        return re.sub(r"[^a-z0-9]+", "_", s.lower()).strip("_")
+
+    def _extract_rows_from_container(container) -> dict:
+        """
+        Given a BeautifulSoup container (table, dl, div, section),
+        extract all label/value pairs as {slug: bool_or_str}.
+        """
+        rows: dict = {}
+
+        # Table rows: <tr><td>Label</td><td>value</td></tr>
+        for tr in container.find_all("tr"):
+            cells = tr.find_all(["th", "td"])
+            if len(cells) < 2:
+                continue
+            label_text = cells[0].get_text(strip=True)
+            if not label_text:
+                continue
+            val_cell = cells[1]
+            bool_val = _cell_bool(val_cell)
+            if bool_val is not None:
+                rows[_slug(label_text)] = bool_val
+            else:
+                text_val = val_cell.get_text(strip=True)
+                if text_val:
+                    rows[_slug(label_text)] = text_val
+
+        # Definition list: <dt>Label</dt><dd>value</dd>
+        for dt in container.find_all("dt"):
+            label_text = dt.get_text(strip=True)
+            if not label_text:
+                continue
+            dd = dt.find_next_sibling("dd")
+            if dd is None:
+                continue
+            bool_val = _cell_bool(dd)
+            if bool_val is not None:
+                rows[_slug(label_text)] = bool_val
+            else:
+                text_val = dd.get_text(strip=True)
+                if text_val:
+                    rows[_slug(label_text)] = text_val
+
+        return rows
+
+    # OpenRent section headings we care about
+    SECTION_SLUGS = {
+        "price_bills":         {"price & bills", "price and bills", "price"},
+        "availability":        {"availability"},
+        "tenant_preference":   {"tenant preference", "tenant preferences"},
+        "features":            {"features", "property features"},
     }
 
-    results: dict[str, str] = {}
+    def _section_slug(heading_text: str) -> Optional[str]:
+        low = heading_text.lower().strip()
+        for slug, aliases in SECTION_SLUGS.items():
+            if low in aliases:
+                return slug
+        return None
 
-    # Strategy 1: dt/dd pairs
-    for dt in soup.find_all("dt"):
-        key = dt.get_text(strip=True).lower()
-        dd = dt.find_next_sibling("dd")
-        if dd:
-            for k, field in label_map.items():
-                if k in key:
-                    results[field] = dd.get_text(strip=True)
+    section_rows: dict[str, dict] = {}
 
-    # Strategy 2: table rows with label|value
-    for row in soup.find_all("tr"):
-        cells = row.find_all(["th", "td"])
-        if len(cells) >= 2:
-            key = cells[0].get_text(strip=True).lower()
-            val = cells[1].get_text(strip=True)
-            for k, field in label_map.items():
-                if k in key:
-                    results[field] = val
-
-    # Strategy 3: text search for labeled values
-    for label, field in label_map.items():
-        if field in results:
+    # Walk all heading-like elements and collect rows that follow
+    for heading in soup.find_all(["h2", "h3", "h4", "b", "strong"]):
+        sec = _section_slug(heading.get_text(strip=True))
+        if sec is None:
             continue
-        pattern = re.compile(
-            rf"{re.escape(label)}\s*[:\-]?\s*([^\n<]+)", re.I
-        )
-        m = pattern.search(soup.get_text(" "))
-        if m:
-            results[field] = m.group(1).strip()
+        # Collect rows from the next sibling container (table, dl, div, section)
+        container = heading.find_next_sibling(["table", "dl", "div", "section", "ul"])
+        if container:
+            rows = _extract_rows_from_container(container)
+            if rows:
+                section_rows.setdefault(sec, {}).update(rows)
 
-    available_from = _parse_available(results.get("available_from", ""))
-    min_tenancy    = _ask(results.get("min_tenancy"))
-    council_tax    = _ask(results.get("council_tax"))
+    # Fallback: scan all tables and dl globally if sections not found
+    if not section_rows:
+        global_rows = _extract_rows_from_container(soup)
+        # Bin them into sections based on known label slugs
+        PRICE_LABELS    = {"deposit", "rent_pcm", "bills_included", "broadband"}
+        AVAIL_LABELS    = {"available_from", "available", "minimum_tenancy", "min_tenancy"}
+        TENANT_LABELS   = {"student_friendly", "families_allowed", "pets_allowed",
+                           "smokers_allowed", "dss_lha_covers_rent", "dss_covers_rent"}
+        FEATURE_LABELS  = {"garden", "parking", "fireplace", "furnishing", "epc_rating"}
+        for slug, val in global_rows.items():
+            if slug in PRICE_LABELS:
+                section_rows.setdefault("price_bills", {})[slug] = val
+            elif slug in AVAIL_LABELS:
+                section_rows.setdefault("availability", {})[slug] = val
+            elif slug in TENANT_LABELS:
+                section_rows.setdefault("tenant_preference", {})[slug] = val
+            elif slug in FEATURE_LABELS:
+                section_rows.setdefault("features", {})[slug] = val
 
-    dep_raw = results.get("deposit", "")
+    pb   = section_rows.get("price_bills", {})
+    av   = section_rows.get("availability", {})
+    tp   = section_rows.get("tenant_preference", {})
+    feat = section_rows.get("features", {})
+
+    # --- Map known labels → structured fields ---
+
+    # Price & Bills
+    dep_raw = str(pb.get("deposit") or "")
     deposit_str, deposit_amount = _parse_deposit(dep_raw)
+    # rent_pcm already extracted from the main price block above; don't override
+
+    bills_included = pb.get("bills_included")  # bool or None
+
+    # Availability
+    av_raw = str(av.get("available_from") or av.get("available") or "")
+    available_from = _parse_available(av_raw)
+    min_tenancy_raw = str(av.get("minimum_tenancy") or av.get("min_tenancy") or av.get("min__tenancy") or "")
+    min_tenancy = _ask(min_tenancy_raw) if min_tenancy_raw else "ask agent"
+
+    council_tax = _ask(str(feat.get("council_tax") or feat.get("council_tax_band") or ""))
+
+    # Tenant preferences
+    student_friendly = tp.get("student_friendly")
+    families_allowed = tp.get("families_allowed")
+    pets_allowed     = tp.get("pets_allowed")
+    smokers_allowed  = tp.get("smokers_allowed")
+    dss_covers_rent  = tp.get("dss_lha_covers_rent") or tp.get("dss_covers_rent")
+
+    # Features
+    garden    = feat.get("garden")
+    parking   = feat.get("parking")
+    fireplace = feat.get("fireplace")
+
+    furnish_raw = feat.get("furnishing")
+    if furnish_raw and isinstance(furnish_raw, str):
+        furnish_type = furnish_raw.capitalize()
+        let_type     = furnish_type
+    # (already extracted from text above if not found here)
+
+    epc_raw = feat.get("epc_rating")
+    epc_rating: Optional[str] = None
+    if epc_raw and isinstance(epc_raw, str):
+        m_epc = re.match(r"([A-G])\b", epc_raw.strip(), re.I)
+        if m_epc:
+            epc_rating = m_epc.group(1).upper()
+    if not epc_rating:
+        m_epc = re.search(r"EPC\s*Rating\s*[:\-]?\s*([A-G])\b", html, re.I)
+        if m_epc:
+            epc_rating = m_epc.group(1).upper()
+
+    # --- Collect unknown rows as openrent_extras ---
+    # Any label we haven't explicitly mapped goes here for future use
+    KNOWN_SLUGS = {
+        "deposit", "rent_pcm", "bills_included", "broadband",
+        "available_from", "available", "minimum_tenancy", "min_tenancy", "min__tenancy",
+        "student_friendly", "families_allowed", "pets_allowed", "smokers_allowed",
+        "dss_lha_covers_rent", "dss_covers_rent",
+        "garden", "parking", "fireplace", "furnishing", "epc_rating",
+        "council_tax", "council_tax_band",
+    }
+    openrent_extras: dict = {}
+    for sec_rows in section_rows.values():
+        for slug, val in sec_rows.items():
+            if slug not in KNOWN_SLUGS:
+                openrent_extras[slug] = val
 
     # --- Size ---
     size_sqft = size_sqm = None
@@ -520,69 +672,8 @@ def extract_listing(html: str, url: str) -> ListingRecord:
         # Empty cell = unticked (False), non-empty unknown text = None
         return False if low == "" else None
 
-    def _find_bool_field(label: str) -> Optional[bool]:
-        """
-        Locate the label string in the page's dt/td elements and return
-        the bool value of its sibling dd/td.
-        """
-        # Strategy 1: definition list  <dt>Label</dt><dd>value</dd>
-        for dt in soup.find_all("dt"):
-            if label.lower() in dt.get_text(strip=True).lower():
-                dd = dt.find_next_sibling("dd")
-                result = _cell_bool(dd)
-                if result is not None:
-                    return result
-                # dd exists but no signal — means unticked (blank)
-                if dd is not None:
-                    return False
 
-        # Strategy 2: table row  <tr><td>Label</td><td>value</td></tr>
-        for row in soup.find_all("tr"):
-            cells = row.find_all(["th", "td"])
-            if len(cells) >= 2 and label.lower() in cells[0].get_text(strip=True).lower():
-                result = _cell_bool(cells[1])
-                if result is not None:
-                    return result
-                if cells[1] is not None:
-                    return False
-
-        # Strategy 3: any element whose text is exactly the label,
-        # inspect the next sibling element for an icon
-        for el in soup.find_all(string=re.compile(rf"^\s*{re.escape(label)}\s*$", re.I)):
-            sibling = el.parent.find_next_sibling() if el.parent else None
-            result = _cell_bool(sibling)
-            if result is not None:
-                return result
-            if sibling is not None:
-                return False
-
-        return None  # label not found on page
-
-    bills_included   = _find_bool_field("Bills Included")
-    student_friendly = _find_bool_field("Student Friendly")
-    families_allowed = _find_bool_field("Families Allowed")
-    pets_allowed     = _find_bool_field("Pets Allowed")
-    smokers_allowed  = _find_bool_field("Smokers Allowed")
-    dss_covers_rent  = _find_bool_field("DSS/LHA Covers Rent")
-    garden           = _find_bool_field("Garden")
-    parking          = _find_bool_field("Parking")
-    fireplace        = _find_bool_field("Fireplace")
-
-    # EPC Rating: a letter A–G (appears as text value, not a checkbox)
-    epc_rating: Optional[str] = None
-    for el in soup.find_all(string=re.compile(r"EPC\s*Rating", re.I)):
-        sibling = el.parent.find_next_sibling() if el.parent else None
-        if sibling:
-            val = sibling.get_text(strip=True)
-            m_epc = re.match(r"^([A-G])\b", val, re.I)
-            if m_epc:
-                epc_rating = m_epc.group(1).upper()
-                break
-    if not epc_rating:
-        # Fallback: regex on raw HTML
-        m_epc = re.search(r"EPC\s*Rating\s*[:\-]?\s*([A-G])\b", html, re.I)
-        if m_epc:
-            epc_rating = m_epc.group(1).upper()
+    # (boolean fields extracted dynamically above via section_rows)
 
     # --- Coordinates ---
     lat, lon = _extract_lat_lon(html)
@@ -643,8 +734,9 @@ def extract_listing(html: str, url: str) -> ListingRecord:
         epc_rating=epc_rating,
     )
 
-    # Attach image_urls list as extra attribute (picked up by sync_qdrant if present)
+    # Attach extra attributes (picked up by crawl_openrent when building the dict)
     rec.__dict__["image_urls"] = image_urls
+    rec.__dict__["openrent_extras"] = openrent_extras  # unknown labels captured dynamically
 
     return rec
 
