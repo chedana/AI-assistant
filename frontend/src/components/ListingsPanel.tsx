@@ -14,7 +14,7 @@ type Props = {
   viewMode: "list" | "map";
   onViewModeToggle: (mode: "list" | "map") => void;
   onSaveListing: (pageIndex: number) => void;
-  onRemoveListing: (position: number) => void;
+  onRemoveListing: (pageIndex: number, url: string) => void;
   onShowMore: () => void;
   onShowPrev: () => void;
   onQuickReply: (text: string, routeHint?: Record<string, unknown>) => void;
@@ -62,13 +62,14 @@ export default function ListingsPanel({
 
   // Pagination data
   const pageIndex = results?.page_index ?? 0;
+  const listingsSig = results?.listings?.map(l => l.url).join(',') ?? '';
 
-  // Scroll to top on page change or new results
+  // Scroll to top only on page change or if the result set actually changes
   useEffect(() => {
     if (scrollContainerRef.current && viewMode === "list") {
       scrollContainerRef.current.scrollTo({ top: 0, behavior: "smooth" });
     }
-  }, [pageIndex, results?.listings, viewMode]);
+  }, [pageIndex, listingsSig, viewMode]);
 
   const pageSize = 5; // Standard page size from backend
   const totalResults = results?.total ?? 0;
@@ -186,7 +187,7 @@ export default function ListingsPanel({
                       isSaved={savedIds.has(listing.url)}
                       displayScore={normalizedScores[idx] ?? undefined}
                       onSave={() => onSaveListing(idx + 1)}
-                      onRemove={() => onRemoveListing(idx + 1)}
+                      onRemove={() => onRemoveListing(idx + 1, listing.url)}
                       onClick={() => setSelectedListing(listing)}
                     />
                   ))}

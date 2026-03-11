@@ -52,6 +52,9 @@ def apply_hard_filters_with_audit(df: pd.DataFrame, c: Dict[str, Any]) -> Tuple[
     if df is None or len(df) == 0:
         return df, []
 
+    # Always exclude non-residential property types
+    _NON_RESIDENTIAL = {"parking", "garage", "land", "commercial", "office", "storage"}
+
     keep_indices: List[int] = []
     audits: List[Dict[str, Any]] = []
 
@@ -70,6 +73,11 @@ def apply_hard_filters_with_audit(df: pd.DataFrame, c: Dict[str, Any]) -> Tuple[
 
         def _norm_furnish(v: Any) -> str:
             return _norm_furnish_value(v)
+
+        # Skip non-residential listings (parking, garages, land, etc.)
+        prop_type_raw = _safe_text(r.get("property_type")).lower().strip()
+        if any(nr in prop_type_raw for nr in _NON_RESIDENTIAL):
+            continue
 
         layout_options = c.get("layout_options") or []
         use_layout_options = isinstance(layout_options, list) and len(layout_options) > 0

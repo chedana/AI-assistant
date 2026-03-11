@@ -124,8 +124,6 @@ Implementation: RAG skill over indexed UK tenant law docs (GOV.UK, Shelter guide
 
 _Last updated: 2026-03-11 · Branch: `openclaw` · Tip: see Phase 21_
 
-### Architecture
-
 ```
 User Input
   → [domain_router_node]     rental vs general conversation
@@ -248,6 +246,29 @@ frontend/src/
 ## Session Progress
 
 > Append a line here after every commit. Tasks live in `TODO.md` — not here.
+
+---
+
+### Phase 21 · Map view, data backfill, listing card improvements (Mar 11)
+> Branch: `openclaw` | Commits: `39544ce` → `(current)`
+
+| Hash | Date | Type | Description |
+|------|------|------|-------------|
+| `39544ce` | 2026-03-11 | feat | Dynamic map search radius + smart geo scroll cap |
+| `647c567` | 2026-03-11 | feat | Map geo search exact bounds, image carousel, listing features/description |
+| `db41d58` | 2026-03-11 | docs | Update PROJECT.md — Phase 21 tasks marked done |
+| `4aefaac` | 2026-03-11 | docs | Add agent ownership boundaries to PROJECT.md |
+| `8149ab0` | 2026-03-11 | docs | Mark B-F1 listing detail endpoint as not needed |
+| (current) | 2026-03-11 | fix | Strip `- ` prefix from features; exclude parking/non-residential listings |
+
+**Key deliverables this phase:**
+
+- **Qdrant data recovery + cleanup**: Recovered 26,394 listings from local Qdrant after accidental sync deletion. Image backfill completed (23,418 updated). 2,005 dead listings (404/410) removed → **24,389 clean listings**.
+- **Map "Search this area"**: Now sends exact viewport bounds (min/max lat/lng, 10% inward shrink). Backend uses bounds directly; skips haversine. `GEO_SCROLL_MAX=15000`.
+- **Image carousel** (`ListingCard.tsx`, `ListingDetailDrawer.tsx`): `ImageCarousel` sub-component with arrows, dots, 1/N counter.
+- **Features on cards/drawer**: `_features_list()` handles all storage formats (JSON, list, `\n`/`;` strings). Strips `- `, `–`, `•` markers. Filters "ask agent"/"n/a"/"none".
+- **Parking excluded**: `apply_hard_filters_with_audit` skips property_type = parking/garage/land/commercial.
+- **Agent boundaries**: `PROJECT.md` updated with ownership table — Gemini=frontend only, Claude=backend only. "Do not start autonomously" warning added.
 
 ---
 

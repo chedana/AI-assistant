@@ -10,13 +10,16 @@ type Props = {
 };
 
 function toArray(val: string[] | string | undefined): string[] {
-  if (Array.isArray(val)) return val.filter(Boolean);
+  const clean = (s: string) => {
+    return s.trim().replace(/^[-•*+]\s*/, '').trim();
+  };
+  if (Array.isArray(val)) return val.map(clean).filter(Boolean);
   if (typeof val === "string" && val.trim()) {
     // Try JSON parse first (backend sends proper JSON arrays now)
     if (val.startsWith("[")) {
-      try { const p = JSON.parse(val); if (Array.isArray(p)) return p.map(String).filter(Boolean); } catch {}
+      try { const p = JSON.parse(val); if (Array.isArray(p)) return p.map(s => clean(String(s))).filter(Boolean); } catch {}
     }
-    return val.split(/[;\n]+/).map(s => s.trim()).filter(Boolean);
+    return val.split(/[;\n]+/).map(clean).filter(Boolean);
   }
   return [];
 }

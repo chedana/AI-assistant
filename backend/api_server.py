@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 from threading import Lock
 from typing import AsyncGenerator, Dict, List, Literal, Optional, Union
 
@@ -91,8 +92,10 @@ def _json_list(val: object) -> list[str]:
 def _features_list(val: object) -> list[str]:
     """Parse features — handles JSON arrays, Python lists, and newline/semicolon-separated strings."""
     _skip = {"ask agent", "n/a", "none", ""}
+    def _clean(s: str) -> str:
+        return re.sub(r"^[\-–•]\s*", "", s).strip()
     if isinstance(val, list):
-        return [str(x).strip() for x in val if str(x).strip().lower() not in _skip]
+        return [_clean(str(x)) for x in val if _clean(str(x)).lower() not in _skip]
     if isinstance(val, str) and val.strip():
         if val.strip().lower() in _skip:
             return []
@@ -101,11 +104,12 @@ def _features_list(val: object) -> list[str]:
             try:
                 parsed = json.loads(val)
                 if isinstance(parsed, list):
-                    return [str(x).strip() for x in parsed if str(x).strip().lower() not in _skip]
+                    return [_clean(str(x)) for x in parsed if _clean(str(x)).lower() not in _skip]
             except Exception:
                 pass
-        # Newline or semicolon separated
-        return [x.strip() for x in val.replace(";", "\n").split("\n") if x.strip() and x.strip().lower() not in _skip]
+        # Newline or semicolon separated; strip leading "- " or "• " list markers
+        return [_clean(x) for x in val.replace(";", "\n").split("\n")
+                if _clean(x) and _clean(x).lower() not in _skip]
     return []
 
 

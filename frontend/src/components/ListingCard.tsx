@@ -12,8 +12,11 @@ type Props = {
 };
 
 function toArray(val: string[] | string | undefined): string[] {
-  if (Array.isArray(val)) return val;
-  if (typeof val === "string" && val.trim()) return val.split(/[;\n]+/).map(s => s.trim()).filter(Boolean);
+  const clean = (s: string) => {
+    return s.trim().replace(/^[-•*+]\s*/, '').trim();
+  };
+  if (Array.isArray(val)) return val.map(clean).filter(Boolean);
+  if (typeof val === "string" && val.trim()) return val.split(/[;\n]+/).map(clean).filter(Boolean);
   return [];
 }
 
@@ -74,7 +77,7 @@ export default function ListingCard({ listing, isSaved, compact, displayScore, o
 
   // New Data Points
   const weeklyPrice = Math.round((listing.price_pcm * 12) / 52);
-  const propertyFeatures = (listing.features || []).slice(0, 3);
+  const propertyFeatures = toArray(listing.features).slice(0, 3);
   
   // Format description: collapse broken <PARA> tags into spaces, otherwise use space.
   // For the card summary, we don't need newlines at all, just a clean string.
@@ -104,7 +107,11 @@ export default function ListingCard({ listing, isSaved, compact, displayScore, o
           </div>
           <button 
             onClick={(e) => { e.stopPropagation(); isSaved ? onRemove?.() : onSave?.(); }} 
-            className={`shrink-0 transition-colors ${isSaved ? "text-accent hover:text-red-400" : "text-muted hover:text-accent"}`}
+            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border transition-all duration-200 ${
+              isSaved 
+                ? "border-accent bg-accent text-white shadow-sm shadow-accent/20" 
+                : "border-border bg-surface text-muted hover:border-accent hover:text-accent hover:bg-accent/5"
+            }`}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill={isSaved ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
@@ -151,8 +158,16 @@ export default function ListingCard({ listing, isSaved, compact, displayScore, o
             </a>
             {showAddress && <p className="mt-1 truncate text-xs font-medium text-muted">{listing.address}</p>}
           </div>
-          <button onClick={(e) => { e.stopPropagation(); isSaved ? onRemove?.() : onSave?.(); }} className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-all ${isSaved ? "border-accent bg-accent/10 text-accent" : "border-border bg-surface text-muted hover:border-accent hover:text-accent"}`}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill={isSaved ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <button 
+            onClick={(e) => { e.stopPropagation(); isSaved ? onRemove?.() : onSave?.(); }} 
+            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-all duration-200 shadow-sm ${
+              isSaved 
+                ? "border-accent bg-accent text-white shadow-accent/20" 
+                : "border-border bg-surface text-muted hover:border-accent hover:text-accent hover:bg-accent/5"
+            }`}
+            title={isSaved ? "Remove from shortlist" : "Save to shortlist"}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill={isSaved ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
             </svg>
           </button>

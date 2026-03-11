@@ -67,6 +67,14 @@ export default function App() {
     void sendSilentAction(`save listing ${pageIndex}`, { intent: "Shortlist", shortlist_action: "add", target_indices: [pageIndex] });
   }
 
+  function handleRemoveListingFromResults(pageIndex: number, url: string) {
+    const savedIdsArr = metadata?.shortlist?.saved_ids ?? [];
+    const position = savedIdsArr.indexOf(url) + 1;
+    if (position > 0) {
+      handleRemoveFromShortlist(position);
+    }
+  }
+
   function handleRemoveFromShortlist(position: number) {
     void sendSilentAction(`remove shortlist ${position}`, { intent: "Shortlist", shortlist_action: "remove", target_indices: [position] });
   }
@@ -105,7 +113,7 @@ export default function App() {
             viewMode={viewMode}
             onViewModeToggle={setViewMode}
             onSaveListing={handleSaveListing}
-            onRemoveListing={handleRemoveFromShortlist}
+            onRemoveListing={handleRemoveListingFromResults}
             onShowMore={() => sendSilentAction("show me more", { intent: "Page_Nav", page_action: "next" })}
             onShowPrev={() => sendSilentAction("go back", { intent: "Page_Nav", page_action: "prev" })}
             onQuickReply={handleQuickReply}

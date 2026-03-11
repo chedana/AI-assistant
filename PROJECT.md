@@ -56,7 +56,9 @@
 |---|--------|-------|--------|
 | F-B1 | ✅ Fixed | Match % showed raw `final_score * 100` (e.g. "11%") | Now normalised 70–100% within page, minus 8% per penalty reason |
 | F-B2 | ✅ Fixed | Chat accumulates multiple "Loading more listings…" ack messages | Pagination and interactions are now fully silent. Reusing ack bubbles where necessary. |
-| F-B3 | ✅ Fixed | Map view button shows "coming soon" placeholder | Leaflet map view implemented: clusters, popups, Search this area with exact viewport bounds |
+| F-B4 | Gemini | ✅ Fixed | ListingCard compact mode + bookmark style polish | Smaller bookmark button in compact mode, accent fill when saved |
+| F-B5 | Claude | ✅ Fixed | Feature items show leading `- ` dash | `_clean()` in `_features_list()` strips `- `, `–`, `•` list markers |
+| F-B6 | Claude | ✅ Fixed | Parking/garage listings appear in search results | `apply_hard_filters_with_audit` now excludes non-residential property types (parking, garage, land, commercial, office, storage) |
 
 ### Polish
 
