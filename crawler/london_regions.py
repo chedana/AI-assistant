@@ -1,3 +1,4 @@
+from typing import Optional, Tuple
 """
 london_regions.py
 -----------------
@@ -744,7 +745,9 @@ def needs_sector_split(district: str) -> bool:
     return LONDON_POSTCODE_DISTRICTS.get(district.upper(), "low") == "high"
 
 
-def get_region_center(region_name: str) -> tuple[float, float] | None:
+from typing import Optional, Tuple
+
+def get_region_center(region_name: str) -> Optional[Tuple[float, float]]:
     """返回 region 的中心坐标 (lat, lng)"""
     r = LONDON_REGIONS.get(region_name)
     if r:

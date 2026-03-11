@@ -17,7 +17,7 @@
 | Layer | Status | Notes |
 |-------|--------|-------|
 | Backend API | ✅ Running | FastAPI · `venv/bin/uvicorn backend.api_server:app --port 8000` |
-| Qdrant Cloud | ✅ Connected | **24,389 listings** (Rightmove only), `rent_listings` collection. **Ready to sync:** +6,539 OpenRent listings locally |
+| Qdrant Cloud | ✅ Connected | **31,718 listings** (26,191 Rightmove + 6,586 OpenRent, 1,343 merged), `rent_listings` collection |
 | Frontend | ✅ Running | Vite · `cd frontend && npm run dev -- --port 5173` |
 | Search pipeline | ✅ Working | LangGraph + 4-stage pipeline (retrieve → filter → rank → explain) |
 | SSE streaming | ✅ Working | delta / metadata / done events |
