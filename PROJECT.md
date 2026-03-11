@@ -106,7 +106,7 @@
 
 | # | Agent | Status | Feature | Section |
 |---|-------|--------|---------|---------|
-| B-F1 | Claude | 🔴 Open | **Listing detail endpoint** — `GET /api/listing/{id}` returns full listing dict | 1 |
+| B-F1 | Claude | ✅ Not needed | **Listing detail endpoint** — `GET /api/listing/{id}` | All fields (`description`, `features`, `deposit`, `property_type`, `furnish_type`) are already in the SSE metadata stream via `_map_listing()`. Drawer has everything it needs without an extra API call. | 1 |
 | B-F2 | Claude | 🔴 Open | **OpenRent scraper** — private landlords, no agent fees (`crawler/openrent.py`) | 1 |
 | B-F3 | Claude | 🔴 Open | **Red flag detection** — scan description for: no DSS, admin fees, no deposit protection | 3 |
 | B-F4 | Claude | 🔴 Open | **Draft viewing request** — `POST /api/contact/draft`, LLM + listing context | 3 |
