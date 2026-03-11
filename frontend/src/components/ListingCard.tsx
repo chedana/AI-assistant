@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { ListingData } from "../types/chat";
 
 type Props = {
@@ -66,6 +66,24 @@ function ImageCarousel({ images, title, price, weeklyPrice }: { images: string[]
 }
 
 export default function ListingCard({ listing, isSaved, compact, displayScore, onSave, onRemove, onClick }: Props) {
+  const [optimisticSaved, setOptimisticSaved] = useState<boolean | null>(null);
+  const saved = optimisticSaved !== null ? optimisticSaved : (isSaved ?? false);
+
+  // Once server state catches up, clear optimistic override
+  useEffect(() => {
+    if (optimisticSaved !== null && isSaved === optimisticSaved) {
+      setOptimisticSaved(null);
+    }
+  }, [isSaved]);
+
+  const handleSaveToggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!onSave && !onRemove) return;
+    const next = !saved;
+    setOptimisticSaved(next);
+    if (next) onSave?.(); else onRemove?.();
+  };
+
   const penalties = toArray(listing.penalty_reasons);
   const hits = toArray(listing.preference_hits);
   
@@ -105,15 +123,15 @@ export default function ListingCard({ listing, isSaved, compact, displayScore, o
               <span>{listing.bedrooms} bed</span>
             </div>
           </div>
-          <button 
-            onClick={(e) => { e.stopPropagation(); isSaved ? onRemove?.() : onSave?.(); }} 
+          <button
+            onClick={handleSaveToggle}
             className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border transition-all duration-200 ${
-              isSaved 
-                ? "border-accent bg-accent text-white shadow-sm shadow-accent/20" 
+              saved
+                ? "border-accent bg-accent text-white shadow-sm shadow-accent/20"
                 : "border-border bg-surface text-muted hover:border-accent hover:text-accent hover:bg-accent/5"
             }`}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill={isSaved ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill={saved ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
             </svg>
           </button>
@@ -158,16 +176,16 @@ export default function ListingCard({ listing, isSaved, compact, displayScore, o
             </a>
             {showAddress && <p className="mt-1 truncate text-xs font-medium text-muted">{listing.address}</p>}
           </div>
-          <button 
-            onClick={(e) => { e.stopPropagation(); isSaved ? onRemove?.() : onSave?.(); }} 
+          <button
+            onClick={handleSaveToggle}
             className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-all duration-200 shadow-sm ${
-              isSaved 
-                ? "border-accent bg-accent text-white shadow-accent/20" 
+              saved
+                ? "border-accent bg-accent text-white shadow-accent/20"
                 : "border-border bg-surface text-muted hover:border-accent hover:text-accent hover:bg-accent/5"
             }`}
-            title={isSaved ? "Remove from shortlist" : "Save to shortlist"}
+            title={saved ? "Remove from shortlist" : "Save to shortlist"}
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill={isSaved ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill={saved ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
             </svg>
           </button>

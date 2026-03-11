@@ -9,11 +9,12 @@ import MapView from "./MapView";
 type Props = {
   metadata: SessionMetadata | null;
   isGenerating: boolean;
+  isSilentAction: boolean;
   savedIds: Set<string>;
   quickReplies: QuickReply[] | undefined;
   viewMode: "list" | "map";
   onViewModeToggle: (mode: "list" | "map") => void;
-  onSaveListing: (pageIndex: number) => void;
+  onSaveListing: (pageIndex: number, url: string) => void;
   onRemoveListing: (pageIndex: number, url: string) => void;
   onShowMore: () => void;
   onShowPrev: () => void;
@@ -40,6 +41,7 @@ function ListingSkeleton() {
 export default function ListingsPanel({
   metadata,
   isGenerating,
+  isSilentAction,
   savedIds,
   quickReplies,
   viewMode,
@@ -92,12 +94,12 @@ export default function ListingsPanel({
 
   // Filter quick replies to only show search-relevant ones in the listings panel
   const actionReplies = useMemo(() => {
-    if (!quickReplies || isGenerating) return [];
+    if (!quickReplies) return [];
     return quickReplies.filter((r) => {
       const intent = r.route_hint?.intent as string | undefined;
       return intent === "Search" || intent === "Compare";
     });
-  }, [quickReplies, isGenerating]);
+  }, [quickReplies]);
 
   return (
     <>
@@ -143,7 +145,7 @@ export default function ListingsPanel({
             </div>
 
             <div className="flex items-center gap-2">
-              {isGenerating && (
+              {isGenerating && !isSilentAction && (
                 <div className="mr-2 flex items-center gap-1.5">
                   <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-accent" />
                   <span className="text-[10px] font-bold uppercase tracking-tighter text-accent">Updating</span>
@@ -155,7 +157,8 @@ export default function ListingsPanel({
                   <button
                     key={reply.text}
                     onClick={() => onQuickReply(reply.text, reply.route_hint)}
-                    className="rounded-lg border border-border bg-surface px-2.5 py-1 text-[11px] font-bold text-muted transition-all hover:border-neutral-500 hover:text-text"
+                    disabled={isGenerating}
+                    className="rounded-lg border border-border bg-surface px-2.5 py-1 text-[11px] font-bold text-muted transition-all hover:border-neutral-500 hover:text-text disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {reply.label}
                   </button>
@@ -186,8 +189,8 @@ export default function ListingsPanel({
                       listing={listing}
                       isSaved={savedIds.has(listing.url)}
                       displayScore={normalizedScores[idx] ?? undefined}
-                      onSave={() => onSaveListing(idx + 1)}
-                      onRemove={() => onRemoveListing(idx + 1, listing.url)}
+                      onSave={isGenerating ? undefined : () => onSaveListing(idx + 1, listing.url)}
+                      onRemove={isGenerating ? undefined : () => onRemoveListing(idx + 1, listing.url)}
                       onClick={() => setSelectedListing(listing)}
                     />
                   ))}

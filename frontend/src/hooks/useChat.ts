@@ -15,6 +15,7 @@ type UseChatOptions = {
 
 export function useChat({ activeSession, updateSession }: UseChatOptions) {
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isSilentAction, setIsSilentAction] = useState(false);
   const [metadata, setMetadata] = useState<SessionMetadata | null>(null);
   const [activeAssistantId, setActiveAssistantId] = useState<string | null>(null);
   // metadataForId: the message ID where cards/compare are rendered inline (most recent).
@@ -168,6 +169,7 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
 
     isGeneratingRef.current = true;
     setIsGenerating(true);
+    setIsSilentAction(true);
     const controller = new AbortController();
     abortRef.current = controller;
 
@@ -202,6 +204,7 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
     } finally {
       isGeneratingRef.current = false;
       setIsGenerating(false);
+      setIsSilentAction(false);
       abortRef.current = null;
     }
   }
@@ -212,6 +215,7 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
 
   return {
     isGenerating,
+    isSilentAction,
     metadata,
     suppressedIds,
     metadataForId,

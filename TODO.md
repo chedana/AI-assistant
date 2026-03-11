@@ -24,7 +24,7 @@ _No tasks assigned yet._
 ## frontend — UI
 _Covers: `frontend/src/` — components, hooks, types, lib_
 
-- [ ] UI Phase 2: map view (listing pins; lat/lon now available from scraper)
+_No tasks assigned yet._
 
 ---
 
@@ -39,7 +39,7 @@ _No tasks assigned yet._
 _Covers: `crawler/`, `artifacts/`, Qdrant collection, embedding scripts_
 
 - [ ] **Re-crawl London with fixed scraper** — run `crawl_london.py` then `sync_qdrant.py --mode sync` to populate Qdrant Cloud with real London listings. (May be handled by the automation above once installed.)
-- [ ] **Add OpenRent scraper** — private landlords, no agent fees. New `crawler/openrent.py`. Priority: Section 1 of product roadmap.
+- [ ] **Run full OpenRent crawl** — run `python -m crawler.openrent.crawl_openrent` then `sync_qdrant.py --mode sync` to add OpenRent listings to Qdrant Cloud.
 
 ---
 

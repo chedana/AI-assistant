@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import ChatArea from "./components/ChatArea";
 import ChatInput from "./components/ChatInput";
 import Header from "./components/Header";
@@ -20,6 +20,7 @@ export default function App() {
 
   const {
     isGenerating,
+    isSilentAction,
     metadata,
     activeAssistantId,
     sendMessage,
@@ -40,12 +41,29 @@ export default function App() {
     lastMetadataRef[1](metadata);
   }
 
-  const savedIds = useMemo(
-    () => new Set(metadata?.shortlist?.saved_ids ?? []),
-    [metadata?.shortlist?.saved_ids],
-  );
+  // Optimistic shortlist state — updates instantly on click, server syncs after
+  const [optimisticAdded, setOptimisticAdded] = useState<Set<string>>(new Set());
+  const [optimisticRemoved, setOptimisticRemoved] = useState<Set<string>>(new Set());
+  const prevServerIds = useRef<string[]>([]);
 
-  const shortlistCount = metadata?.shortlist?.count ?? 0;
+  // When server shortlist updates, clear optimistic overrides
+  const serverIds = metadata?.shortlist?.saved_ids ?? [];
+  useEffect(() => {
+    if (JSON.stringify(serverIds) !== JSON.stringify(prevServerIds.current)) {
+      prevServerIds.current = serverIds;
+      setOptimisticAdded(new Set());
+      setOptimisticRemoved(new Set());
+    }
+  }, [serverIds]);
+
+  const savedIds = useMemo(() => {
+    const base = new Set(serverIds);
+    optimisticAdded.forEach(u => base.add(u));
+    optimisticRemoved.forEach(u => base.delete(u));
+    return base;
+  }, [serverIds, optimisticAdded, optimisticRemoved]);
+
+  const shortlistCount = savedIds.size;
   const shortlistListings = metadata?.shortlist?.listings ?? [];
 
   // Close panel automatically when shortlist becomes empty
@@ -63,11 +81,15 @@ export default function App() {
     void sendSilentAction("clear constraint", { intent: "Search", clear_fields: clearFields });
   }
 
-  function handleSaveListing(pageIndex: number) {
+  function handleSaveListing(pageIndex: number, url: string) {
+    setOptimisticAdded(s => new Set([...s, url]));
+    setOptimisticRemoved(s => { const n = new Set(s); n.delete(url); return n; });
     void sendSilentAction(`save listing ${pageIndex}`, { intent: "Shortlist", shortlist_action: "add", target_indices: [pageIndex] });
   }
 
   function handleRemoveListingFromResults(pageIndex: number, url: string) {
+    setOptimisticRemoved(s => new Set([...s, url]));
+    setOptimisticAdded(s => { const n = new Set(s); n.delete(url); return n; });
     const savedIdsArr = metadata?.shortlist?.saved_ids ?? [];
     const position = savedIdsArr.indexOf(url) + 1;
     if (position > 0) {
@@ -108,6 +130,7 @@ export default function App() {
           <ListingsPanel
             metadata={metadata}
             isGenerating={isGenerating}
+            isSilentAction={isSilentAction}
             savedIds={savedIds}
             quickReplies={metadata?.quick_replies}
             viewMode={viewMode}

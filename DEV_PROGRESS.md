@@ -27,7 +27,7 @@ Surface the right listings before the user knows exactly what they want. Convers
 | Rightmove scraper | ✅ done | Bug: postcode typeahead resolves wrong — must use area names |
 | Qdrant Cloud vector search | ✅ done | 9,794 listings (initial); needs refresh with area-name crawl |
 | Conversational search + constraints | ✅ done | GPT-5 Mini, LangGraph orchestration |
-| OpenRent scraper | ❌ next | Private landlords, no agent fees — key differentiator |
+| OpenRent scraper | ✅ done | `crawler/openrent/` — plain HTTP, 6,704 London listings, full field parity with Rightmove |
 | Zoopla integration | ❌ future | Broader coverage |
 | SpareRoom integration | ❌ future | Rooms / HMO market |
 | Geo-radius fallback | ❌ deferred | When location miss → lat/lon radius in Qdrant |
@@ -259,7 +259,9 @@ frontend/src/
 | `db41d58` | 2026-03-11 | docs | Update PROJECT.md — Phase 21 tasks marked done |
 | `4aefaac` | 2026-03-11 | docs | Add agent ownership boundaries to PROJECT.md |
 | `8149ab0` | 2026-03-11 | docs | Mark B-F1 listing detail endpoint as not needed |
-| (current) | 2026-03-11 | fix | Strip `- ` prefix from features; exclude parking/non-residential listings |
+| `1f3795b` | 2026-03-11 | fix | Strip `- ` prefix from features; exclude parking/non-residential listings |
+| `(current)` | 2026-03-11 | fix | Optimistic save/unsave UX — instant green toggle, header count, no flash |
+| `(current)` | 2026-03-11 | feat | OpenRent scraper — extract_openrent.py + crawl_openrent.py |
 
 **Key deliverables this phase:**
 
@@ -269,6 +271,8 @@ frontend/src/
 - **Features on cards/drawer**: `_features_list()` handles all storage formats (JSON, list, `\n`/`;` strings). Strips `- `, `–`, `•` markers. Filters "ask agent"/"n/a"/"none".
 - **Parking excluded**: `apply_hard_filters_with_audit` skips property_type = parking/garage/land/commercial.
 - **Agent boundaries**: `PROJECT.md` updated with ownership table — Gemini=frontend only, Claude=backend only. "Do not start autonomously" warning added.
+- **Optimistic shortlist UX** (`ListingCard.tsx`, `ListingsPanel.tsx`, `App.tsx`, `useChat.ts`): Save/unsave button turns solid green instantly on click (optimistic local state in `ListingCard`). "Saved Listings (N)" header count updates immediately via optimistic `Set` in `App.tsx` (cleared when server metadata confirms). "Updating" indicator and action button flash suppressed for silent actions — `isSilentAction` flag added to `useChat`, "Updating" dot hidden when true, quick-reply buttons stay rendered (disabled) instead of unmounting.
+- **OpenRent scraper** (`crawler/openrent/extract_openrent.py`, `crawler/openrent/crawl_openrent.py`): Full scraper for OpenRent (private landlords, no agent fees). Extracts all standard fields: postcode from `postCode=` URL param, bedrooms/bathrooms from `<ul>` after `<h1>`, features from `Property Details` heading → `<ul>`, stations from `Features` section (`~N min. walk` pattern), lat/lon from `data-lat`/`data-lng` on map widget, images from `imagescdn.openrent.co.uk`. Outputs identical JSONL schema to Rightmove scraper (same `ListingRecord` dataclass). `listing_id = "openrent:{id}"` prevents UUID collision. Parallel HTTP scraping (no Playwright needed). Tested on 5 listings — all fields correct. Run: `python -m crawler.openrent.crawl_openrent` then `sync_qdrant.py --mode sync`.
 
 ---
 
