@@ -117,6 +117,7 @@
 | B-F9 | Claude | ✅ Done | **Source badges + portal links** | ListingCard/Drawer show Rightmove/OpenRent/Both badge; merged listings get dual buttons; single-source get one button | 1 |
 | B-F4 | Claude | 🔴 Open | **Draft viewing request** | `POST /api/contact/draft`, LLM + listing context | 3 |
 | B-F5 | Claude | ✅ Done | **Commute time** | TfL Journey API: LLM extracts commute_destination, geocoded via stations.json (721 stations, fuzzy+abbrev) / TfL Place Search / OSM Nominatim; parallel TfL calls in build_metadata (cached 1hr); card shows color-coded time; QA interceptor for "how long to X"; match_pct redesigned as requirement-satisfaction score | 2 |
+| B-F5b | Claude | 🔴 Open | **Commute QA: merge LLM call into router** | `_try_extract_commute_destination_via_llm()` fires an extra OpenAI call on every QA question — wasteful since most QA is about pets/rent/bedrooms. Merge commute detection into the existing router prompt so it's one call, not two. | 1 |
 | B-F6 | Claude | 🔴 Open | **Contract analysis** | `POST /api/contract/analyse`, PDF → plain-English summary + clause flags | 5 |
 | B-F7 | Claude | 🔴 Open | **Tenant rights RAG** | Index GOV.UK + Shelter + Renters Reform Act | 6 |
 
