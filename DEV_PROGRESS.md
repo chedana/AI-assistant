@@ -264,6 +264,7 @@ frontend/src/
 | `5a653be` | 2026-03-11 | fix | Optimistic save/unsave UX — instant green toggle, header count, no flash |
 | `76213da` | 2026-03-11 | feat | OpenRent scraper — extract_openrent.py + crawl_openrent.py |
 | `20e9fbc` | 2026-03-11 | feat | OpenRent merge pipeline + new amenity fields; sync 31,820 pts to Qdrant Cloud |
+| `437b69f` | 2026-03-12 | feat | Red flag detection (B-F3) — regex + boolean scan for No DSS, No pets, Admin fees, No deposit protection, Guarantor required |
 
 **Key deliverables this phase:**
 
