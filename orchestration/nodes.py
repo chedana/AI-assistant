@@ -646,7 +646,9 @@ def _try_extract_commute_destination_via_llm(user_in: str) -> Optional[str]:
                 {"role": "system", "content": (
                     "You detect commute/travel questions about rental listings. "
                     "If the user is asking about travel time, commute, or how to get to a specific place, "
-                    "return ONLY the destination name (e.g. \"Oxford Circus\", \"Canary Wharf\", \"10 Downing Street\"). "
+                    "return ONLY the destination as a geocodable place name — a station, street, address, or landmark. "
+                    "If the user mentions a company, university, hospital, or building, resolve it to the nearest "
+                    "well-known London station or street address using your knowledge. "
                     "If the user is NOT asking about commute/travel, return exactly \"NONE\".\n"
                     "Examples:\n"
                     "- \"how long to get to Oxford Circus\" → Oxford Circus\n"
@@ -654,6 +656,9 @@ def _try_extract_commute_destination_via_llm(user_in: str) -> Optional[str]:
                     "- \"can I get to Bank easily from here\" → Bank\n"
                     "- \"how far is this from Kings Cross\" → Kings Cross\n"
                     "- \"is this place well connected to Canary Wharf\" → Canary Wharf\n"
+                    "- \"I work at Google London\" → Kings Cross\n"
+                    "- \"my office is at Deloitte\" → Liverpool Street\n"
+                    "- \"I work at UCL\" → Euston Square\n"
                     "- \"does this have a garden\" → NONE\n"
                     "- \"what's the rent\" → NONE\n"
                 )},
