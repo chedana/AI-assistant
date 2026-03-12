@@ -17,7 +17,7 @@
 | Layer | Status | Notes |
 |-------|--------|-------|
 | Backend API | ✅ Running | FastAPI · `venv/bin/uvicorn backend.api_server:app --port 8000` |
-| Qdrant Cloud | ✅ Connected | **31,718 listings** (26,191 Rightmove + 6,586 OpenRent, 1,343 merged), `rent_listings` collection |
+| Qdrant Cloud | ✅ Connected | **29,119 listings** (26,191 Rightmove + 6,586 OpenRent, 1,343 merged, 2,599 dead removed), `rent_listings` collection |
 | Frontend | ✅ Running | Vite · `cd frontend && npm run dev -- --port 5173` |
 | Search pipeline | ✅ Working | LangGraph + 4-stage pipeline (retrieve → filter → rank → explain) |
 | SSE streaming | ✅ Working | delta / metadata / done events |
@@ -38,13 +38,52 @@
 
 ## Immediate Next Priority
 
-```
-[CLAUDE]  1. Re-crawl outer London with area names (B-B2)  → more coverage
-[CLAUDE]  2. OpenRent scraper (B-F2)                       → private landlords
-[CLAUDE]  3. Red flag detection (B-F3)                     → quick win, no new data
-[GEMINI]  1. Session rename (F-F4)                         → double-click to rename
-[GEMINI]  2. Viewing checklist UI (F-F5)                   → per-listing checklist panel
-```
+**Section 1 (FIND) - Complete ✅**
+- Rightmove + OpenRent scrapers done
+- 29,119 clean listings in Qdrant Cloud
+- Conversational search working
+
+**Next: Section 3 - Red Flag Detection** (Quick win, no new data needed)
+- Rule engine on listing text
+- Detect: "no DSS", upfront fees, no deposit protection
+- Flag suspicious patterns in agent responses
+
+**Then: Section 4 - Viewing Checklist**
+- Pre-viewing checklist (legal + physical)
+- Questions to ask based on listing gaps
+
+**Future: Section 5 - Contract Analysis** (Biggest differentiator)
+- Upload tenancy agreement → plain-English summary
+- Flag non-standard clauses
+
+---
+
+## Task Queue
+
+### Data & Crawlers
+_Owner: Claude · Files: `crawler/`, `artifacts/`_
+
+- [x] Re-crawl OpenRent with new amenity fields (pets, garden, EPC) — **DONE Phase 22**
+- [x] Merge Rightmove + OpenRent datasets — **DONE Phase 22**
+- [x] Sync to Qdrant Cloud — **DONE Phase 22 (29,119 listings)**
+- [ ] **Zoopla scraper** — broader coverage (future)
+- [ ] **SpareRoom scraper** — rooms/HMO market (future)
+
+### Backend Features
+_Owner: Claude · Files: `backend/`, `skills/`, `orchestration/`, `core/`_
+
+- [ ] **Red flag detection skill** — rule engine + LLM to flag: no DSS, upfront fees, no deposit protection, suspicious patterns
+- [ ] **Viewing checklist generator** — legal requirements + physical inspection + questions based on listing gaps
+- [ ] **Area research skill** — TfL commute API, crime API, average rent aggregates
+- [ ] **Contract analysis skill** — upload PDF → plain-English summary + clause flagging
+
+### Frontend Features
+_Owner: Gemini · Files: `frontend/src/`_
+
+- [ ] **Session rename** (F-F4) — double-click session title to rename
+- [ ] **Viewing checklist UI** (F-F5) — per-listing checklist panel
+- [ ] **Red flag badges** — show warning icons on listings with detected issues
+- [ ] **Contract upload UI** — drag-drop PDF, show analysis results
 
 ---
 
