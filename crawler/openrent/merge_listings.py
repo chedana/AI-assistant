@@ -52,22 +52,33 @@ BACKFILL_FIELDS = [
 ]
 
 # Boolean fields that translate to human-readable feature bullets
-BOOL_FEATURE_LABELS: list[tuple[str, str]] = [
-    ("garden",           "Garden"),
-    ("parking",          "Parking"),
-    ("fireplace",        "Fireplace"),
-    ("bills_included",   "Bills Included"),
-    ("pets_allowed",     "Pets Allowed"),
-    ("student_friendly", "Student Friendly"),
-    ("families_allowed", "Families Allowed"),
-    ("smokers_allowed",  "Smokers Allowed"),
-    ("dss_covers_rent",  "DSS/Housing Benefit Accepted"),
+# (positive_label, negative_label)
+BOOL_FEATURE_LABELS: list[tuple[str, str, str]] = [
+    ("garden",           "Garden",                       "No Garden"),
+    ("parking",          "Parking",                      "No Parking"),
+    ("fireplace",        "Fireplace",                    "No Fireplace"),
+    ("bills_included",   "Bills Included",               "Bills Not Included"),
+    ("pets_allowed",     "Pets Allowed",                 "No Pets Allowed"),
+    ("student_friendly", "Student Friendly",             "Students Not Accepted"),
+    ("families_allowed", "Families Allowed",             "Families Not Accepted"),
+    ("smokers_allowed",  "Smokers Allowed",              "No Smoking"),
+    ("dss_covers_rent",  "DSS/Housing Benefit Accepted", "DSS/Housing Benefit Not Accepted"),
 ]
 
 
 def synthesize_features_from_booleans(rec: dict) -> str | None:
-    """Convert OpenRent boolean fields → newline-joined feature bullets."""
-    lines = [label for field, label in BOOL_FEATURE_LABELS if rec.get(field) is True]
+    """Convert OpenRent boolean fields → newline-joined feature bullets.
+    Both True and False values are included so Stage D can accurately
+    describe what is and isn't permitted/available.
+    """
+    lines = []
+    for field, pos_label, neg_label in BOOL_FEATURE_LABELS:
+        val = rec.get(field)
+        if val is True:
+            lines.append(pos_label)
+        elif val is False:
+            lines.append(neg_label)
+        # None = unknown, omit
     epc = rec.get("epc_rating")
     if epc:
         lines.append(f"EPC Rating: {epc}")
@@ -303,11 +314,11 @@ def main() -> None:
             rec = dict(or_rec)
             if not rec.get("source_site"):
                 rec["source_site"] = "openrent"
-            # Synthesize features text from booleans if no text features
-            if _is_blank(rec.get("features")):
-                synth = synthesize_features_from_booleans(rec)
-                if synth:
-                    rec["features"] = synth
+            # Always append boolean synthesis (same as merged records)
+            text_feat = rec.get("features") or ""
+            synth = synthesize_features_from_booleans(rec) or ""
+            parts = [p.strip() for p in [text_feat.strip(), synth.strip()] if p.strip()]
+            rec["features"] = "\n".join(parts) if parts else None
             output.append(rec)
             or_only += 1
 
