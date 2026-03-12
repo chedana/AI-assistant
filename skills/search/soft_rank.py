@@ -33,9 +33,15 @@ from core.settings import (
     W_DEPOSIT,
     W_FRESHNESS,
 )
+from skills.search.red_flags import detect_red_flags
 from skills.search.text_utils import _norm_furnish_value, _safe_text, _to_float, parse_jsonish_items
 from skills.search.location_match import _normalize_location_keyword
 from skills.search.hard_filter import _parse_available_from_date
+
+try:
+    from skills.search.bool_signals import resolve_bool_signal as _resolve_bool_signal
+except ImportError:
+    _resolve_bool_signal = None  # type: ignore[assignment]
 
 
 # ---------------------------------------------------------------------------
@@ -56,14 +62,20 @@ def compute_stagec_weights(signals: Dict[str, Any]) -> Dict[str, float]:
         base = {"transit": 0.00, "school": 0.65, "preference": 0.35}
         penalty = 0.30
     else:
-        base = {"transit": 0.00, "school": 0.00, "preference": 1.00}
+        # Default: No specific intents. Balance weights across metadata signals.
+        base = {"transit": 0.00, "school": 0.00, "preference": 0.30}
         penalty = 0.20
+    # Add bool_match weight when boolean preferences are active
+    bool_prefs = signals.get("hard_constraints", {}).get("bool_preferences") or {}
+    bool_match_w = 0.12 if bool_prefs else 0.0
+
     return {
         **base,
         "penalty": penalty,
         "deposit": float(W_DEPOSIT),
         "freshness": float(W_FRESHNESS),
         "budget_headroom": float(W_BUDGET_HEADROOM),
+        "bool_match": bool_match_w,
     }
 
 
@@ -378,6 +390,29 @@ def rank_stage_c(
     transit_terms = signals.get("topic_preferences", {}).get("transit_terms", [])
     school_terms = signals.get("topic_preferences", {}).get("school_terms", [])
     pref_terms = signals.get("general_semantic", [])
+    # Remove terms already handled by boolean signal scoring to avoid
+    # false-positive semantic hits (e.g. "garden" matching unrelated descriptions).
+    _bool_pref_keys = set((hard.get("bool_preferences") or {}).keys())
+    if _bool_pref_keys:
+        import re as _re
+        _bool_term_patterns = {
+            "pets_allowed": _re.compile(r"\bpets?\b|pet.?friendly", _re.IGNORECASE),
+            "garden": _re.compile(r"\bgarden\b", _re.IGNORECASE),
+            "parking": _re.compile(r"\bparking\b|\bgarage\b|\bdriveway\b", _re.IGNORECASE),
+            "bills_included": _re.compile(r"\bbills?\b", _re.IGNORECASE),
+            "student_friendly": _re.compile(r"\bstudent", _re.IGNORECASE),
+            "families_allowed": _re.compile(r"\bfamil", _re.IGNORECASE),
+            "smokers_allowed": _re.compile(r"\bsmok", _re.IGNORECASE),
+            "dss_accepted": _re.compile(r"\bdss\b|\bhousing.benefit\b|\buniversal.credit\b", _re.IGNORECASE),
+        }
+        def _is_bool_handled(term: str) -> bool:
+            t = term.lower().strip()
+            for bk in _bool_pref_keys:
+                pat = _bool_term_patterns.get(bk)
+                if pat and pat.search(t):
+                    return True
+            return False
+        pref_terms = [t for t in pref_terms if not _is_bool_handled(t)]
     location_terms = []
     for x in signals.get("location_intent", []):
         t = _normalize_location_keyword(x)
@@ -396,7 +431,10 @@ def rank_stage_c(
     out["school_hits"] = ""
     out["preference_hits"] = ""
     out["preference_source"] = ""
+    out["bool_match_score"] = 0.0
+    out["match_pct"] = 100
     out["penalty_reasons"] = ""
+    out["red_flags"] = ""
     out["transit_detail"] = ""
     out["school_detail"] = ""
     out["preference_detail"] = ""
@@ -442,7 +480,7 @@ def rank_stage_c(
             sim_cache=sim_cache,
         )
         if not pref_terms:
-            pref_score, pref_hits, pref_group_detail, pref_evidence = (0.0, [], "no_intents", [])
+            pref_score, pref_hits, pref_group_detail, pref_evidence = (0.50, [], "no_intents", [])
             pref_source = "no_intents"
         else:
             pref_source = "sidecar_vectors"
@@ -462,6 +500,22 @@ def rank_stage_c(
         budget_headroom_score, budget_headroom_detail = _score_budget_headroom(
             r.get("price_pcm"), hard.get("max_rent_pcm")
         )
+
+        # Boolean match scoring
+        bool_prefs = hard.get("bool_preferences") or {}
+        bool_match_score = 0.0
+        bool_hit_labels: List[str] = []
+        if bool_prefs and _resolve_bool_signal is not None:
+            match_count = 0
+            total = len(bool_prefs)
+            for signal_name, wanted in bool_prefs.items():
+                resolved = _resolve_bool_signal(signal_name, r)
+                if resolved == wanted:
+                    match_count += 1
+                    label = signal_name.replace("_", " ")
+                    bool_hit_labels.append(label)
+            bool_match_score = match_count / total if total > 0 else 0.0
+
         loc_hits = sum(1 for loc in location_terms if loc and loc in loc_text)
 
         penalties = []
@@ -538,18 +592,68 @@ def rank_stage_c(
             penalty_score += 0.08
             penalties.append("missing_text(+0.08)")
 
+        # --- Match percentage: requirement-satisfaction only ---
+        # Listings already passed hard filters (budget, beds, baths, location)
+        # so those are always 100%.  Only soft requirements can reduce match_pct.
+        # Each requirement category gets a weight; unmet ones deduct proportionally.
+        _match_checks: List[Tuple[float, bool]] = []  # (weight, is_met)
+
+        # Boolean preferences — high impact, split equally among active prefs
+        if bool_prefs:
+            _bool_weight_total = 25.0  # total weight for all boolean prefs combined
+            _per_bool = _bool_weight_total / len(bool_prefs)
+            for signal_name, wanted in bool_prefs.items():
+                resolved = _resolve_bool_signal(signal_name, r) if _resolve_bool_signal else None
+                # True match → met.  None (unknown) → half credit.  Wrong → not met.
+                if resolved == wanted:
+                    _match_checks.append((_per_bool, True))
+                elif resolved is None:
+                    _match_checks.append((_per_bool * 0.5, True))  # half credit for unknown
+                    _match_checks.append((_per_bool * 0.5, False))
+                else:
+                    _match_checks.append((_per_bool, False))
+
+        # Transit proximity — medium-high impact
+        if transit_terms:
+            _match_checks.append((15.0, transit_score > 0.1))
+
+        # School proximity — medium-high impact
+        if school_terms:
+            _match_checks.append((15.0, school_score > 0.1))
+
+        # Semantic preferences are NOT included in match_pct.
+        # They influence ranking via final_score, but match_pct reflects only
+        # concrete, measurable requirements (bool prefs, furnishing, transit, school).
+
+        # Furnishing match — low-medium impact
+        if furnish_req:
+            furn_val = _norm_furnish_value(r.get("furnish_type"))
+            _match_checks.append((8.0, bool(furn_val and furn_val != "ask agent" and furn_val == furnish_req)))
+
+        # Compute match_pct
+        if _match_checks:
+            _total_w = sum(w for w, _ in _match_checks)
+            _met_w = sum(w for w, met in _match_checks if met)
+            _match_pct = round(100.0 * _met_w / _total_w) if _total_w > 0 else 100
+        else:
+            _match_pct = 100  # no soft requirements → perfect match
+        out.at[idx, "match_pct"] = int(max(50, min(100, _match_pct)))
+
         out.at[idx, "transit_score"] = float(transit_score)
         out.at[idx, "school_score"] = float(school_score)
         out.at[idx, "preference_score"] = float(pref_score)
         out.at[idx, "deposit_score"] = float(deposit_score)
         out.at[idx, "freshness_score"] = float(freshness_score)
         out.at[idx, "penalty_score"] = float(penalty_score)
+        out.at[idx, "bool_match_score"] = float(bool_match_score)
         out.at[idx, "location_hit_count"] = int(loc_hits)
         out.at[idx, "transit_hits"] = ", ".join(transit_hits)
         out.at[idx, "school_hits"] = ", ".join(school_hits)
-        out.at[idx, "preference_hits"] = ", ".join(pref_hits)
+        all_pref_hits = list(pref_hits) + bool_hit_labels
+        out.at[idx, "preference_hits"] = ", ".join(all_pref_hits)
         out.at[idx, "preference_source"] = pref_source
         out.at[idx, "penalty_reasons"] = ", ".join(penalties)
+        out.at[idx, "red_flags"] = "; ".join(detect_red_flags(r))
         out.at[idx, "transit_detail"] = (
             f"group_score={transit_score:.4f}; "
             f"hits=[{', '.join(transit_hits)}]; "
@@ -585,6 +689,7 @@ def rank_stage_c(
         + weights["deposit"] * out["deposit_score"]
         + weights["freshness"] * out["freshness_score"]
         + weights["budget_headroom"] * out["budget_headroom_score"]
+        + weights["bool_match"] * out["bool_match_score"]
         - weights["penalty"] * out["penalty_score"]
     )
     out["score_formula"] = (
@@ -593,7 +698,8 @@ def rank_stage_c(
         f"{weights['preference']:.3f}*preference + "
         f"{weights['deposit']:.3f}*deposit + "
         f"{weights['freshness']:.3f}*freshness + "
-        f"{weights['budget_headroom']:.3f}*budget_headroom - "
+        f"{weights['budget_headroom']:.3f}*budget_headroom + "
+        f"{weights['bool_match']:.3f}*bool_match - "
         f"{weights['penalty']:.3f}*penalty"
     )
     out["w_transit"] = weights["transit"]
@@ -603,6 +709,7 @@ def rank_stage_c(
     out["w_deposit"] = weights["deposit"]
     out["w_freshness"] = weights["freshness"]
     out["w_budget_headroom"] = weights["budget_headroom"]
+    out["w_bool_match"] = weights["bool_match"]
 
     out = out.sort_values(
         ["final_score", "location_hit_count", "qdrant_score"],

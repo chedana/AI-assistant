@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import concurrent.futures
 import copy
 import json
 import logging
@@ -7,6 +8,11 @@ import re
 from typing import Literal
 
 _logger = logging.getLogger(__name__)
+
+# Process-level executor and cache for speculative refinement_plan execution.
+# Futures are stored here (not in LangGraph state) to avoid serialization issues.
+_SPEC_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+_SPEC_CACHE: dict[int, concurrent.futures.Future] = {}
 
 from core.chatbot_config import GENERAL_SYSTEM
 from core.llm_client import llm_grounded_explain, qwen_chat, render_stage_d_for_user
@@ -59,11 +65,20 @@ def _focus_by_index(agent_state, idx: int, source: str = "user_query") -> str | 
     return None
 
 
-def _make_history_hint(agent_state, limit: int = 4) -> str | None:
+def _make_history_hint(agent_state, limit: int = 2) -> str | None:
+    """Return a compact conversation summary for the router prompt.
+
+    Limits to the 2 most recent turns and truncates assistant replies to
+    the first line (≤120 chars) to keep router prompt tokens low.
+    """
     if not agent_state.history:
         return None
     rows = agent_state.history[-limit:]
-    return "\n".join([f"U: {u}\nA: {a}" for u, a in rows])
+    lines = []
+    for u, a in rows:
+        a_short = (a or "").split("\n")[0][:120].strip()
+        lines.append(f"U: {u}\nA: {a_short}")
+    return "\n".join(lines)
 
 
 def _debug_print(enabled: bool, payload: dict) -> None:
@@ -112,6 +127,18 @@ def route_node(state: GraphState) -> GraphState:
         state["intent"] = "Fallback"
         state["reply_text"] = "Empty input."
         return state
+
+    # Speculatively start refinement_plan in parallel with the intent router.
+    # Runs for all text queries (not just first search) — if intent != Search the
+    # result is discarded; cost is one wasted LLM call but saves ~0.4s on Search turns.
+    # Future stored in process-level _SPEC_CACHE to avoid LangGraph state serialization issues.
+    _spec_key = id(state)
+    _SPEC_CACHE[_spec_key] = _SPEC_EXECUTOR.submit(
+        build_refinement_plan,
+        user_text=text,
+        existing_constraints=copy.deepcopy(agent_state.constraints or {}),
+    )
+    state["_spec_key"] = _spec_key
 
     pending = agent_state.pending_suggestion
     pending_ac = agent_state.pending_area_compare
@@ -237,6 +264,7 @@ def search_node(state: GraphState) -> GraphState:
         # Write audit data to GraphState regardless of result count.
         state["stage_b_audits"] = list(out.get("stage_b_audits") or [])
         state["stage_a_prefilter_count"] = int(out.get("stage_a_prefilter_count") or 0)
+        state["stage_a_geo_fallback_area"] = out.get("stage_a_geo_fallback_area") or None
 
         agent_state.constraints = out.get("constraints")
         # Auto-relax must not permanently modify the user's stated budget.
@@ -280,6 +308,7 @@ def search_node(state: GraphState) -> GraphState:
     state["relax_near_miss"] = []
     state["stage_b_audits"] = []
     state["stage_a_prefilter_count"] = -1
+    state["stage_a_geo_fallback_area"] = None
     agent_state.pending_suggestion = None
 
     # Determine constraint changes: explicit (button action) or extracted (text input).
@@ -293,16 +322,39 @@ def search_node(state: GraphState) -> GraphState:
         is_reset = False
         plan_source = "explicit_action"
     else:
-        # Text input — run refinement plan extraction as normal.
-        plan = build_refinement_plan(
-            user_text=str(state.get("user_input") or ""),
-            existing_constraints=agent_state.constraints,
-        )
+        # Text input — use speculative plan if route_node pre-computed it, else run now.
+        _spec_key = state.pop("_spec_key", None)
+        _spec_future = _SPEC_CACHE.pop(_spec_key, None) if _spec_key is not None else None
+        if _spec_future is not None:
+            try:
+                plan = _spec_future.result(timeout=30)
+            except Exception:
+                plan = build_refinement_plan(
+                    user_text=str(state.get("user_input") or ""),
+                    existing_constraints=agent_state.constraints,
+                )
+        else:
+            plan = build_refinement_plan(
+                user_text=str(state.get("user_input") or ""),
+                existing_constraints=agent_state.constraints,
+            )
         set_fields = plan.set_fields
         clear_fields = plan.clear_fields
         semantic_terms = plan.semantic_terms or {}
         is_reset = plan.is_reset
         plan_source = plan.source
+
+    # Infer boolean preferences from user text (regex) and merge into set_fields
+    # so they flow through the snapshot → constraints → pipeline path.
+    try:
+        from skills.search.constraint_extraction import _infer_bool_preferences_from_query
+        inferred_bools = _infer_bool_preferences_from_query(str(state.get("user_input") or ""))
+        if inferred_bools:
+            existing_bools = dict(set_fields.get("bool_preferences") or {})
+            existing_bools.update(inferred_bools)
+            set_fields["bool_preferences"] = existing_bools
+    except Exception:
+        pass
 
     # If a new budget is being set (or full reset), clear stored original_budget.
     if "max_rent_pcm" in set_fields or is_reset:
@@ -406,6 +458,7 @@ def search_node(state: GraphState) -> GraphState:
     # Write audit data to GraphState for evaluate_node.
     state["stage_b_audits"] = list(out.get("stage_b_audits") or [])
     state["stage_a_prefilter_count"] = int(out.get("stage_a_prefilter_count") or 0)
+    state["stage_a_geo_fallback_area"] = out.get("stage_a_geo_fallback_area") or None
 
     agent_state.constraints = out.get("constraints")
     agent_state.user_profile.update(out.get("profile_patch") or {})
@@ -584,10 +637,104 @@ def qa_plan_node(state: GraphState) -> GraphState:
     return state
 
 
+def _try_extract_commute_destination_via_llm(user_in: str) -> Optional[str]:
+    """Use LLM to detect if the user is asking about commute/travel time and extract the destination."""
+    from core.llm_client import qwen_chat
+    try:
+        raw = qwen_chat(
+            [
+                {"role": "system", "content": (
+                    "You detect commute/travel questions about rental listings. "
+                    "If the user is asking about travel time, commute, or how to get to a specific place, "
+                    "return ONLY the destination as a geocodable place name — a station, street, address, or landmark. "
+                    "If the user mentions a company, university, hospital, or building, resolve it to the nearest "
+                    "well-known London station or street address using your knowledge. "
+                    "If the user is NOT asking about commute/travel, return exactly \"NONE\".\n"
+                    "Examples:\n"
+                    "- \"how long to get to Oxford Circus\" → Oxford Circus\n"
+                    "- \"what's the commute like to my office in Shoreditch\" → Shoreditch\n"
+                    "- \"can I get to Bank easily from here\" → Bank\n"
+                    "- \"how far is this from Kings Cross\" → Kings Cross\n"
+                    "- \"is this place well connected to Canary Wharf\" → Canary Wharf\n"
+                    "- \"I work at Google London\" → Kings Cross\n"
+                    "- \"my office is at Deloitte\" → Liverpool Street\n"
+                    "- \"I work at UCL\" → Euston Square\n"
+                    "- \"does this have a garden\" → NONE\n"
+                    "- \"what's the rent\" → NONE\n"
+                )},
+                {"role": "user", "content": user_in},
+            ],
+            temperature=0.0,
+        ).strip()
+    except Exception:
+        return None
+
+    if not raw or raw.upper() == "NONE":
+        return None
+    # Clean up any quotes or punctuation the LLM might add
+    dest = raw.strip().strip('"\'').rstrip(".,;?!")
+    return dest if dest and len(dest) > 1 else None
+
+
+def _try_answer_commute_question(user_in: str, agent_state) -> Optional[str]:
+    """Use LLM to detect commute questions, then answer with real TfL journey data."""
+    dest_name = _try_extract_commute_destination_via_llm(user_in)
+    if not dest_name:
+        return None
+
+    # Get the focused listing's lat/lon
+    focus = agent_state.current_focus_listing_payload
+    if not focus:
+        results = agent_state.last_results or []
+        if results:
+            focus = results[0]
+    if not focus:
+        return None
+    from_lat = focus.get("latitude") or focus.get("lat")
+    from_lon = focus.get("longitude") or focus.get("lon")
+    if from_lat is None or from_lon is None:
+        return None
+
+    # Geocode the destination
+    from skills.search.constraint_extraction import _geocode_commute_destination
+    geocoded = _geocode_commute_destination(dest_name)
+    if not geocoded:
+        return f"I couldn't find \"{dest_name}\" on the map. Could you be more specific?"
+
+    # Call TfL Journey API
+    from backend.api_server import _fetch_commute_time
+    result = _fetch_commute_time(float(from_lat), float(from_lon), float(geocoded["lat"]), float(geocoded["lon"]))
+
+    listing_title = focus.get("title", "this listing")
+
+    # Also set commute_destination on constraints for future searches
+    if agent_state.constraints is None:
+        agent_state.constraints = {}
+    agent_state.constraints["commute_destination"] = geocoded
+
+    if result:
+        return (
+            f"From **{listing_title}** to **{geocoded['name']}**: **{result['summary']}**.\n\n"
+            f"I've noted your commute destination — future results will show commute times to {geocoded['name']}."
+        )
+    else:
+        return (
+            f"I couldn't get journey data from TfL for the route from {listing_title} to {geocoded['name']}. "
+            "The TfL API may be temporarily unavailable."
+        )
+
+
 def qa_execute_node(state: GraphState) -> GraphState:
     agent_state = state["agent_state"]
     runtime = state["runtime"]
     user_in = str(state.get("user_input") or "")
+
+    # Intercept commute questions — answer with real TfL data
+    commute_answer = _try_answer_commute_question(user_in, agent_state)
+    if commute_answer:
+        state["reply_text"] = commute_answer
+        return state
+
     qa_ctx = {
         "question_text": user_in,
         "extraction_input": str(state.get("qa_extraction_input") or user_in),
@@ -702,23 +849,13 @@ def apply_suggestion_node(state: GraphState) -> GraphState:
     state["relax_near_miss"] = []
     state["stage_b_audits"] = []
     state["stage_a_prefilter_count"] = -1
+    state["stage_a_geo_fallback_area"] = None
     return state
 
 
 def domain_router_node(state: GraphState) -> GraphState:
-    if state.get("route_hint"):
-        state["domain"] = "Rental"
-        return state
-    agent_state = state["agent_state"]
-    text = str(state.get("user_input") or "").strip()
-    decision = domain_route_turn(
-        user_text=text,
-        history_hint=_make_history_hint(agent_state),
-        has_listings=bool(agent_state.last_results),
-    )
-    state["domain"] = decision.domain
-    if state.get("router_debug"):
-        _debug_print(True, {"phase": "domain_router", "domain": decision.domain, "reason": decision.reason})
+    # Single-domain rental app — always Rental, no LLM call needed.
+    state["domain"] = "Rental"
     return state
 
 
@@ -768,6 +905,7 @@ def general_node(state: GraphState) -> GraphState:
                 {"role": "user", "content": user_payload},
             ],
             temperature=0.7,
+            _label="general_reply",
         )
     except Exception:
         reply = "Sorry, I'm having trouble responding right now. How can I help you with your rental search?"
@@ -957,6 +1095,7 @@ def _run_compare(user_in: str, rows: list, constraints: dict, signals: dict) -> 
                 {"role": "user", "content": user_payload},
             ],
             temperature=0.3,
+            _label="compare_verdict",
         ).strip()
     except Exception:
         verdict = ""
@@ -1211,6 +1350,7 @@ def _run_area_compare(areas: list, base_constraints: dict, user_in: str, runtime
                 {"role": "user", "content": user_payload},
             ],
             temperature=0.3,
+            _label="area_compare_verdict",
         ).strip()
     except Exception:
         verdict = ""

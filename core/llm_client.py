@@ -1,5 +1,6 @@
 import json
 import hashlib
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
@@ -35,11 +36,13 @@ def _is_fixed_temp(model: str) -> bool:
     return any(model.startswith(p) for p in _GPT5_MODELS)
 
 
-def qwen_chat(messages, temperature=0.0) -> str:
+def qwen_chat(messages, temperature=0.0, _label: str = "llm") -> str:
     kwargs: dict = dict(model=QWEN_MODEL, messages=messages)
     if not _is_fixed_temp(QWEN_MODEL):
         kwargs["temperature"] = temperature
+    t0 = time.perf_counter()
     r = qwen_client.chat.completions.create(**kwargs)
+    print(f"[TIMING] {_label}={time.perf_counter()-t0:.2f}s tokens_in={r.usage.prompt_tokens} tokens_out={r.usage.completion_tokens}")
     return r.choices[0].message.content.strip()
 
 
@@ -47,7 +50,9 @@ def qwen_router_chat(messages, temperature=0.0) -> str:
     kwargs: dict = dict(model=ROUTER_MODEL, messages=messages)
     if not _is_fixed_temp(ROUTER_MODEL):
         kwargs["temperature"] = temperature
+    t0 = time.perf_counter()
     r = router_client.chat.completions.create(**kwargs)
+    print(f"[TIMING] router={time.perf_counter()-t0:.2f}s tokens_in={r.usage.prompt_tokens} tokens_out={r.usage.completion_tokens}")
     return r.choices[0].message.content.strip()
 
 
@@ -62,6 +67,7 @@ def llm_extract(user_text: str, existing_constraints: Optional[dict]) -> dict:
             {"role": "user", "content": prefix + "User says:\n" + user_text},
         ],
         temperature=0.0,
+        _label="extract_fallback",
     )
     obj = _extract_json_obj(txt)
     return _normalize_constraint_extract(obj)
@@ -77,6 +83,7 @@ def llm_extract_all_signals(user_text: str, existing_constraints: Optional[dict]
             {"role": "user", "content": prefix + "User says:\n" + user_text},
         ],
         temperature=0.0,
+        _label="extract_all",
     )
     obj = _extract_json_obj(txt)
     constraints = _normalize_constraint_extract(obj.get("constraints") or {})
@@ -237,6 +244,7 @@ def llm_grounded_explain(
             },
         ],
         temperature=0.1,
+        _label="stage_d_explain",
     )
     out = txt.strip()
     try:

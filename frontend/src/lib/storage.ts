@@ -1,6 +1,6 @@
 import type { ChatSession } from "../types/chat";
 
-const KEY = "ai-assistant-chat-sessions-v1";
+const KEY = "openclaw-sessions-v2";
 
 export function loadSessions(): ChatSession[] {
   try {

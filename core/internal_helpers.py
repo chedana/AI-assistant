@@ -4,6 +4,11 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 
 from skills.search.extractors import _safe_text, parse_jsonish_items
+
+try:
+    from skills.search.bool_signals import synthetic_text_from_bools
+except ImportError:
+    synthetic_text_from_bools = None  # type: ignore[assignment]
 from core.settings import (
     BATCH,
     INTENT_EVIDENCE_TOP_N,
@@ -79,6 +84,12 @@ def _collect_value_candidates(r: Dict[str, Any]) -> List[Dict[str, str]]:
         cands.append({"field": "features", "text": v})
     for v in _split_description_chunks(_safe_text(r.get("description"))):
         cands.append({"field": "description", "text": v})
+
+    # Add synthetic text from boolean signals
+    if synthetic_text_from_bools is not None:
+        for text in synthetic_text_from_bools(r):
+            cands.append({"field": "features", "text": text})
+
     return cands
 
 

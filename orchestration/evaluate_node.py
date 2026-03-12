@@ -435,6 +435,7 @@ def evaluate_node(state: GraphState) -> GraphState:
     results = list(agent_state.last_results or [])
     audits: List[Dict[str, Any]] = list(state.get("stage_b_audits") or [])
     prefilter_count: int = int(state.get("stage_a_prefilter_count") or -1)
+    geo_fallback_area: Optional[str] = state.get("stage_a_geo_fallback_area") or None
     attempt: int = int(state.get("relax_attempt") or 0)
     original_budget: Optional[int] = agent_state.original_budget
     k: int = int(((agent_state.constraints or {}).get("k") or 5))
@@ -508,7 +509,11 @@ def evaluate_node(state: GraphState) -> GraphState:
                         f"\n\nOnly {n_strict_total} listing{'s' if n_strict_total != 1 else ''} fully matched your requirements. "
                         + sensitivity_msg
                     )
-            state["reply_text"] = base + insight + sensitivity_note + count_line
+            geo_note = (
+                f"\n\n_Note: I couldn't find the exact location in the index, so I searched within 3 km of **{geo_fallback_area}** instead._"
+                if geo_fallback_area else ""
+            )
+            state["reply_text"] = base + insight + geo_note + sensitivity_note + count_line
         return state
 
     # 3. Location miss (Stage A found nothing matching the location filter).

@@ -466,6 +466,55 @@ def _infer_replace_mode_from_query(text: Any) -> bool:
     return any(re.search(p, src) for p in patterns)
 
 
+def _infer_bool_preferences_from_query(text: Any) -> Dict[str, bool]:
+    """Extract boolean preferences from user query.
+
+    Returns dict of {signal_name: bool} for signals the user expressed.
+    E.g. "pet friendly flat with garden" -> {"pets_allowed": True, "garden": True}
+    """
+    src = _safe_text(text).lower()
+    if not src:
+        return {}
+
+    prefs: Dict[str, bool] = {}
+
+    # pets_allowed
+    if re.search(r"\bpet[- ]?friendly\b|\ballows?\s+pets?\b|\bpets?\s*(?:ok|allowed|welcome|accepted)\b|\bwith\s+(?:a\s+)?pets?\b|\bneed\s+pets?\b|\bhave?\s+(?:a\s+)?pets?\b|\bfor\s+pets?\b", src):
+        prefs["pets_allowed"] = True
+
+    # garden
+    if re.search(r"\b(?:with|has)\s+(?:a\s+)?garden\b|\bgarden\b", src):
+        prefs["garden"] = True
+
+    # parking
+    if re.search(r"\b(?:with|has)\s+parking\b|\bparking\b|\boff[- ]?street\s+parking\b|\bgarage\b|\bdriveway\b", src):
+        prefs["parking"] = True
+
+    # bills_included
+    if re.search(r"\bbills?\s*incl(?:uded)?\b|\ball\s*bills?\b", src):
+        prefs["bills_included"] = True
+
+    # student_friendly
+    if re.search(r"\bstudent[- ]?friendly\b|\bstudents?\s*(?:welcome|accepted)\b", src):
+        prefs["student_friendly"] = True
+
+    # families_allowed
+    if re.search(r"\bfamily[- ]?friendly\b|\bfamil(?:y|ies)\s*(?:welcome|allowed|accepted)\b", src):
+        prefs["families_allowed"] = True
+
+    # dss_accepted
+    if re.search(r"\bdss\s*(?:accepted|welcome|ok|considered)\b|\baccepts?\s+(?:housing\s*benefit|universal\s*credit|dss)\b|\bhousing\s*benefit\s*(?:accepted|welcome)\b", src):
+        prefs["dss_accepted"] = True
+
+    # smokers_allowed: "non smoking" / "no smoking" means user wants smokers_allowed=False
+    if re.search(r"\bnon[- ]?smok(?:ing|ers?)\b|\bno\s+smok(?:ing|ers?)\b", src):
+        prefs["smokers_allowed"] = False
+    elif re.search(r"\bsmok(?:ing|ers?)\s*(?:allowed|ok|permitted)\b", src):
+        prefs["smokers_allowed"] = True
+
+    return prefs
+
+
 def _infer_clear_location_from_query(text: Any) -> bool:
     src = _safe_text(text).lower()
     if not src:
@@ -551,6 +600,173 @@ def _infer_min_tenancy_months_from_text(text: Any) -> Optional[float]:
             continue
     return None
 
+# --- Commute destination geocoding ---
+import json as _json
+import os as _os
+import urllib.request
+
+_STATION_INDEX: Dict[str, Dict[str, Any]] = {}
+
+def _load_station_index() -> Dict[str, Dict[str, Any]]:
+    global _STATION_INDEX
+    if _STATION_INDEX:
+        return _STATION_INDEX
+    path = _os.path.join(_os.path.dirname(__file__), "..", "..", "artifacts", "stations.json")
+    path = _os.path.normpath(path)
+    try:
+        with open(path, "r") as f:
+            stations = _json.load(f)
+        for s in stations:
+            key = s["name"].lower().strip()
+            _STATION_INDEX[key] = s
+            # Also index without " station" suffix
+            if key.endswith(" station"):
+                _STATION_INDEX[key[:-8]] = s
+            # Also index with " station" suffix if not present
+            if not key.endswith(" station"):
+                _STATION_INDEX[key + " station"] = s
+    except Exception:
+        pass
+    return _STATION_INDEX
+
+
+_COMMUTE_ABBREVS: Dict[str, str] = {
+    "kings x": "kings cross st pancras",
+    "kings cross": "kings cross st pancras",
+    "st pancras": "kings cross st pancras",
+    "liverpool st": "liverpool street",
+    "paddington stn": "paddington",
+    "waterloo stn": "waterloo",
+    "euston stn": "euston",
+    "victoria stn": "victoria",
+    "bank stn": "bank",
+    "old st": "old street",
+    "tottenham ct rd": "tottenham court road",
+    "tcr": "tottenham court road",
+    "elephant": "elephant & castle",
+    "the city": "bank",
+    "canary whf": "canary wharf",
+}
+
+
+def _geocode_commute_destination(name: str) -> Optional[Dict[str, Any]]:
+    """Resolve a commute destination name to {name, lat, lon}.
+
+    1. Try stations.json lookup (exact, partial, abbreviation, fuzzy)
+    2. Fallback to TfL Place Search API
+    3. Fallback to OpenStreetMap Nominatim (any address)
+    """
+    from skills.search.location_match import _edit_distance
+
+    if not name or not isinstance(name, str):
+        return None
+    cleaned = name.strip()
+    if not cleaned:
+        return None
+
+    idx = _load_station_index()
+    key = cleaned.lower()
+
+    # Exact match
+    if key in idx:
+        s = idx[key]
+        return {"name": s["name"], "lat": s["lat"], "lon": s["lon"]}
+
+    # Abbreviation expansion
+    expanded = _COMMUTE_ABBREVS.get(key)
+    if expanded and expanded in idx:
+        s = idx[expanded]
+        return {"name": s["name"], "lat": s["lat"], "lon": s["lon"]}
+
+    # Partial/substring match
+    for skey, s in idx.items():
+        if key in skey or skey in key:
+            return {"name": s["name"], "lat": s["lat"], "lon": s["lon"]}
+
+    # Fuzzy match via edit distance (handles typos like "oxfrd circus")
+    best_dist = 999
+    best_station = None
+    max_ed = max(1, min(3, len(key) // 4))  # allow 1-3 edits based on length
+    for skey, s in idx.items():
+        # Only compare if lengths are close (skip wildly different names)
+        if abs(len(skey) - len(key)) > max_ed + 1:
+            continue
+        dist = _edit_distance(key, skey)
+        if dist < best_dist and dist <= max_ed:
+            best_dist = dist
+            best_station = s
+    if best_station:
+        return {"name": best_station["name"], "lat": best_station["lat"], "lon": best_station["lon"]}
+
+    # Fallback 1: TfL Place Search API (transport-specific)
+    try:
+        import urllib.parse
+        encoded = urllib.parse.quote(cleaned)
+        url = f"https://api.tfl.gov.uk/Place/Search?name={encoded}&types=NaptanMetroStation,NaptanRailStation,NaptanBusCoachStation"
+        req = urllib.request.Request(url, headers={"User-Agent": "RentSearch/1.0"})
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            data = _json.loads(resp.read().decode())
+        if isinstance(data, list) and data:
+            place = data[0]
+            return {
+                "name": place.get("commonName", cleaned),
+                "lat": place.get("lat"),
+                "lon": place.get("lon"),
+            }
+    except Exception:
+        pass
+
+    # Fallback 2: OpenStreetMap Nominatim (any address/place in London)
+    try:
+        import urllib.parse
+        query = f"{cleaned}, London, UK"
+        encoded = urllib.parse.quote(query)
+        url = (
+            f"https://nominatim.openstreetmap.org/search?q={encoded}"
+            "&format=json&limit=1&countrycodes=gb"
+            "&viewbox=-0.51,51.28,0.33,51.69&bounded=1"
+        )
+        req = urllib.request.Request(url, headers={"User-Agent": "RentSearch/1.0"})
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            results = _json.loads(resp.read().decode())
+        if isinstance(results, list) and results:
+            hit = results[0]
+            lat = float(hit["lat"])
+            lon = float(hit["lon"])
+            display = hit.get("display_name", cleaned).split(",")[0]
+            return {"name": display, "lat": lat, "lon": lon}
+    except Exception:
+        pass
+
+    return None
+
+def _infer_commute_destination_from_query(text: str) -> Optional[str]:
+    """Extract commute destination from user text via regex.
+
+    Matches patterns like:
+    - "I work at/near/in Oxford Circus"
+    - "commute to Canary Wharf"
+    - "office at London Bridge"
+    - "work in the City"
+    """
+    if not text:
+        return None
+    src = text.strip()
+    patterns = [
+        r"\b(?:i\s+)?work\s+(?:at|near|in|around|by|close\s+to)\s+(.+?)(?:\s*[,.]|\s+and\s+|\s+under\s+|\s+below\s+|\s+max\s+|\s+budget|\s+for\s+|\s+with\s+|\s*$)",
+        r"\bcommut(?:e|ing)\s+to\s+(.+?)(?:\s*[,.]|\s+and\s+|\s+under\s+|\s+below\s+|\s+max\s+|\s+budget|\s+for\s+|\s+with\s+|\s*$)",
+        r"\boffice\s+(?:at|near|in|around)\s+(.+?)(?:\s*[,.]|\s+and\s+|\s+under\s+|\s+below\s+|\s+max\s+|\s+budget|\s+for\s+|\s+with\s+|\s*$)",
+        r"\btravel(?:ling)?\s+to\s+(.+?)(?:\s+(?:every|daily|for work))(?:\s*[,.]|\s*$)",
+    ]
+    for pat in patterns:
+        m = re.search(pat, src, re.IGNORECASE)
+        if m:
+            dest = m.group(1).strip().rstrip(".,;")
+            if dest and len(dest) > 1:
+                return dest
+    return None
+
+
 def repair_extracted_constraints(extracted: Dict[str, Any], user_text: str) -> Dict[str, Any]:
     out = dict(extracted or {})
     inferred_from_query = _infer_let_type_from_text(user_text)
@@ -560,6 +776,7 @@ def repair_extracted_constraints(extracted: Dict[str, Any], user_text: str) -> D
     inferred_max_rent_pcm = _infer_max_rent_pcm_from_query(user_text)
     inferred_layout_options = _infer_layout_options_from_query(user_text)
     inferred_layout_remove_ops = _infer_layout_remove_ops_from_query(user_text)
+    inferred_bool_preferences = _infer_bool_preferences_from_query(user_text)
     inferred_replace_all = _infer_replace_all_from_query(user_text)
     inferred_append = _infer_append_mode_from_query(user_text)
     inferred_replace = _infer_replace_mode_from_query(user_text)
@@ -648,6 +865,33 @@ def repair_extracted_constraints(extracted: Dict[str, Any], user_text: str) -> D
 
     # Deprecated field: always ignore op and use latest move-in semantics.
     out["available_from_op"] = None
+
+    # Merge inferred boolean preferences into output.
+    existing_bools = out.get("bool_preferences")
+    if not isinstance(existing_bools, dict):
+        existing_bools = {}
+    # Inferred (regex) preferences override LLM-extracted ones.
+    existing_bools.update(inferred_bool_preferences)
+    out["bool_preferences"] = existing_bools
+
+    # Infer commute_destination from query text if LLM missed it
+    if not out.get("commute_destination"):
+        inferred_commute = _infer_commute_destination_from_query(user_text)
+        if inferred_commute:
+            out["commute_destination"] = inferred_commute
+
+    # Geocode commute_destination if it's a plain string
+    cd = out.get("commute_destination")
+    if isinstance(cd, str) and cd.strip():
+        geocoded = _geocode_commute_destination(cd)
+        if geocoded:
+            out["commute_destination"] = geocoded
+        else:
+            out["commute_destination"] = None
+    elif isinstance(cd, dict) and cd.get("lat") and cd.get("lon"):
+        pass  # already geocoded
+    else:
+        out.pop("commute_destination", None)
 
     return out
 def _extract_json_obj(txt: str) -> dict:
@@ -749,6 +993,7 @@ def _normalize_constraint_extract(obj: dict) -> dict:
     obj.setdefault("_layout_update_mode", "replace")
     obj.setdefault("_clear_location_keywords", False)
     obj.setdefault("_remove_layout_options", [])
+    obj.setdefault("bool_preferences", {})
     return obj
 
 def _normalize_semantic_extract(obj: dict) -> dict:

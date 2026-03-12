@@ -52,6 +52,7 @@ def split_query_signals(
             "layout_options": c.get("layout_options") or [],
             "min_tenancy_months": c.get("min_tenancy_months"),
             "min_size_sqm": c.get("min_size_sqm"),
+            "bool_preferences": c.get("bool_preferences") or {},
         },
         "location_intent": location_intent,
         "topic_preferences": {
@@ -129,9 +130,16 @@ def candidate_snapshot(r: Dict[str, Any]) -> Dict[str, Any]:
         "bedrooms": _to_float(r.get("bedrooms")),
         "bathrooms": _to_float(r.get("bathrooms")),
         "available_from": _safe_text(r.get("available_from")),
+        "description": _safe_text(r.get("description")),
+        "features": _safe_text(r.get("features")),
+        "property_type": _safe_text(r.get("property_type")),
+        "furnish_type": _safe_text(r.get("furnish_type")),
+        "deposit": _to_float(r.get("deposit")),
         "retrieval_score": _to_float(r.get("retrieval_score")),
         "qdrant_score": _to_float(r.get("qdrant_score")),
         "_qdrant_id": _safe_text(r.get("_qdrant_id")) or None,
+        "source_site": _safe_text(r.get("source_site")) or _safe_text(r.get("source")) or "",
+        "openrent_url": _safe_text(r.get("openrent_url")) or "",
     }
 
 

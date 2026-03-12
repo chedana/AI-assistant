@@ -3,10 +3,10 @@ import re
 from typing import Dict, List, Tuple
 
 QWEN_BASE_URL = os.environ.get("QWEN_BASE_URL", "https://api.openai.com/v1")
-QWEN_MODEL = os.environ.get("QWEN_MODEL", "gpt-5-mini")
+QWEN_MODEL = os.environ.get("QWEN_MODEL", "gpt-4.1-mini")
 QWEN_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 ROUTER_BASE_URL = os.environ.get("ROUTER_BASE_URL", QWEN_BASE_URL)
-ROUTER_MODEL = os.environ.get("ROUTER_MODEL", "gpt-5-mini")
+ROUTER_MODEL = os.environ.get("ROUTER_MODEL", "gpt-4o-mini")
 ROUTER_API_KEY = os.environ.get("ROUTER_API_KEY", QWEN_API_KEY)
 
 EXTRACT_SYSTEM = """You output STRICT JSON only (no markdown, no explanation).
@@ -72,6 +72,7 @@ Schema:
     "min_size_sqm": number|null,
     "min_size_sqft": number|null,
     "location_keywords": string[],
+    "commute_destination": string|null,
     "k": int|null,
     "update_scope": string|null,
     "location_update_mode": string|null,
@@ -93,6 +94,7 @@ Rules:
 - Do NOT put hard constraints into semantic_terms (budget, bedroom count, property type, strict location filters).
 - Do NOT split one entity into component words.
 - Avoid generic filler terms like "school" when a concrete entity/phrase exists.
+- commute_destination: a specific place the user commutes or works at (e.g. "Oxford Circus", "Canary Wharf", "London Bridge"). Only extract when user explicitly mentions commuting, working, or travelling to a place regularly. Do NOT extract general location preferences here.
 - If unknown use null or [].
 - update_scope: "patch" (default) or "replace_all".
 - location_update_mode: "replace" (default), "append", or "keep".

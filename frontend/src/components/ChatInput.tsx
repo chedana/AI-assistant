@@ -21,21 +21,28 @@ export default function ChatInput({ isGenerating, onSend, onStop }: Props) {
   function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const text = input.trim();
-    if (!text || isGenerating) return;
+    if (!text) return;
+    if (isGenerating) {
+      onStop();
+      return;
+    }
     setInput("");
     onSend(text);
   }
 
   return (
-    <footer className="border-t border-border p-4">
-      <form onSubmit={handleSubmit} className="mx-auto flex max-w-3xl gap-2">
+    <div className="border-t border-border bg-panel-alt/50 p-4 backdrop-blur-sm md:p-6">
+      <form 
+        onSubmit={handleSubmit} 
+        className="relative mx-auto flex max-w-4xl items-end gap-3 rounded-2xl border border-border bg-panel p-2 shadow-lg transition-all focus-within:border-accent/50 focus-within:ring-1 focus-within:ring-accent/20"
+      >
         <textarea
           ref={textareaRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Send a message..."
+          placeholder="Describe what you're looking for..."
           rows={1}
-          className="max-h-40 min-h-[48px] flex-1 resize-none overflow-y-auto rounded-lg border border-border bg-panel px-3 py-3 text-sm leading-6 outline-none focus:border-neutral-500"
+          className="flex-1 resize-none bg-transparent px-3 py-3 text-sm leading-relaxed text-text placeholder:text-muted focus:outline-none"
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
@@ -47,23 +54,29 @@ export default function ChatInput({ isGenerating, onSend, onStop }: Props) {
             }
           }}
         />
-        {!isGenerating ? (
-          <button
-            type="submit"
-            className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-black hover:opacity-90"
-          >
-            Send
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={onStop}
-            className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-neutral-800"
-          >
-            Stop
-          </button>
-        )}
+        <button
+          type="submit"
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-all active:scale-90 ${
+            isGenerating 
+              ? "bg-surface text-text hover:bg-neutral-800" 
+              : "bg-accent text-surface shadow-lg shadow-accent/20 hover:bg-accent-dim"
+          }`}
+        >
+          {isGenerating ? (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="6" y="6" width="12" height="12" />
+            </svg>
+          ) : (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13" />
+              <polygon points="22 2 15 22 11 13 2 9 22 2" />
+            </svg>
+          )}
+        </button>
       </form>
-    </footer>
+      <p className="mt-2 text-center text-[10px] font-medium text-muted/50">
+        OpenClaw can make mistakes. Verify important property details.
+      </p>
+    </div>
   );
 }

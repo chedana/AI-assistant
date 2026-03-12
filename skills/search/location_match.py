@@ -88,20 +88,6 @@ def _parse_jsonlike(v: Any) -> Any:
         return []
 
 
-def _source_signature(paths: List[str]) -> Tuple[Tuple[str, int, int], ...]:
-    sig: List[Tuple[str, int, int]] = []
-    for p in paths:
-        if not os.path.exists(p):
-            sig.append((p, -1, -1))
-            continue
-        try:
-            st = os.stat(p)
-            sig.append((p, int(st.st_mtime), int(st.st_size)))
-        except Exception:
-            sig.append((p, -2, -2))
-    return tuple(sig)
-
-
 def _add_location_alias(entry: Dict[str, Any], alias: str) -> None:
     plain = _normalize_location_keyword(alias)
     if not plain or len(plain) < 3:
@@ -305,7 +291,7 @@ def _build_location_match_index() -> Dict[str, Any]:
         canonical = ent["canonical"]
         clean_aliases = []
         for plain, slug, compact in aliases:
-            clean_aliases.append((plain, slug, compact))
+            clean_aliases.append([plain, slug, compact])
             # Exact-key lookups should return an alias token directly.
             lookup_plain.setdefault(plain, plain)
             lookup_slug.setdefault(slug, plain)
@@ -316,18 +302,50 @@ def _build_location_match_index() -> Dict[str, Any]:
         "lookup_plain": lookup_plain,
         "lookup_slug": lookup_slug,
         "lookup_compact": lookup_compact,
-        "signature": _source_signature(_iter_location_vocab_sources()),
     }
+
+
+_LOCATION_INDEX_PATH = os.path.join(
+    ROOT_DIR, "artifacts", "skills", "search", "data", "location_index.json"
+)
+
+
+def rebuild_location_index() -> Dict[str, Any]:
+    """Build the location match index from Qdrant and save to JSON file.
+
+    Call this after sync_qdrant.py updates the collection.
+    """
+    idx = _build_location_match_index()
+    os.makedirs(os.path.dirname(_LOCATION_INDEX_PATH), exist_ok=True)
+    with open(_LOCATION_INDEX_PATH, "w", encoding="utf-8") as f:
+        json.dump(idx, f, ensure_ascii=False)
+    print(f"[location_match] Saved location index ({len(idx.get('entries', []))} entries) to {_LOCATION_INDEX_PATH}")
+    global _LOCATION_MATCH_INDEX_CACHE
+    _LOCATION_MATCH_INDEX_CACHE = idx
+    return idx
+
+
+def _load_index_from_file() -> Optional[Dict[str, Any]]:
+    if not os.path.exists(_LOCATION_INDEX_PATH):
+        return None
+    try:
+        with open(_LOCATION_INDEX_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
 
 
 def _get_location_match_index() -> Dict[str, Any]:
     global _LOCATION_MATCH_INDEX_CACHE
-    sig = _source_signature(_iter_location_vocab_sources())
-    if (
-        _LOCATION_MATCH_INDEX_CACHE is None
-        or _LOCATION_MATCH_INDEX_CACHE.get("signature") != sig
-    ):
-        _LOCATION_MATCH_INDEX_CACHE = _build_location_match_index()
+    if _LOCATION_MATCH_INDEX_CACHE is not None:
+        return _LOCATION_MATCH_INDEX_CACHE
+    # Try cached JSON file first (fast path).
+    idx = _load_index_from_file()
+    if idx is not None:
+        _LOCATION_MATCH_INDEX_CACHE = idx
+        return idx
+    # Fallback: build from Qdrant (slow, ~9s).
+    _LOCATION_MATCH_INDEX_CACHE = _build_location_match_index()
     return _LOCATION_MATCH_INDEX_CACHE
 
 

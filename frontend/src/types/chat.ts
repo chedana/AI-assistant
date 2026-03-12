@@ -20,18 +20,34 @@ export type ChatSession = {
 export type ListingData = {
   title: string;
   url: string;
-  address: string;
+  image_url: string;
+  image_urls?: string[];
+  address?: string;
   price_pcm: number;
   bedrooms: number;
   bathrooms: number;
-  available_from: string;
-  final_score: number;
-  penalty_reasons: string[];
-  preference_hits: string[];
+  available_from?: string;
+  description?: string;
+  features?: string[];
+  property_type?: string;
+  furnish_type?: string;
+  deposit?: number;
+  lat?: number | null;
+  lon?: number | null;
+  final_score?: number;
+  match_pct?: number;
+  penalty_reasons?: string[];
+  preference_hits?: string[];
+  red_flags?: string[];
+  source_site?: string;
+  openrent_url?: string;
+  commute_time_minutes?: number | null;
+  commute_summary?: string | null;
 };
 
 export type SearchResultsMeta = {
   listings: ListingData[];
+  all_listings?: ListingData[];
   page_index: number;
   has_more: boolean;
   total: number;

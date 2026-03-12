@@ -1,0 +1,171 @@
+event: delta
+data: {"text": "Top 5 results:\n  1. Buxhall Cres"}
+
+event: delta
+data: {"text": "cent, Hackney Wick E9\n   £2000/p"}
+
+event: delta
+data: {"text": "cm | 2 bed | 1 bath | Buxhall Cr"}
+
+event: delta
+data: {"text": "escent, Hackney Wick E9\n   Final"}
+
+event: delta
+data: {"text": " score: 0.0881\n   Because booste"}
+
+event: delta
+data: {"text": "d by deposit (0.56) and freshnes"}
+
+event: delta
+data: {"text": "s (1.00)\n   https://www.rightmov"}
+
+event: delta
+data: {"text": "e.co.uk/properties/172983626#/?c"}
+
+event: delta
+data: {"text": "hannel=RES_LET\n  2. Eastway, Lon"}
+
+event: delta
+data: {"text": "don\n   £2350/pcm | 2 bed | Eastw"}
+
+event: delta
+data: {"text": "ay, London\n   Final score: 0.088"}
+
+event: delta
+data: {"text": "1\n   Because boosted by deposit "}
+
+event: delta
+data: {"text": "(0.56) and freshness (1.00)\n   h"}
+
+event: delta
+data: {"text": "ttps://www.rightmove.co.uk/prope"}
+
+event: delta
+data: {"text": "rties/172952840#/?channel=RES_LE"}
+
+event: delta
+data: {"text": "T\n  3. Homerton High Street, Lon"}
+
+event: delta
+data: {"text": "don\n   £1900/pcm | 2 bed | 1 bat"}
+
+event: delta
+data: {"text": "h | Homerton High Street, London"}
+
+event: delta
+data: {"text": "\n   Final score: 0.0881\n   Becau"}
+
+event: delta
+data: {"text": "se boosted by deposit (0.56) and"}
+
+event: delta
+data: {"text": " freshness (1.00)\n   https://www"}
+
+event: delta
+data: {"text": ".rightmove.co.uk/properties/1729"}
+
+event: delta
+data: {"text": "33442#/?channel=RES_LET\n  4. Sky"}
+
+event: delta
+data: {"text": "lark Point\n   £2960/pcm | 2 bed "}
+
+event: delta
+data: {"text": "| 2 bath | ! It appears that Jav"}
+
+event: delta
+data: {"text": "ascript is disabled on your brow"}
+
+event: delta
+data: {"text": "ser. We're sorry, some parts of "}
+
+event: delta
+data: {"text": "the Rightmove website don't work"}
+
+event: delta
+data: {"text": " at their best without JavaScrip"}
+
+event: delta
+data: {"text": "t enabled. Please ensure your Ja"}
+
+event: delta
+data: {"text": "vaScript is turned on to make su"}
+
+event: delta
+data: {"text": "re you have the best experience."}
+
+event: delta
+data: {"text": "\n   Final score: 0.0800\n   Becau"}
+
+event: delta
+data: {"text": "se boosted by freshness (1.00)\n "}
+
+event: delta
+data: {"text": "  https://www.rightmove.co.uk/pr"}
+
+event: delta
+data: {"text": "operties/172915004#/?channel=RES"}
+
+event: delta
+data: {"text": "_LET\n  5. 4a Roach Road, London\n"}
+
+event: delta
+data: {"text": "   £3250/pcm | 2 bed | 2 bath | "}
+
+event: delta
+data: {"text": "4a Roach Road, London\n   Final s"}
+
+event: delta
+data: {"text": "core: 0.0727\n   Because boosted "}
+
+event: delta
+data: {"text": "by deposit (0.56) and freshness "}
+
+event: delta
+data: {"text": "(0.74)\n   https://www.rightmove."}
+
+event: delta
+data: {"text": "co.uk/properties/172822022#/?cha"}
+
+event: delta
+data: {"text": "nnel=RES_LET\n\nTip: ask follow-up"}
+
+event: delta
+data: {"text": " questions like 'How far is this"}
+
+event: delta
+data: {"text": " listing from the station?'\n\nNot"}
+
+event: delta
+data: {"text": "e: default focus is set to listi"}
+
+event: delta
+data: {"text": "ng #1 (Buxhall Crescent, Hackney"}
+
+event: delta
+data: {"text": " Wick E9). Say 'tell me about li"}
+
+event: delta
+data: {"text": "sting 2' to switch focus, or ask"}
+
+event: delta
+data: {"text": " 'which one has ...' to compare "}
+
+event: delta
+data: {"text": "all listings.\n\nShowing 5 of 25 l"}
+
+event: delta
+data: {"text": "istings found, priced £1,900–£3,"}
+
+event: delta
+data: {"text": "500/mo.\n\n[debug] display=25 stri"}
+
+event: delta
+data: {"text": "ct=25 k=5 threshold=10 attempt=0"}
+
+event: metadata
+data: {"search_results": {"listings": [{"title": "Buxhall Crescent, Hackney Wick E9", "url": "https://www.rightmove.co.uk/properties/172983626#/?channel=RES_LET", "image_url": "https://media.rightmove.co.uk/property-photo/2d9c19e27/172983626/2d9c19e27195cf0103f278f69af6158a.jpeg", "address": "Buxhall Crescent, Hackney Wick E9", "price_pcm": 2000, "bedrooms": 2, "bathrooms": 1, "available_from": "2026-03-08", "final_score": 0.0881, "penalty_reasons": [], "preference_hits": []}, {"title": "Eastway, London", "url": "https://www.rightmove.co.uk/properties/172952840#/?channel=RES_LET", "image_url": "https://media.rightmove.co.uk/property-photo/80183b169/172952840/80183b169b5c91d0ea3dd69c2d2e4507.jpeg", "address": "Eastway, London", "price_pcm": 2350, "bedrooms": 2, "bathrooms": 0, "available_from": "2026-03-08", "final_score": 0.0881, "penalty_reasons": [], "preference_hits": []}, {"title": "Homerton High Street, London", "url": "https://www.rightmove.co.uk/properties/172933442#/?channel=RES_LET", "image_url": "https://media.rightmove.co.uk/property-photo/7a25f4cd2/172933442/7a25f4cd2ce817a7a90bde3a88c6be12.jpeg", "address": "Homerton High Street, London", "price_pcm": 1900, "bedrooms": 2, "bathrooms": 1, "available_from": "2026-03-10", "final_score": 0.0881, "penalty_reasons": [], "preference_hits": []}, {"title": "Skylark Point", "url": "https://www.rightmove.co.uk/properties/172915004#/?channel=RES_LET", "image_url": "https://media.rightmove.co.uk/property-photo/07605da11/172915004/07605da11c202f476b725ca11a6d311e.jpeg", "address": "! It appears that Javascript is disabled on your browser. We're sorry, some parts of the Rightmove website don't work at their best without JavaScript enabled. Please ensure your JavaScript is turned on to make sure you have the best experience.", "price_pcm": 2960, "bedrooms": 2, "bathrooms": 2, "available_from": "2026-03-08", "final_score": 0.08, "penalty_reasons": [], "preference_hits": []}, {"title": "4a Roach Road, London", "url": "https://www.rightmove.co.uk/properties/172822022#/?channel=RES_LET", "image_url": "https://media.rightmove.co.uk/property-photo/a1a88d553/172822022/a1a88d5531a04636229072845297092c.jpeg", "address": "4a Roach Road, London", "price_pcm": 3250, "bedrooms": 2, "bathrooms": 2, "available_from": "2026-04-02", "final_score": 0.0727, "penalty_reasons": [], "preference_hits": []}], "page_index": 0, "has_more": true, "total": 25, "remaining": 20}, "constraints": {"location": ["hackney wick"], "bedrooms": [2]}, "shortlist": {"count": 0, "saved_ids": [], "listings": []}, "quick_replies": [{"label": "Show more", "text": "show me more", "route_hint": {"intent": "Page_Nav", "page_action": "next"}}, {"label": "Lower budget", "text": "find cheaper options", "route_hint": {"intent": "Search"}}, {"label": "Compare all", "text": "compare these listings", "route_hint": {"intent": "Compare"}}]}
+
+event: done
+data: {"ok": true}
+

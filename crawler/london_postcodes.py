@@ -339,7 +339,7 @@ DISTRICT_TO_SEARCH_NAME: dict[str, str] = {
     "E1":   "Whitechapel, London",
     "E1W":  "Wapping, London",
     "E2":   "Bethnal Green, London",
-    "E3":   "Bow, London",
+    "E3":   "Mile End, London",
     "E4":   "Chingford, London",
     "E5":   "Clapton, London",
     "E6":   "Plaistow, East London",

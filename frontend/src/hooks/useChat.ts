@@ -15,6 +15,7 @@ type UseChatOptions = {
 
 export function useChat({ activeSession, updateSession }: UseChatOptions) {
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isSilentAction, setIsSilentAction] = useState(false);
   const [metadata, setMetadata] = useState<SessionMetadata | null>(null);
   const [activeAssistantId, setActiveAssistantId] = useState<string | null>(null);
   // metadataForId: the message ID where cards/compare are rendered inline (most recent).
@@ -26,12 +27,15 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
   const lastSearchSigRef = useRef<string>("");
   const isGeneratingRef = useRef(false);
 
+  const lastAckIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     setMetadata(null);
     setMetadataForId(null);
     setActiveAssistantId(null);
     setSuppressedIds(new Set());
     lastSearchSigRef.current = "";
+    lastAckIdRef.current = null;
   }, [activeSession?.id]);
 
   async function sendMessage(input: string, routeHint?: Record<string, unknown>) {
@@ -87,8 +91,20 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
 
           if (hasNewResults || hasCompare) {
             if (hasNewResults) lastSearchSigRef.current = sig;
-            // This message produced structured UI: suppress its text and render
-            // cards/compare inline at its position in the message flow.
+
+            // Replace the raw listing dump with a brief summary
+            const count = meta.search_results?.total ?? meta.search_results?.listings?.length ?? 0;
+            const summary = hasNewResults
+              ? `Found ${count} ${count === 1 ? "property" : "properties"} matching your search.`
+              : "Comparison ready — see the table on the left.";
+
+            updateSession(activeSession.id, (session) => {
+              const messages = session.messages.map((m) =>
+                m.id === assistantMessage.id ? { ...m, content: summary } : m,
+              );
+              return { ...session, messages };
+            });
+
             setSuppressedIds((prev) => new Set([...prev, assistantMessage.id]));
             setMetadataForId(assistantMessage.id);
           }
@@ -121,23 +137,39 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
     const prompt = input.trim();
     if (!prompt) return;
 
-    if (actionLabel) {
+    // Reuse last ack ID if it's a pagination action to avoid pile-up
+    const isPagination = routeHint?.intent === "Page_Nav";
+    const canReuse = isPagination && lastAckIdRef.current;
+    const ackId = canReuse ? lastAckIdRef.current! : (actionLabel ? createId() : null);
+    
+    if (actionLabel && ackId) {
       const now = Date.now();
-      const ackMessage: Message = {
-        id: createId(),
-        role: "assistant",
-        content: actionLabel,
-        createdAt: now,
-      };
-      updateSession(activeSession.id, (session) => ({
-        ...session,
-        updatedAt: now,
-        messages: [...session.messages, ackMessage],
-      }));
+      updateSession(activeSession.id, (session) => {
+        const existingIdx = session.messages.findIndex(m => m.id === ackId);
+        if (existingIdx !== -1) {
+          const messages = [...session.messages];
+          messages[existingIdx] = { ...messages[existingIdx], content: actionLabel, createdAt: now };
+          return { ...session, updatedAt: now, messages };
+        }
+        
+        const ackMessage: Message = {
+          id: ackId,
+          role: "assistant",
+          content: actionLabel,
+          createdAt: now,
+        };
+        return {
+          ...session,
+          updatedAt: now,
+          messages: [...session.messages, ackMessage],
+        };
+      });
+      lastAckIdRef.current = ackId;
     }
 
     isGeneratingRef.current = true;
     setIsGenerating(true);
+    setIsSilentAction(true);
     const controller = new AbortController();
     abortRef.current = controller;
 
@@ -148,9 +180,21 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
         onChunk: () => {},
         onMetadata: (meta) => {
           setMetadata(meta);
-          // metadataForId stays unchanged — silent actions update data in place
-          // at the existing inline position (e.g. shortlist compare updates the
-          // same slot as the search that produced the cards).
+
+          const hasResults = (meta.search_results?.listings?.length ?? 0) > 0;
+          const hasCompare = (meta.compare_data?.listings?.length ?? 0) >= 2;
+
+          if (hasResults || hasCompare) {
+            // Move card rendering to the ack message position (or keep current)
+            const targetId = ackId ?? metadataForId;
+            if (targetId) {
+              setSuppressedIds((prev) => new Set([...prev, targetId]));
+              setMetadataForId(targetId);
+            }
+            if (hasResults) {
+              lastSearchSigRef.current = (meta.search_results?.listings ?? []).map((l) => l.url).join(",");
+            }
+          }
         },
       });
     } catch (error) {
@@ -160,6 +204,7 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
     } finally {
       isGeneratingRef.current = false;
       setIsGenerating(false);
+      setIsSilentAction(false);
       abortRef.current = null;
     }
   }
@@ -170,6 +215,7 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
 
   return {
     isGenerating,
+    isSilentAction,
     metadata,
     suppressedIds,
     metadataForId,

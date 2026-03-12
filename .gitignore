@@ -50,3 +50,4 @@ venv/
 # jupyter
 .ipynb_checkpoints/
 **/.ipynb_checkpoints/
+crawler/artifacts/

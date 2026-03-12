@@ -30,10 +30,10 @@ export ROUTER_DEBUG="${ROUTER_DEBUG:-1}"
 # LLM endpoints/models
 # Reasoning model (search extraction / QA / explanation)
 export QWEN_BASE_URL="${QWEN_BASE_URL:-https://api.openai.com/v1}"
-export QWEN_MODEL="${QWEN_MODEL:-gpt-5-mini}"
+export QWEN_MODEL="${QWEN_MODEL:-gpt-4.1-mini}"
 # Router model (intent classification) defaults to same model.
 export ROUTER_BASE_URL="${ROUTER_BASE_URL:-${QWEN_BASE_URL}}"
-export ROUTER_MODEL="${ROUTER_MODEL:-gpt-5-mini}"
+export ROUTER_MODEL="${ROUTER_MODEL:-gpt-4o-mini}"
 # API keys (Router falls back to OPENAI_API_KEY if ROUTER_API_KEY is unset)
 if [[ -z "${OPENAI_API_KEY:-}" ]]; then
   echo "[run][error] OPENAI_API_KEY is not set. Export it before running."

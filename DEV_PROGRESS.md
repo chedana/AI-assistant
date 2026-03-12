@@ -27,7 +27,8 @@ Surface the right listings before the user knows exactly what they want. Convers
 | Rightmove scraper | ✅ done | Bug: postcode typeahead resolves wrong — must use area names |
 | Qdrant Cloud vector search | ✅ done | 9,794 listings (initial); needs refresh with area-name crawl |
 | Conversational search + constraints | ✅ done | GPT-5 Mini, LangGraph orchestration |
-| OpenRent scraper | ❌ next | Private landlords, no agent fees — key differentiator |
+| OpenRent scraper | ✅ done | `crawler/openrent/` — plain HTTP, 6,539 London listings, full field parity with Rightmove |
+| OpenRent merge pipeline | ✅ done | `merge_listings.py` — merges Rightmove+OpenRent; 1,409 enriched, 5,427 OR-only; 31,820 pts in Qdrant |
 | Zoopla integration | ❌ future | Broader coverage |
 | SpareRoom integration | ❌ future | Rooms / HMO market |
 | Geo-radius fallback | ❌ deferred | When location miss → lat/lon radius in Qdrant |
@@ -122,9 +123,7 @@ Implementation: RAG skill over indexed UK tenant law docs (GOV.UK, Shelter guide
 
 ## Current State
 
-_Last updated: 2026-03-08 · Branch: `openclaw` · Tip: see Phase 20_
-
-### Architecture
+_Last updated: 2026-03-11 · Branch: `openclaw` · Tip: see Phase 21_
 
 ```
 User Input
@@ -238,7 +237,7 @@ frontend/src/
 ### Not yet done
 - General domain skill (`general_node`) is wired but responses are minimal
 - No automated test runner — tests are JSON datasets validated manually
-- UI Phase 2 (map view)
+- UI Phase 2 (map view) ✅ done — see Phase 21
 - `feature/rental` not yet merged up to `restructure`
 - P2-B: location expansion when `prefilter_count == 0` (deferred — requires lat/lon data)
 - Cross-session memory (preferences survive server restart)
@@ -248,6 +247,42 @@ frontend/src/
 ## Session Progress
 
 > Append a line here after every commit. Tasks live in `TODO.md` — not here.
+
+---
+
+### Phase 21 · Map view, data backfill, listing card improvements (Mar 11)
+> Branch: `openclaw` | Commits: `39544ce` → `(current)`
+
+| Hash | Date | Type | Description |
+|------|------|------|-------------|
+| `39544ce` | 2026-03-11 | feat | Dynamic map search radius + smart geo scroll cap |
+| `647c567` | 2026-03-11 | feat | Map geo search exact bounds, image carousel, listing features/description |
+| `db41d58` | 2026-03-11 | docs | Update PROJECT.md — Phase 21 tasks marked done |
+| `4aefaac` | 2026-03-11 | docs | Add agent ownership boundaries to PROJECT.md |
+| `8149ab0` | 2026-03-11 | docs | Mark B-F1 listing detail endpoint as not needed |
+| `1f3795b` | 2026-03-11 | fix | Strip `- ` prefix from features; exclude parking/non-residential listings |
+| `5a653be` | 2026-03-11 | fix | Optimistic save/unsave UX — instant green toggle, header count, no flash |
+| `76213da` | 2026-03-11 | feat | OpenRent scraper — extract_openrent.py + crawl_openrent.py |
+| `20e9fbc` | 2026-03-11 | feat | OpenRent merge pipeline + new amenity fields; sync 31,820 pts to Qdrant Cloud |
+| `437b69f` | 2026-03-12 | feat | Red flag detection (B-F3) — regex + boolean scan for No DSS, No pets, Admin fees, No deposit protection, Guarantor required |
+| (uncommitted) | 2026-03-12 | feat | Boolean signal system (B-F8) — `bool_signals.py`: two-tier resolution (explicit field → regex → None); hard filter rejects contradictions; soft rank `bool_match` weight 0.12; synthetic text injection in `internal_helpers.py`; `bool_preferences` added to `QuerySnapshot` + merger + signals pipeline |
+| (uncommitted) | 2026-03-12 | feat | Source badges + portal links (B-F9) — `source_site`/`openrent_url` added to `candidate_snapshot()` in `signals.py`; `_safe_str()` NaN guard in `api_server.py`; drawer shows correct single/dual portal buttons; `ListingCard` shows colored source badge |
+| (uncommitted) | 2026-03-12 | fix | Qdrant Cloud `collection_exists` 403 — read-only API keys lack HEAD permission; added try/except fallback in `engine.py` |
+| (uncommitted) | 2026-03-12 | fix | `.env` file for API keys (gitignored) — `OPENAI_API_KEY`, `RENT_QDRANT_URL`, `RENT_QDRANT_API_KEY` |
+| (uncommitted) | 2026-03-12 | fix | Remove "Admin fees" from red flags (banned since Tenant Fees Act 2019); fix non-refundable regex to allow intervening words |
+| `f64b347` | 2026-03-12 | feat | Commute time via TfL Journey API — LLM extraction + stations.json geocoding (721 stations, fuzzy match, abbreviations, OSM Nominatim fallback); parallel TfL calls in build_metadata (cached 1hr); match_pct redesigned as requirement-satisfaction score; QA commute interceptor for mid-conversation questions |
+| (uncommitted) | 2026-03-12 | fix | Image placeholder filter — `_is_real_image()` strips OpenRent logos, static maps, placeholder URLs from SSE metadata; scraper excludes `staticMapPhoto` on future crawls |
+
+**Key deliverables this phase:**
+
+- **Qdrant data recovery + cleanup**: Recovered 26,394 listings from local Qdrant after accidental sync deletion. Image backfill completed (23,418 updated). 2,005 dead listings (404/410) removed → **24,389 clean listings**.
+- **Map "Search this area"**: Now sends exact viewport bounds (min/max lat/lng, 10% inward shrink). Backend uses bounds directly; skips haversine. `GEO_SCROLL_MAX=15000`.
+- **Image carousel** (`ListingCard.tsx`, `ListingDetailDrawer.tsx`): `ImageCarousel` sub-component with arrows, dots, 1/N counter.
+- **Features on cards/drawer**: `_features_list()` handles all storage formats (JSON, list, `\n`/`;` strings). Strips `- `, `–`, `•` markers. Filters "ask agent"/"n/a"/"none".
+- **Parking excluded**: `apply_hard_filters_with_audit` skips property_type = parking/garage/land/commercial.
+- **Agent boundaries**: `PROJECT.md` updated with ownership table — Gemini=frontend only, Claude=backend only. "Do not start autonomously" warning added.
+- **Optimistic shortlist UX** (`ListingCard.tsx`, `ListingsPanel.tsx`, `App.tsx`, `useChat.ts`): Save/unsave button turns solid green instantly on click (optimistic local state in `ListingCard`). "Saved Listings (N)" header count updates immediately via optimistic `Set` in `App.tsx` (cleared when server metadata confirms). "Updating" indicator and action button flash suppressed for silent actions — `isSilentAction` flag added to `useChat`, "Updating" dot hidden when true, quick-reply buttons stay rendered (disabled) instead of unmounting.
+- **OpenRent scraper** (`crawler/openrent/extract_openrent.py`, `crawler/openrent/crawl_openrent.py`): Full scraper for OpenRent (private landlords, no agent fees). Extracts all standard fields: postcode from `postCode=` URL param, bedrooms/bathrooms from `<ul>` after `<h1>`, features from `Property Details` heading → `<ul>`, stations from `Features` section (`~N min. walk` pattern), lat/lon from `data-lat`/`data-lng` on map widget, images from `imagescdn.openrent.co.uk`. Outputs identical JSONL schema to Rightmove scraper (same `ListingRecord` dataclass). `listing_id = "openrent:{id}"` prevents UUID collision. Parallel HTTP scraping (no Playwright needed). Tested on 5 listings — all fields correct. Run: `python -m crawler.openrent.crawl_openrent` then `sync_qdrant.py --mode sync`.
 
 ---
 
@@ -354,6 +389,44 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5173
 ---
 
 ## Changelog
+
+### Phase 21 · Map view, data backfill, listing card improvements (Mar 11)
+> Branch: `openclaw` | Commits: `39544ce` → (current)
+
+| Hash | Date | Type | Description |
+|------|------|------|-------------|
+| `39544ce` | 2026-03-11 | feat | Dynamic map search radius + smart geo scroll cap |
+| (current) | 2026-03-11 | feat | Exact viewport bounds for geo search; image carousel; features/description on cards |
+
+**Key deliverables this phase:**
+
+- **Qdrant data recovery**: Accidentally ran `sync_qdrant.py --mode sync` with a partial 1,146-listing file — deleted 25,045 listings. Recovered using local Qdrant at `/artifacts/skills/search/data/data/qdrant_local` (9,794 points) and upserted all to cloud. Net result: **26,394 listings** in Qdrant Cloud after new crawl (E3, SW3, SW4, SW5, SW10, E5, N6, N16, SE5, SW19) + image backfill.
+
+- **Image backfill**: `crawler/backfill_images.py` scraped image URLs for all 25,423 listings missing `image_urls`. Result: 23,418 updated, 2,005 failed (listings removed from Rightmove). Dead listings (404/410) subsequently deleted → **24,389 clean listings** remaining.
+
+- **Dead listing cleanup**: Scrolled all Qdrant points, identified 2,005 with no `image_url` (confirmed 404/410 on Rightmove), deleted them.
+
+- **Map "Search this area" — exact viewport bounds** (`skills/search/engine.py`, `frontend/src/components/MapView.tsx`):
+  - Previously sent `center + radius_km` (center-to-corner diagonal) → backend recomputed a square bbox that was ~41% larger than the viewport
+  - Now frontend sends `min_lat/max_lat/min_lng/max_lng` (exact Leaflet bounding box), shrunk 10% inward so results feel centred
+  - Backend uses exact bounds directly in Qdrant filter; skips haversine circle clipping when exact bounds are present
+  - `GEO_SCROLL_MAX=15000` cap prevents huge payloads; haversine also skipped when cap hit or radius >20km
+
+- **Image carousel on ListingCard** (`frontend/src/components/ListingCard.tsx`): new `ImageCarousel` sub-component shows all `image_urls` with left/right arrow buttons, dot indicators (up to 8), and `1/N` counter badge. Falls back to single `image_url` or placeholder.
+
+- **Features + description on cards and drawer** (`backend/api_server.py`, `frontend/src/components/ListingDetailDrawer.tsx`):
+  - `_features_list()` replaces `str()` conversion for features — handles JSON arrays, Python lists, and `\n`/`;`-separated strings
+  - Filters out placeholder values: "ask agent", "n/a", "none"
+  - Card shows features (up to 3) if available; falls back to description summary
+  - Drawer: Key Features section (all features) first, then Property Description
+  - `features` type changed from `string` to `string[]` in `frontend/src/types/chat.ts`
+
+**Data state after this phase:**
+- Qdrant Cloud `rent_listings`: **24,389 listings**, all with `image_url`
+- Coverage: 35+ London areas including newly crawled E3/SW3/SW4/SW5/SW10/E5/N6/N16/SE5/SW19
+- All listings have lat/lon coordinates for map display
+
+---
 
 ### Phase 20 · OpenClaw — UX fixes, local hosting, GPT-5 Mini tuning (Mar 8)
 > Branch: `openclaw` | Commits: `569e813` → `efabb11`
@@ -785,6 +858,20 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5173
 
 ---
 
+## Phase 22 — OpenRent Re-Crawl (2026-03-11)
+
+| Hash | Date | Type | Description |
+|------|------|------|-------------|
+| `dd11af6` | 2026-03-11 | feat | OpenRent crawler with rate limiting + user agent rotation (6,539 listings scraped) |
+| `c006cc0` | 2026-03-11 | data | Add OpenRent and Rightmove datasets to git (32,730 listings) |
+| `18447c9` | 2026-03-11 | docs | Add session handoff for OpenRent re-crawl task |
+| `2d3211b` | 2026-03-11 | data | Re-crawl OpenRent: 4-stage workflow complete (URLs → scrape → merge → Qdrant sync) — 31,718 points in Qdrant Cloud |
+| `2d3211b` | 2026-03-11 | fix | Python 3.9 compatibility fix for london_regions.py (typing imports) |
+| `b6ac8c5` | 2026-03-12 | feat | extract full image gallery from window.PAGE_MODEL in Rightmove scraper |
+| TBD | 2026-03-12 | data | backfill images for 28,945 listings; remove 2,599 dead (410) listings from Qdrant + local JSONL — 29,119 clean listings |
+
+---
+
 ## Stats
 
 | Metric | Value |
@@ -794,3 +881,6 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5173
 | Latest commit | 2026-03-01 (`f1597ae`, restructure) |
 | OpenClaw branch start | 2026-03-07 |
 | Days active | 18 |
+
+- `9d35dc3` perf: parallel refinement plan + metadata-first → ~1.4s consistent time-to-cards (backend-2)
+- `ef42c1e` perf: shrink router prompt (2-turn history, 120-char truncation) + switch to gpt-4o-mini → stable 1.4–1.6s (backend-2)

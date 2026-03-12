@@ -15,6 +15,9 @@ class QuerySnapshot:
     let_type: Optional[str] = None
     min_tenancy_months: Optional[float] = None
     min_size_sqm: Optional[float] = None
+    geo_bound: Optional[Dict[str, Any]] = None
+    bool_preferences: Dict[str, bool] = field(default_factory=dict)
+    commute_destination: Optional[Dict[str, Any]] = None
 
     # Display setting — not a search constraint; excluded from hash.
     k: Optional[int] = None
@@ -49,6 +52,9 @@ class QuerySnapshot:
             "let_type": self.let_type,
             "min_tenancy_months": self._norm_num(self.min_tenancy_months),
             "min_size_sqm": self._norm_num(self.min_size_sqm),
+            "geo_bound": self.geo_bound,
+            "bool_preferences": dict(sorted((self.bool_preferences or {}).items())),
+            "commute_destination": self.commute_destination,
         }
 
     def get_hash(self) -> str:
@@ -107,6 +113,9 @@ class GraphState(TypedDict, total=False):
     refinement_type: Optional[str]
     page_action: Optional[str]
 
+    # ── Speculative parallel execution ────────────────────────────────────────
+    _spec_key: Optional[int]         # key into nodes._SPEC_CACHE for parallel refinement_plan
+
     # ── Turn output ──────────────────────────────────────────────────────────
     reply_text: str
     error: Optional[str]
@@ -136,6 +145,7 @@ class GraphState(TypedDict, total=False):
     relax_override_constraints: Optional[Dict[str, Any]]   # relaxed constraints for next search
     stage_b_audits: List[Dict[str, Any]]    # full Stage B audit trail
     stage_a_prefilter_count: int            # 0 = location miss
+    stage_a_geo_fallback_area: Optional[str]  # area name used for geo-radius fallback, or None
     relax_near_miss: List[Dict[str, Any]]   # listings that failed exactly 1 constraint
 
 
@@ -184,5 +194,6 @@ def make_graph_state(user_input: str, *, agent_state: Any, runtime: Any, router_
         relax_override_constraints=None,
         stage_b_audits=[],
         stage_a_prefilter_count=-1,
+        stage_a_geo_fallback_area=None,
         relax_near_miss=[],
     )

@@ -1,145 +1,181 @@
+/* Leaflet CSS */
+@import "leaflet/dist/leaflet.css";
+@import "leaflet.markercluster/dist/MarkerCluster.css";
+@import "leaflet.markercluster/dist/MarkerCluster.Default.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+@layer base {
+  :root {
+    --accent-color: #10b981;
+    --background-color: #0a0a0a;
+    --panel-color: #141414;
+    --border-color: #262626;
+    --text-color: #f8fafc;
+    --muted-color: #94a3b8;
+  }
+
+  * {
+    border-color: var(--border-color);
+  }
+
+  body {
+    background-color: var(--background-color);
+    color: var(--text-color);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+
+  /* Custom Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #262626;
+    border-radius: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #404040;
+  }
 }
 
-* {
-  box-sizing: border-box;
+/* Animations */
+@keyframes thinking-pulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1); }
 }
-
-html,
-body,
-#root {
-  margin: 0;
-  height: 100%;
-}
-
-/* --- Thinking indicator --- */
 
 .thinking-dot {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
+  background-color: var(--accent-color);
   border-radius: 50%;
-  background-color: #a3a3a3;
   animation: thinking-pulse 1.2s ease-in-out infinite;
 }
 
-.thinking-dot:nth-child(2) {
-  animation-delay: 0.2s;
-}
-
-.thinking-dot:nth-child(3) {
-  animation-delay: 0.4s;
-}
-
-@keyframes thinking-pulse {
-  0%, 80%, 100% {
-    opacity: 0.3;
-    transform: scale(0.8);
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
   }
-  40% {
+  to {
     opacity: 1;
-    transform: scale(1);
+    transform: translateY(0);
   }
 }
 
-/* --- Markdown content --- */
+.animate-fade-in-up {
+  animation: fade-in-up 0.5s ease-out forwards;
+}
+
+/* Markdown Content Styling */
+.markdown-content {
+  line-height: 1.7;
+}
 
 .markdown-content p {
-  margin: 0.25em 0;
+  margin-bottom: 0.75rem;
+}
+
+.markdown-content p:last-child {
+  margin-bottom: 0;
 }
 
 .markdown-content .markdown-heading {
-  font-weight: 600;
-  margin: 0.75em 0 0.25em;
+  font-weight: 800;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+  color: var(--text-color);
 }
 
-.markdown-content h3 {
-  font-size: 1.05em;
-}
-
-.markdown-content h4 {
-  font-size: 0.95em;
-}
-
-.markdown-content h5,
-.markdown-content h6 {
-  font-size: 0.9em;
-}
+.markdown-content h3 { font-size: 1.125rem; }
+.markdown-content h4 { font-size: 1rem; }
 
 .markdown-content .markdown-list {
-  padding-left: 1.5em;
-  margin: 0.3em 0;
-}
-
-.markdown-content ul.markdown-list {
+  padding-left: 1.25rem;
+  margin-bottom: 1rem;
   list-style-type: disc;
 }
 
-.markdown-content ol.markdown-list {
-  list-style-type: decimal;
-}
-
 .markdown-content .markdown-list li {
-  margin: 0.15em 0;
+  margin-bottom: 0.25rem;
 }
 
 .markdown-content .markdown-table {
-  border-collapse: collapse;
-  margin: 0.5em 0;
-  font-size: 0.85em;
   width: 100%;
-}
-
-.markdown-content .markdown-table th,
-.markdown-content .markdown-table td {
-  border: 1px solid #404040;
-  padding: 0.35em 0.6em;
-  text-align: left;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.875rem;
+  background: var(--surface-color);
+  border-radius: 8px;
+  overflow: hidden;
 }
 
 .markdown-content .markdown-table th {
-  background-color: #2a2a2a;
-  font-weight: 600;
+  background: var(--panel-color);
+  padding: 0.75rem;
+  text-align: left;
+  font-weight: 700;
+  border-bottom: 2px solid var(--border-color);
 }
 
-.markdown-content .markdown-table tr:nth-child(even) td {
-  background-color: #1e1e1e;
+.markdown-content .markdown-table td {
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--border-color);
 }
 
-.markdown-content strong {
-  font-weight: 600;
+.markdown-content .markdown-table tr:last-child td {
+  border-bottom: none;
 }
 
 .markdown-content a {
-  color: #7dd3fc;
+  color: var(--accent-color);
   text-decoration: underline;
+  text-underline-offset: 4px;
+  font-weight: 600;
+  transition: opacity 0.2s;
 }
 
-/* --- Compare table --- */
+.markdown-content a:hover {
+  opacity: 0.8;
+}
 
+.markdown-content strong {
+  font-weight: 700;
+  color: var(--text-color);
+}
+
+/* Compare Table Specifics */
 .compare-table-wrapper {
   -webkit-overflow-scrolling: touch;
 }
 
 .compare-table {
-  border-collapse: collapse;
-  min-width: 100%;
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
-.compare-table th,
-.compare-table td {
-  border-bottom: 1px solid #333;
+.compare-table th, .compare-table td {
+  padding: 1rem;
   white-space: nowrap;
 }
 
-.compare-table thead tr {
-  border-bottom: 2px solid #404040;
-}
-
-.compare-table tbody tr:last-child td {
-  border-bottom: none;
+/* Sticky first column for comparison */
+.compare-table td:first-child, .compare-table th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 10;
+  background: var(--panel-color);
+  border-right: 1px solid var(--border-color);
 }

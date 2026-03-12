@@ -130,6 +130,9 @@ def run_search_skill(
     stage_a_prefilter_count: int = int(
         stage_a_df.attrs.get("prefilter_count") or 0
     ) if hasattr(stage_a_df, "attrs") else 0
+    stage_a_geo_fallback_area: Optional[str] = (
+        stage_a_df.attrs.get("geo_fallback_area") or None
+    ) if hasattr(stage_a_df, "attrs") else None
     filtered, stage_b_audits = apply_hard_filters_with_audit(stage_a_df, merged)
     ranked, _ = rank_stage_c(filtered, signals, embedder=runtime.embedder)
     ranked_full = ranked.reset_index(drop=True)
@@ -173,4 +176,5 @@ def run_search_skill(
         "structured_audit": structured_audit,
         "stage_b_audits": stage_b_audits,
         "stage_a_prefilter_count": stage_a_prefilter_count,
+        "stage_a_geo_fallback_area": stage_a_geo_fallback_area,
     }

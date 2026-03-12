@@ -32,8 +32,8 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from fastembed import TextEmbedding
 from qdrant_client import QdrantClient, models
-from sentence_transformers import SentenceTransformer
 
 # ── Path setup ──────────────────────────────────────────────────
 CRAWLER_DIR = Path(__file__).parent.resolve()
@@ -56,6 +56,8 @@ _UUID_NS = uuid.UUID("a3b2c1d0-e5f6-7890-abcd-ef1234567890")
 PAYLOAD_FIELDS = [
     # Identity
     "listing_id", "url", "source_site", "source", "scraped_at",
+    # Media
+    "image_url",
     # Location
     "address", "postcode", "postcode_district", "title",
     # Price
@@ -71,6 +73,13 @@ PAYLOAD_FIELDS = [
     "latitude", "longitude",
     # Metadata
     "added_date", "discovery_paths",
+    # OpenRent-exclusive / merged fields
+    "max_tenants",
+    "bills_included", "student_friendly", "families_allowed",
+    "pets_allowed", "smokers_allowed", "dss_covers_rent",
+    "garden", "parking", "fireplace", "epc_rating", "epc_not_required",
+    "online_viewings", "live_in_landlord", "dss_income_accepted",
+    "openrent_url",
 ]
 
 # Payload indexes for location prefiltering
@@ -163,6 +172,28 @@ def build_embed_text(rec: Dict[str, Any]) -> str:
         parts.append(desc[:300])
     if rec.get("features"):
         parts.append(str(rec["features"])[:200])
+
+    # Append human-readable amenity tags from OpenRent boolean fields
+    amenities = []
+    bool_labels = [
+        ("pets_allowed",     "pets allowed"),
+        ("garden",           "garden"),
+        ("parking",          "parking"),
+        ("fireplace",        "fireplace"),
+        ("bills_included",   "bills included"),
+        ("student_friendly", "student friendly"),
+        ("families_allowed", "families allowed"),
+        ("dss_covers_rent",  "DSS accepted"),
+    ]
+    for field, label in bool_labels:
+        val = rec.get(field)
+        if val is True:
+            amenities.append(label)
+    if amenities:
+        parts.append("Amenities: " + ", ".join(amenities))
+    if rec.get("epc_rating"):
+        parts.append(f"EPC rating {rec['epc_rating']}")
+
     return " ".join(parts) if parts else "rental listing"
 
 
@@ -235,7 +266,7 @@ def fetch_existing_ids(client: QdrantClient) -> Dict[str, str]:
         for p in points:
             lid = (p.payload or {}).get("listing_id", "")
             if lid:
-                existing[lid] = str(p.id)
+                existing[lid] = p.id
         if offset is None:
             break
     return existing
@@ -275,7 +306,7 @@ def find_latest_source() -> Path:
     return source
 
 
-def sync_full(client: QdrantClient, records: List[Dict[str, Any]], embedder: SentenceTransformer):
+def sync_full(client: QdrantClient, records: List[Dict[str, Any]], embedder: TextEmbedding):
     """Full rebuild: drop collection, recreate, embed + upsert all."""
     create_collection(client)
 
@@ -289,7 +320,7 @@ def sync_full(client: QdrantClient, records: List[Dict[str, Any]], embedder: Sen
         batch_texts = embed_texts[i:i + BATCH_SIZE]
 
         # Batch embed
-        vectors = embedder.encode(batch_texts, normalize_embeddings=True).tolist()
+        vectors = list(embedder.embed(batch_texts))
 
         points = []
         for rec, vec in zip(batch_recs, vectors):
@@ -300,7 +331,7 @@ def sync_full(client: QdrantClient, records: List[Dict[str, Any]], embedder: Sen
             payload = build_payload(rec, loc_tokens)
             points.append(models.PointStruct(
                 id=listing_id_to_uuid(lid),
-                vector=vec,
+                vector=vec.tolist(),
                 payload=payload,
             ))
 
@@ -312,7 +343,7 @@ def sync_full(client: QdrantClient, records: List[Dict[str, Any]], embedder: Sen
     print(f"\nFull sync complete: {upserted:,} points upserted")
 
 
-def sync_incremental(client: QdrantClient, records: List[Dict[str, Any]], embedder: SentenceTransformer):
+def sync_incremental(client: QdrantClient, records: List[Dict[str, Any]], embedder: TextEmbedding):
     """Incremental sync: add new, delete removed, skip unchanged."""
     if not client.collection_exists(COLLECTION):
         print("Collection does not exist — falling back to full sync.")
@@ -360,7 +391,7 @@ def sync_incremental(client: QdrantClient, records: List[Dict[str, Any]], embedd
         for i in range(0, len(add_recs), BATCH_SIZE):
             batch_recs = add_recs[i:i + BATCH_SIZE]
             batch_texts = add_texts[i:i + BATCH_SIZE]
-            vectors = embedder.encode(batch_texts, normalize_embeddings=True).tolist()
+            vectors = list(embedder.embed(batch_texts))
 
             points = []
             for rec, vec in zip(batch_recs, vectors):
@@ -371,7 +402,7 @@ def sync_incremental(client: QdrantClient, records: List[Dict[str, Any]], embedd
                 payload = build_payload(rec, loc_tokens)
                 points.append(models.PointStruct(
                     id=listing_id_to_uuid(lid),
-                    vector=vec,
+                    vector=vec.tolist(),
                     payload=payload,
                 ))
 
@@ -476,7 +507,7 @@ def main():
 
         # Load embedder
         print(f"Loading embedding model: {EMBED_MODEL}")
-        embedder = SentenceTransformer(EMBED_MODEL)
+        embedder = TextEmbedding(EMBED_MODEL)
 
         # Sync
         if args.mode == "full":
@@ -487,6 +518,13 @@ def main():
     # Run purge if --purge-days is specified
     if args.purge_days is not None:
         purge_stale(client, args.purge_days)
+
+    # Rebuild location match index after any Qdrant changes
+    if args.mode is not None or args.purge_days is not None:
+        print("\nRebuilding location match index...")
+        sys.path.insert(0, str(PROJECT_ROOT))
+        from skills.search.location_match import rebuild_location_index
+        rebuild_location_index()
 
 
 if __name__ == "__main__":
