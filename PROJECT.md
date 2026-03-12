@@ -90,6 +90,15 @@
 | B-B1 | ✅ Fixed | `lat`/`lon` not in SSE metadata | Added to `build_metadata()` in `api_server.py` |
 | B-B2 | 🔴 Open | Rightmove crawled with postcodes → location miss rate high | Re-crawl `crawl_london.py` using area names |
 
+### Cross-Session Warnings
+
+> **⚠️ Session conflict (2026-03-12):** Commit `437b69f` (red flag detection, B-F3) was committed from a worktree while another session had uncommitted changes to the same files (`soft_rank.py`, `ListingCard.tsx`, `ListingDetailDrawer.tsx`, `api_server.py`, `chat.ts`). This caused:
+>
+> 1. **`openrent_url` NaN bug** — `candidate_snapshot()` in `signals.py` didn't include `source_site`/`openrent_url`, so they were dropped by the pipeline. When re-added, the DataFrame converts `""` to `NaN`; `str(NaN)` → `"nan"` which is truthy in JS → every listing showed two portal buttons. **Fixed** with `_safe_str()` in `api_server.py`.
+> 2. **`collection_exists` 403** — Qdrant Cloud read-only keys lack HEAD endpoint permission. **Fixed** with try/except fallback in `engine.py`.
+>
+> **Rule for future sessions:** If you modify files in `skills/search/`, `backend/`, or `frontend/src/components/`, check `git status` first — another session may have uncommitted changes to the same files. Coordinate via this file.
+
 ### Pipeline Improvements
 
 | # | Status | Task | Detail |
@@ -103,9 +112,11 @@
 |---|-------|--------|---------|---------|
 | B-F1 | Claude | ✅ Not needed | **Listing detail endpoint** | All fields already in SSE metadata stream via `_map_listing()` |
 | B-F2 | Claude | ✅ Done | **OpenRent scraper** | 6,586 London listings; amenity booleans; merged with Rightmove | 1 |
-| B-F3 | Claude | ✅ Done | **Red flag detection** | Regex + boolean scan: No DSS, No pets, Admin fees, No deposit protection, Guarantor required | 3 |
+| B-F3 | Claude | ✅ Done | **Red flag detection** | Regex + boolean scan: No DSS, No pets, No deposit protection, Guarantor required. Image placeholder filter (`_is_real_image`) | 3 |
+| B-F8 | Claude | ✅ Done | **Boolean signal system** | Two-tier bool resolution (explicit field → text regex → None); hard filter rejects contradictions; soft rank +0.12 weight for matches; synthetic text injection for semantic compat | 1 |
+| B-F9 | Claude | ✅ Done | **Source badges + portal links** | ListingCard/Drawer show Rightmove/OpenRent/Both badge; merged listings get dual buttons; single-source get one button | 1 |
 | B-F4 | Claude | 🔴 Open | **Draft viewing request** | `POST /api/contact/draft`, LLM + listing context | 3 |
-| B-F5 | Claude | 🔴 Open | **Commute time** | TfL API: listing lat/lon + workplace → journey time | 2 |
+| B-F5 | Claude | ✅ Done | **Commute time** | TfL Journey API: LLM extracts commute_destination, geocoded via stations.json (721 stations, fuzzy+abbrev) / TfL Place Search / OSM Nominatim; parallel TfL calls in build_metadata (cached 1hr); card shows color-coded time; QA interceptor for "how long to X"; match_pct redesigned as requirement-satisfaction score | 2 |
 | B-F6 | Claude | 🔴 Open | **Contract analysis** | `POST /api/contract/analyse`, PDF → plain-English summary + clause flags | 5 |
 | B-F7 | Claude | 🔴 Open | **Tenant rights RAG** | Index GOV.UK + Shelter + Renters Reform Act | 6 |
 
@@ -119,8 +130,8 @@
 {
   title: string
   url: string
-  image_url: string        // cover photo
-  image_urls: string[]     // full gallery up to 10 × 656x437 JPEG
+  image_url: string        // cover photo (logos/placeholders filtered by _is_real_image)
+  image_urls: string[]     // full gallery up to 10; logos/maps/placeholders stripped
   address: string
   price_pcm: number
   bedrooms: number
@@ -131,6 +142,9 @@
   final_score: number      // raw soft-rank composite (~0.05–0.20); frontend normalises to 70–100%
   penalty_reasons: string[]
   preference_hits: string[]
+  red_flags: string[]        // e.g. ["No pets", "No DSS", "Guarantor required"]
+  source_site: string        // "rightmove" | "openrent" | "rightmove+openrent"
+  openrent_url: string       // non-empty only for merged listings
   // Also present: description, features, deposit, property_type, furnish_type
 }
 ```

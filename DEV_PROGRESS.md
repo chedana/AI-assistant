@@ -265,6 +265,13 @@ frontend/src/
 | `76213da` | 2026-03-11 | feat | OpenRent scraper — extract_openrent.py + crawl_openrent.py |
 | `20e9fbc` | 2026-03-11 | feat | OpenRent merge pipeline + new amenity fields; sync 31,820 pts to Qdrant Cloud |
 | `437b69f` | 2026-03-12 | feat | Red flag detection (B-F3) — regex + boolean scan for No DSS, No pets, Admin fees, No deposit protection, Guarantor required |
+| (uncommitted) | 2026-03-12 | feat | Boolean signal system (B-F8) — `bool_signals.py`: two-tier resolution (explicit field → regex → None); hard filter rejects contradictions; soft rank `bool_match` weight 0.12; synthetic text injection in `internal_helpers.py`; `bool_preferences` added to `QuerySnapshot` + merger + signals pipeline |
+| (uncommitted) | 2026-03-12 | feat | Source badges + portal links (B-F9) — `source_site`/`openrent_url` added to `candidate_snapshot()` in `signals.py`; `_safe_str()` NaN guard in `api_server.py`; drawer shows correct single/dual portal buttons; `ListingCard` shows colored source badge |
+| (uncommitted) | 2026-03-12 | fix | Qdrant Cloud `collection_exists` 403 — read-only API keys lack HEAD permission; added try/except fallback in `engine.py` |
+| (uncommitted) | 2026-03-12 | fix | `.env` file for API keys (gitignored) — `OPENAI_API_KEY`, `RENT_QDRANT_URL`, `RENT_QDRANT_API_KEY` |
+| (uncommitted) | 2026-03-12 | fix | Remove "Admin fees" from red flags (banned since Tenant Fees Act 2019); fix non-refundable regex to allow intervening words |
+| `f64b347` | 2026-03-12 | feat | Commute time via TfL Journey API — LLM extraction + stations.json geocoding (721 stations, fuzzy match, abbreviations, OSM Nominatim fallback); parallel TfL calls in build_metadata (cached 1hr); match_pct redesigned as requirement-satisfaction score; QA commute interceptor for mid-conversation questions |
+| (uncommitted) | 2026-03-12 | fix | Image placeholder filter — `_is_real_image()` strips OpenRent logos, static maps, placeholder URLs from SSE metadata; scraper excludes `staticMapPhoto` on future crawls |
 
 **Key deliverables this phase:**
 
