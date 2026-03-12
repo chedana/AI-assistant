@@ -1,13 +1,10 @@
 # OpenClaw — Project Reference & Dev Tracker
 
-> **Who uses this:** Claude (backend) and Gemini (frontend).
+> **Who uses this:** Claude.
 > This is the single source of truth: living task tracker + full technical reference.
 > **Rule:** Mark tasks `✅` when done, `🔄` when in progress. Add bugs as you find them.
 > **Branch:** `openclaw`
 >
-> ⚠️ **IMPORTANT — Agent boundaries:**
-> - **Gemini** → only work on tasks in "Frontend Tasks" section. Only edit `frontend/src/` files.
-> - **Claude** → only work on tasks in "Backend Tasks" section. Only edit `backend/`, `skills/`, `orchestration/`, `core/`, `crawler/` files.
 > - **Do not start work autonomously.** Wait for the user to assign a task.
 
 ---
@@ -25,24 +22,12 @@
 
 ---
 
-## Agent Ownership
-
-> **Rule:** Only work on tasks assigned to your agent. Do not touch the other agent's files.
-
-| Agent | Owns | Files |
-|-------|------|-------|
-| **Claude** | Backend, data, infrastructure | `backend/`, `skills/`, `orchestration/`, `core/`, `crawler/` |
-| **Gemini** | Frontend UI only | `frontend/src/` |
-
----
-
 ## Immediate Next Priority
 
 ```
-[CLAUDE]  1. Re-crawl Rightmove with area names (B-B2)     → fix location miss rate
-[CLAUDE]  2. Red flag detection (B-F3)                     → quick win, no new data
-[GEMINI]  1. Session rename (F-F4)                         → double-click to rename
-[GEMINI]  2. Viewing checklist UI (F-F5)                   → per-listing checklist panel
+1. Re-crawl Rightmove with area names (B-B2)     → fix location miss rate
+2. Session rename (F-F4)                         → double-click to rename
+3. Viewing checklist UI (F-F5)                   → per-listing checklist panel
 ```
 
 ---
@@ -59,7 +44,7 @@
 
 ---
 
-## Frontend Tasks (Gemini only — do not modify backend files)
+## Frontend Tasks
 
 ### Bugs
 
@@ -86,17 +71,17 @@
 
 | # | Agent | Status | Feature | Detail |
 |---|-------|--------|---------|--------|
-| F-F1 | Gemini | ✅ Done | **Map view** | Leaflet map tab, cluster markers, Search this area (exact viewport bounds) |
-| F-F2 | Gemini | ✅ Done | **Listing detail drawer** | Slide-out with full info, Portal rendering, scroll lock, keyboard focus trap |
-| F-F7 | Gemini | ✅ Done | **Image carousel** | Left/right arrows, dot indicators, 1/N counter. Features/description on card |
-| F-F3 | Gemini | ✅ Done | **Mobile bottom nav** | Switch Chat ↔ Results on mobile |
-| F-F4 | Gemini | 🔴 Open | **Session rename** | Double-click session title to rename |
-| F-F5 | Gemini | 🔴 Open | **Viewing checklist** | Per-listing checklist panel (legal + physical checks) |
-| F-F6 | Gemini | 🔴 Open | **Contract upload UI** | File upload → send to contract analysis endpoint |
+| F-F1 | Claude | ✅ Done | **Map view** | Leaflet map tab, cluster markers, Search this area (exact viewport bounds) |
+| F-F2 | Claude | ✅ Done | **Listing detail drawer** | Slide-out with full info, Portal rendering, scroll lock, keyboard focus trap |
+| F-F7 | Claude | ✅ Done | **Image carousel** | Left/right arrows, dot indicators, 1/N counter. Features/description on card |
+| F-F3 | Claude | ✅ Done | **Mobile bottom nav** | Switch Chat ↔ Results on mobile |
+| F-F4 | Claude | 🔴 Open | **Session rename** | Double-click session title to rename |
+| F-F5 | Claude | 🔴 Open | **Viewing checklist** | Per-listing checklist panel (legal + physical checks) |
+| F-F6 | Claude | 🔴 Open | **Contract upload UI** | File upload → send to contract analysis endpoint |
 
 ---
 
-## Backend Tasks (Claude only — do not modify frontend files)
+## Backend Tasks
 
 ### Bugs
 
@@ -118,7 +103,7 @@
 |---|-------|--------|---------|---------|
 | B-F1 | Claude | ✅ Not needed | **Listing detail endpoint** | All fields already in SSE metadata stream via `_map_listing()` |
 | B-F2 | Claude | ✅ Done | **OpenRent scraper** | 6,586 London listings; amenity booleans; merged with Rightmove | 1 |
-| B-F3 | Claude | 🔴 Open | **Red flag detection** | Scan description for: no DSS, admin fees, no deposit protection | 3 |
+| B-F3 | Claude | ✅ Done | **Red flag detection** | Regex + boolean scan: No DSS, No pets, Admin fees, No deposit protection, Guarantor required | 3 |
 | B-F4 | Claude | 🔴 Open | **Draft viewing request** | `POST /api/contact/draft`, LLM + listing context | 3 |
 | B-F5 | Claude | 🔴 Open | **Commute time** | TfL API: listing lat/lon + workplace → journey time | 2 |
 | B-F6 | Claude | 🔴 Open | **Contract analysis** | `POST /api/contract/analyse`, PDF → plain-English summary + clause flags | 5 |

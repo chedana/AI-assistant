@@ -60,9 +60,13 @@ export default function ListingDetailDrawer({ listing, onClose }: Props) {
     setCurrentImageIndex((prev) => (prev + 1) % images.length);
   };
 
-  const features = toArray(listing.features).filter(f => !["ask agent", "n/a", "none"].includes(f.toLowerCase().trim()));
+  const isNegative = (f: string) => /^no\s+/i.test(f) || /not\s+accepted/i.test(f) || /not\s+allowed/i.test(f);
+  const allFeatures = toArray(listing.features).filter(f => !["ask agent", "n/a", "none"].includes(f.toLowerCase().trim()));
+  const features = allFeatures.filter(f => !isNegative(f));
+  const restrictions = allFeatures.filter(f => isNegative(f));
   const penalties = toArray(listing.penalty_reasons);
   const hits = toArray(listing.preference_hits);
+  const flags = toArray(listing.red_flags);
   const weeklyPrice = Math.round((listing.price_pcm * 12) / 52);
 
   const formatDeposit = (dep?: number) => {
@@ -203,19 +207,36 @@ export default function ListingDetailDrawer({ listing, onClose }: Props) {
                   £{weeklyPrice} pw
                 </span>
               </div>
-              <a
-                href={listing.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-bold text-surface transition-all hover:bg-accent-dim active:scale-95"
-              >
-                View Listing
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                  <polyline points="15 3 21 3 21 9" />
-                  <line x1="10" y1="14" x2="21" y2="3" />
-                </svg>
-              </a>
+              <div className="flex gap-2">
+                <a
+                  href={listing.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-bold text-surface transition-all hover:bg-accent-dim active:scale-95"
+                >
+                  {listing.openrent_url ? "Rightmove" : listing.url?.includes("openrent") ? "OpenRent" : listing.url?.includes("rightmove") ? "Rightmove" : "View Listing"}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                    <polyline points="15 3 21 3 21 9" />
+                    <line x1="10" y1="14" x2="21" y2="3" />
+                  </svg>
+                </a>
+                {listing.openrent_url && (
+                  <a
+                    href={listing.openrent_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white transition-all hover:bg-emerald-700 active:scale-95"
+                  >
+                    OpenRent
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                      <polyline points="15 3 21 3 21 9" />
+                      <line x1="10" y1="14" x2="21" y2="3" />
+                    </svg>
+                  </a>
+                )}
+              </div>
             </div>
 
             {/* Core Metrics Grid */}
@@ -284,7 +305,23 @@ export default function ListingDetailDrawer({ listing, onClose }: Props) {
                   </div>
                 )}
 
-                {hits.length === 0 && penalties.length === 0 && (
+                {flags.length > 0 && (
+                  <div className={(hits.length > 0 || penalties.length > 0) ? "pt-4 border-t border-border/50" : ""}>
+                    <h4 className="mb-2 text-[10px] font-bold uppercase tracking-widest text-red-400">Red Flags</h4>
+                    <ul className="space-y-2">
+                      {flags.map((flag, i) => (
+                        <li key={i} className="flex items-start gap-2 text-sm text-text">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="mt-0.5 text-red-400 shrink-0">
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+                          </svg>
+                          {flag}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {hits.length === 0 && penalties.length === 0 && flags.length === 0 && (
                   <p className="text-sm text-muted">No specific hits or penalties flagged for this property.</p>
                 )}
               </div>
@@ -299,6 +336,24 @@ export default function ListingDetailDrawer({ listing, onClose }: Props) {
                     <li key={i} className="flex items-start gap-2 text-sm text-text">
                       <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent/50" />
                       <span className="leading-snug">{feat}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Restrictions */}
+            {restrictions.length > 0 && (
+              <div className="mb-8">
+                <h3 className="mb-4 text-xs font-bold uppercase tracking-widest text-muted">Restrictions</h3>
+                <ul className="grid grid-cols-1 gap-y-2 gap-x-4 sm:grid-cols-2">
+                  {restrictions.map((r, i) => (
+                    <li key={i} className="flex items-start gap-2 text-sm text-amber-400/80">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="mt-0.5 shrink-0">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                      <span className="leading-snug">{r}</span>
                     </li>
                   ))}
                 </ul>

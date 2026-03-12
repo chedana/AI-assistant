@@ -33,9 +33,15 @@ from core.settings import (
     W_DEPOSIT,
     W_FRESHNESS,
 )
+from skills.search.red_flags import detect_red_flags
 from skills.search.text_utils import _norm_furnish_value, _safe_text, _to_float, parse_jsonish_items
 from skills.search.location_match import _normalize_location_keyword
 from skills.search.hard_filter import _parse_available_from_date
+
+try:
+    from skills.search.bool_signals import resolve_bool_signal as _resolve_bool_signal
+except ImportError:
+    _resolve_bool_signal = None  # type: ignore[assignment]
 
 
 # ---------------------------------------------------------------------------
@@ -59,12 +65,17 @@ def compute_stagec_weights(signals: Dict[str, Any]) -> Dict[str, float]:
         # Default: No specific intents. Balance weights across metadata signals.
         base = {"transit": 0.00, "school": 0.00, "preference": 0.30}
         penalty = 0.20
+    # Add bool_match weight when boolean preferences are active
+    bool_prefs = signals.get("hard_constraints", {}).get("bool_preferences") or {}
+    bool_match_w = 0.12 if bool_prefs else 0.0
+
     return {
         **base,
         "penalty": penalty,
         "deposit": float(W_DEPOSIT),
         "freshness": float(W_FRESHNESS),
         "budget_headroom": float(W_BUDGET_HEADROOM),
+        "bool_match": bool_match_w,
     }
 
 
@@ -397,7 +408,9 @@ def rank_stage_c(
     out["school_hits"] = ""
     out["preference_hits"] = ""
     out["preference_source"] = ""
+    out["bool_match_score"] = 0.0
     out["penalty_reasons"] = ""
+    out["red_flags"] = ""
     out["transit_detail"] = ""
     out["school_detail"] = ""
     out["preference_detail"] = ""
@@ -463,6 +476,22 @@ def rank_stage_c(
         budget_headroom_score, budget_headroom_detail = _score_budget_headroom(
             r.get("price_pcm"), hard.get("max_rent_pcm")
         )
+
+        # Boolean match scoring
+        bool_prefs = hard.get("bool_preferences") or {}
+        bool_match_score = 0.0
+        bool_hit_labels: List[str] = []
+        if bool_prefs and _resolve_bool_signal is not None:
+            match_count = 0
+            total = len(bool_prefs)
+            for signal_name, wanted in bool_prefs.items():
+                resolved = _resolve_bool_signal(signal_name, r)
+                if resolved == wanted:
+                    match_count += 1
+                    label = signal_name.replace("_", " ")
+                    bool_hit_labels.append(label)
+            bool_match_score = match_count / total if total > 0 else 0.0
+
         loc_hits = sum(1 for loc in location_terms if loc and loc in loc_text)
 
         penalties = []
@@ -545,12 +574,15 @@ def rank_stage_c(
         out.at[idx, "deposit_score"] = float(deposit_score)
         out.at[idx, "freshness_score"] = float(freshness_score)
         out.at[idx, "penalty_score"] = float(penalty_score)
+        out.at[idx, "bool_match_score"] = float(bool_match_score)
         out.at[idx, "location_hit_count"] = int(loc_hits)
         out.at[idx, "transit_hits"] = ", ".join(transit_hits)
         out.at[idx, "school_hits"] = ", ".join(school_hits)
-        out.at[idx, "preference_hits"] = ", ".join(pref_hits)
+        all_pref_hits = list(pref_hits) + bool_hit_labels
+        out.at[idx, "preference_hits"] = ", ".join(all_pref_hits)
         out.at[idx, "preference_source"] = pref_source
         out.at[idx, "penalty_reasons"] = ", ".join(penalties)
+        out.at[idx, "red_flags"] = "; ".join(detect_red_flags(r))
         out.at[idx, "transit_detail"] = (
             f"group_score={transit_score:.4f}; "
             f"hits=[{', '.join(transit_hits)}]; "
@@ -586,6 +618,7 @@ def rank_stage_c(
         + weights["deposit"] * out["deposit_score"]
         + weights["freshness"] * out["freshness_score"]
         + weights["budget_headroom"] * out["budget_headroom_score"]
+        + weights["bool_match"] * out["bool_match_score"]
         - weights["penalty"] * out["penalty_score"]
     )
     out["score_formula"] = (
@@ -594,7 +627,8 @@ def rank_stage_c(
         f"{weights['preference']:.3f}*preference + "
         f"{weights['deposit']:.3f}*deposit + "
         f"{weights['freshness']:.3f}*freshness + "
-        f"{weights['budget_headroom']:.3f}*budget_headroom - "
+        f"{weights['budget_headroom']:.3f}*budget_headroom + "
+        f"{weights['bool_match']:.3f}*bool_match - "
         f"{weights['penalty']:.3f}*penalty"
     )
     out["w_transit"] = weights["transit"]
@@ -604,6 +638,7 @@ def rank_stage_c(
     out["w_deposit"] = weights["deposit"]
     out["w_freshness"] = weights["freshness"]
     out["w_budget_headroom"] = weights["budget_headroom"]
+    out["w_bool_match"] = weights["bool_match"]
 
     out = out.sort_values(
         ["final_score", "location_hit_count", "qdrant_score"],

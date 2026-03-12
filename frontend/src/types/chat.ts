@@ -37,6 +37,9 @@ export type ListingData = {
   final_score?: number;
   penalty_reasons?: string[];
   preference_hits?: string[];
+  red_flags?: string[];
+  source_site?: string;
+  openrent_url?: string;
 };
 
 export type SearchResultsMeta = {

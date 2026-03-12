@@ -182,6 +182,9 @@ def build_metadata(state: AgentState) -> dict | None:
             "final_score": _num(r.get("final_score")),
             "penalty_reasons": [p for p in _to_list(r.get("penalty_reasons")) if not p.startswith("unknown_hard(")],
             "preference_hits": _to_list(r.get("preference_hits")),
+            "red_flags": _to_list(r.get("red_flags")),
+            "source_site": str(r.get("source_site") or r.get("source") or ""),
+            "openrent_url": str(r.get("openrent_url") or ""),
         }
 
     def _map_listing_light(r: dict) -> dict:
@@ -285,6 +288,7 @@ def build_metadata(state: AgentState) -> dict | None:
             "final_score": _num(r.get("final_score")),
             "penalty_reasons": [p for p in _to_list(r.get("penalty_reasons")) if not p.startswith("unknown_hard(")],
             "preference_hits": _to_list(r.get("preference_hits")),
+            "red_flags": _to_list(r.get("red_flags")),
             "lat": _num(r.get("latitude"), None),
             "lon": _num(r.get("longitude"), None),
         }

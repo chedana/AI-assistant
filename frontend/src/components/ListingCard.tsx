@@ -86,6 +86,7 @@ export default function ListingCard({ listing, isSaved, compact, displayScore, o
 
   const penalties = toArray(listing.penalty_reasons);
   const hits = toArray(listing.preference_hits);
+  const flags = toArray(listing.red_flags);
   
   // F-P1: De-duplicate title and address
   const showAddress = listing.address && listing.address.toLowerCase() !== listing.title.toLowerCase();
@@ -95,8 +96,13 @@ export default function ListingCard({ listing, isSaved, compact, displayScore, o
 
   // New Data Points
   const weeklyPrice = Math.round((listing.price_pcm * 12) / 52);
-  const propertyFeatures = toArray(listing.features).slice(0, 3);
+  const isNegative = (f: string) => /^no\s+/i.test(f) || /not\s+accepted/i.test(f) || /not\s+allowed/i.test(f);
+  const propertyFeatures = toArray(listing.features).filter(f => !isNegative(f)).slice(0, 3);
   
+  // Source site badge
+  const sourceSite = listing.source_site || (listing.url?.includes("openrent") ? "openrent" : listing.url?.includes("rightmove") ? "rightmove" : "");
+  const sourceLabel = sourceSite.includes("openrent") && sourceSite.includes("rightmove") ? "Both" : sourceSite.includes("openrent") ? "OpenRent" : sourceSite.includes("rightmove") ? "Rightmove" : "";
+
   // Format description: collapse broken <PARA> tags into spaces, otherwise use space.
   // For the card summary, we don't need newlines at all, just a clean string.
   const cleanDescription = listing.description
@@ -121,6 +127,10 @@ export default function ListingCard({ listing, isSaved, compact, displayScore, o
               <span className="font-bold text-accent">£{listing.price_pcm.toLocaleString()}</span>
               <span>·</span>
               <span>{listing.bedrooms} bed</span>
+              {sourceLabel && <>
+                <span>·</span>
+                <span className="font-bold text-muted/70">{sourceLabel}</span>
+              </>}
             </div>
           </div>
           <button
@@ -174,7 +184,16 @@ export default function ListingCard({ listing, isSaved, compact, displayScore, o
             <a href={listing.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="line-clamp-2 text-base font-bold tracking-tight text-text hover:text-accent">
               {listing.title}
             </a>
-            {showAddress && <p className="mt-1 truncate text-xs font-medium text-muted">{listing.address}</p>}
+            <div className="mt-1 flex items-center gap-2">
+              {showAddress && <p className="truncate text-xs font-medium text-muted">{listing.address}</p>}
+              {sourceLabel && <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
+                sourceSite.includes("openrent") && sourceSite.includes("rightmove")
+                  ? "bg-purple-500/15 text-purple-400"
+                  : sourceSite.includes("openrent")
+                  ? "bg-emerald-500/15 text-emerald-400"
+                  : "bg-blue-500/15 text-blue-400"
+              }`}>{sourceLabel}</span>}
+            </div>
           </div>
           <button
             onClick={handleSaveToggle}
@@ -232,9 +251,15 @@ export default function ListingCard({ listing, isSaved, compact, displayScore, o
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
               {hit}
             </span>
-          )) : penalties.length === 0 && (
+          )) : penalties.length === 0 && flags.length === 0 && (
             <span className="text-[10px] font-bold uppercase tracking-widest text-muted/40">No issues flagged</span>
           )}
+          {flags.map((flag, i) => (
+            <span key={i} className="inline-flex items-center gap-1 rounded-lg bg-red-900/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-400">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+              {flag}
+            </span>
+          ))}
           {penalties.map((pen, i) => (
             <span key={i} className="inline-flex items-center gap-1 rounded-lg bg-amber-900/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-400">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
