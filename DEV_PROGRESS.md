@@ -857,8 +857,8 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5173
 | `dd11af6` | 2026-03-11 | feat | OpenRent crawler with rate limiting + user agent rotation (6,539 listings scraped) |
 | `c006cc0` | 2026-03-11 | data | Add OpenRent and Rightmove datasets to git (32,730 listings) |
 | `18447c9` | 2026-03-11 | docs | Add session handoff for OpenRent re-crawl task |
-| TBD | 2026-03-11 | data | Re-crawl OpenRent: 6,586 listings → merge → sync 31,718 points to Qdrant Cloud |
-| TBD | 2026-03-11 | fix | Python 3.9 compatibility fix for london_regions.py (typing imports) |
+| `2d3211b` | 2026-03-11 | data | Re-crawl OpenRent: 4-stage workflow complete (URLs → scrape → merge → Qdrant sync) — 31,718 points in Qdrant Cloud |
+| `2d3211b` | 2026-03-11 | fix | Python 3.9 compatibility fix for london_regions.py (typing imports) |
 
 ---
 
