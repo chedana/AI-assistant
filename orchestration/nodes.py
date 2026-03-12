@@ -637,20 +637,43 @@ def qa_plan_node(state: GraphState) -> GraphState:
     return state
 
 
+def _try_extract_commute_destination_via_llm(user_in: str) -> Optional[str]:
+    """Use LLM to detect if the user is asking about commute/travel time and extract the destination."""
+    from core.llm_client import qwen_chat
+    try:
+        raw = qwen_chat(
+            [
+                {"role": "system", "content": (
+                    "You detect commute/travel questions about rental listings. "
+                    "If the user is asking about travel time, commute, or how to get to a specific place, "
+                    "return ONLY the destination name (e.g. \"Oxford Circus\", \"Canary Wharf\", \"10 Downing Street\"). "
+                    "If the user is NOT asking about commute/travel, return exactly \"NONE\".\n"
+                    "Examples:\n"
+                    "- \"how long to get to Oxford Circus\" → Oxford Circus\n"
+                    "- \"what's the commute like to my office in Shoreditch\" → Shoreditch\n"
+                    "- \"can I get to Bank easily from here\" → Bank\n"
+                    "- \"how far is this from Kings Cross\" → Kings Cross\n"
+                    "- \"is this place well connected to Canary Wharf\" → Canary Wharf\n"
+                    "- \"does this have a garden\" → NONE\n"
+                    "- \"what's the rent\" → NONE\n"
+                )},
+                {"role": "user", "content": user_in},
+            ],
+            temperature=0.0,
+        ).strip()
+    except Exception:
+        return None
+
+    if not raw or raw.upper() == "NONE":
+        return None
+    # Clean up any quotes or punctuation the LLM might add
+    dest = raw.strip().strip('"\'').rstrip(".,;?!")
+    return dest if dest and len(dest) > 1 else None
+
+
 def _try_answer_commute_question(user_in: str, agent_state) -> Optional[str]:
-    """Detect commute questions like 'how long to get to X' and answer with TfL data."""
-    import re as _re
-    patterns = [
-        r"how (?:long|far|much time).*(?:to get to|to reach|to commute to|to travel to|to go to|from here to)\s+(.+?)(?:\s*[?.!]|\s*$)",
-        r"(?:commute|travel|journey|trip)\s+(?:time\s+)?(?:to|from here to)\s+(.+?)(?:\s*[?.!]|\s*$)",
-        r"how (?:long|far).*(?:from (?:this|here|the flat|the listing|the property) to)\s+(.+?)(?:\s*[?.!]|\s*$)",
-    ]
-    dest_name = None
-    for pat in patterns:
-        m = _re.search(pat, user_in, _re.IGNORECASE)
-        if m:
-            dest_name = m.group(1).strip().rstrip(".,;?!")
-            break
+    """Use LLM to detect commute questions, then answer with real TfL journey data."""
+    dest_name = _try_extract_commute_destination_via_llm(user_in)
     if not dest_name:
         return None
 
