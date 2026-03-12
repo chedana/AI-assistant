@@ -159,6 +159,15 @@ All tunable parameters are env vars (see `run.sh` for defaults, `core/settings.p
 
 ---
 
+## Design Principles
+
+- **LLM-first for user input understanding.** Whenever a user query needs to be interpreted, classified, or have information extracted from it, use the LLM — not regex. Regex is brittle and can only match patterns you anticipate. The LLM understands intent, handles misspellings, slang, and novel phrasing. Regex may be used only as a last-resort fallback if the LLM call fails, never as the primary path.
+- **Rule-based for data processing.** Hard filters, normalization, geocoding lookups, score computation — these operate on structured data, not user language. Rules are appropriate here.
+
+**Rule of thumb:** If it touches raw user text → LLM. If it transforms structured data → rules.
+
+---
+
 ## Git Conventions
 
 - Do **not** add `Co-Authored-By` trailers to commit messages.
