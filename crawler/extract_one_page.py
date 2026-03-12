@@ -220,7 +220,8 @@ class ListingRecord:
 
     latitude:         Optional[float] = None
     longitude:        Optional[float] = None
-    image_url:        Optional[str] = None
+    image_url:        Optional[str]   = None
+    image_urls:       Optional[list]  = None   # full gallery (up to 10)
 
     # JSON strings (Qdrant payload must be str)
     stations:         Optional[str] = None   # json.dumps([{"name": ..., "miles": ...}])
@@ -852,12 +853,52 @@ def extract_lat_lon(html: str) -> Tuple[Optional[float], Optional[float]]:
     return lat, lon
 
 
-def extract_image_url(soup: BeautifulSoup) -> Optional[str]:
-    """Extract og:image meta tag — Rightmove's property cover photo."""
+_PAGE_MODEL_RE = re.compile(r"window\.PAGE_MODEL\s*=\s*(\{.+?\})\s*;?\s*\n", re.DOTALL)
+_MAX_IMAGES = 10
+
+
+def extract_image_urls(html: str, soup: BeautifulSoup) -> tuple[Optional[str], Optional[list]]:
+    """
+    Extract cover photo and full gallery from a Rightmove listing page.
+    Returns (image_url, image_urls_list).
+    - image_url: og:image cover photo
+    - image_urls: up to 10 gallery images from window.PAGE_MODEL (size656x437)
+    """
+    # Cover photo from og:image
+    image_url = None
     tag = soup.find("meta", property="og:image")
     if tag and tag.get("content"):
-        return tag["content"]
-    return None
+        image_url = tag["content"]
+
+    # Full gallery from window.PAGE_MODEL
+    image_urls = None
+    pm = _PAGE_MODEL_RE.search(html)
+    if pm:
+        try:
+            data = json.loads(pm.group(1))
+            images = data.get("propertyData", {}).get("images", [])
+            urls = []
+            for img in images[:_MAX_IMAGES]:
+                resized = img.get("resizedImageUrls") or {}
+                url = (
+                    resized.get("size656x437")
+                    or resized.get("size476x317")
+                    or img.get("url", "")
+                )
+                if url:
+                    urls.append(url)
+            if urls:
+                image_urls = urls
+                if not image_url:
+                    image_url = urls[0]
+        except Exception:
+            pass
+
+    # Fallback: use og:image as single-item gallery
+    if not image_urls and image_url:
+        image_urls = [image_url]
+
+    return image_url, image_urls
 
 
 def _listing_id(url: str) -> str:
@@ -950,7 +991,7 @@ def build_record_from_html(
 
     rec.latitude  = lat
     rec.longitude = lon
-    rec.image_url = extract_image_url(soup)
+    rec.image_url, rec.image_urls = extract_image_urls(html, soup)
 
     return rec
 
