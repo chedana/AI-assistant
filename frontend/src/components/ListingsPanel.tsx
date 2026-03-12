@@ -79,17 +79,10 @@ export default function ListingsPanel({
   const endRange = Math.min(startRange + (results?.listings.length ?? 0) - 1, totalResults);
   const totalPages = Math.ceil(totalResults / pageSize);
 
-  // Normalize final_score to 70–100%, then deduct 8% per penalty_reason.
+  // Use backend-computed match_pct (requirement satisfaction), fallback to 100.
   const normalizedScores = useMemo(() => {
     if (!results?.listings.length) return [];
-    const scores = results.listings.map(l => l.final_score ?? 0);
-    const maxScore = Math.max(...scores);
-    if (maxScore === 0) return results.listings.map(() => 70); // Fallback to base
-    return results.listings.map((l, i) => {
-      const base = 70 + (scores[i] / maxScore) * 30;
-      const penaltyCount = Array.isArray(l.penalty_reasons) ? l.penalty_reasons.length : 0;
-      return Math.max(50, Math.round(base - penaltyCount * 8));
-    });
+    return results.listings.map(l => l.match_pct ?? 100);
   }, [results?.listings]);
 
   // Filter quick replies to only show search-relevant ones in the listings panel

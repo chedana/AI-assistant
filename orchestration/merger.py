@@ -17,6 +17,8 @@ SNAPSHOT_FIELDS: Tuple[str, ...] = (
     "min_tenancy_months",
     "min_size_sqm",
     "geo_bound",
+    "bool_preferences",
+    "commute_destination",
 )
 
 
@@ -31,6 +33,8 @@ def empty_snapshot() -> QuerySnapshot:
         min_tenancy_months=None,
         min_size_sqm=None,
         geo_bound=None,
+        bool_preferences={},
+        commute_destination=None,
         k=None,
         results=[],
     )
@@ -52,6 +56,8 @@ def snapshot_from_constraints(
     snap.min_tenancy_months = c.get("min_tenancy_months")
     snap.min_size_sqm = c.get("min_size_sqm")
     snap.geo_bound = deepcopy(c.get("geo_bound")) if c.get("geo_bound") else None
+    snap.bool_preferences = dict(c.get("bool_preferences") or {})
+    snap.commute_destination = deepcopy(c.get("commute_destination")) if c.get("commute_destination") else None
     # k is a display setting (page size), not a search constraint.
     # Carry it through so a cache-hit restore doesn't silently reset page size.
     raw_k = c.get("k")
@@ -71,7 +77,10 @@ def snapshot_to_constraints(snapshot: QuerySnapshot) -> Dict[str, Any]:
         "min_tenancy_months": snapshot.min_tenancy_months,
         "min_size_sqm": snapshot.min_size_sqm,
         "geo_bound": snapshot.geo_bound,
+        "bool_preferences": dict(snapshot.bool_preferences or {}),
     }
+    if snapshot.commute_destination is not None:
+        out["commute_destination"] = snapshot.commute_destination
     if snapshot.k is not None:
         out["k"] = snapshot.k
     return out
@@ -82,6 +91,8 @@ def _is_effective_set_value(field: str, value: Any) -> bool:
         return False
     if field in {"location_keywords", "layout_options"}:
         return isinstance(value, list) and len(value) > 0
+    if field == "bool_preferences":
+        return isinstance(value, dict) and len(value) > 0
     return True
 
 
@@ -110,6 +121,10 @@ def derive_snapshot(
             setattr(base, field, _normalize_layout_options(value))
         elif field == "location_keywords":
             setattr(base, field, list(value))
+        elif field == "bool_preferences":
+            merged = dict(getattr(base, field, None) or {})
+            merged.update(value)
+            setattr(base, field, merged)
         else:
             setattr(base, field, value)
 
@@ -117,6 +132,8 @@ def derive_snapshot(
     for field in clear_set:
         if field in {"location_keywords", "layout_options"}:
             setattr(base, field, [])
+        elif field == "bool_preferences":
+            setattr(base, field, {})
         else:
             setattr(base, field, None)
 

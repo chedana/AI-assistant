@@ -212,12 +212,15 @@ def _extract_images(soup: BeautifulSoup, listing_id_num: str) -> tuple[Optional[
             for u in urls:
                 add(u)
 
-    # Remove thumbnail variants, prefer full-size
-    def prefer_full(urls: list[str]) -> list[str]:
-        full = [u for u in urls if "_homepage" not in u and "_thumb" not in u]
-        return full if full else urls
+    # Remove thumbnail variants and non-property images, prefer full-size
+    def clean_images(urls: list[str]) -> list[str]:
+        filtered = [u for u in urls
+                     if "_homepage" not in u
+                     and "_thumb" not in u
+                     and "staticMapPhoto" not in u]
+        return filtered if filtered else urls
 
-    images = prefer_full(images)[:10]  # cap at 10
+    images = clean_images(images)[:10]  # cap at 10
     cover = images[0] if images else None
     return cover, images
 

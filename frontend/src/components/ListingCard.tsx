@@ -96,7 +96,12 @@ export default function ListingCard({ listing, isSaved, compact, displayScore, o
 
   // New Data Points
   const weeklyPrice = Math.round((listing.price_pcm * 12) / 52);
-  const isNegative = (f: string) => /^no\s+/i.test(f) || /not\s+accepted/i.test(f) || /not\s+allowed/i.test(f);
+  const isNegative = (f: string) => {
+    const lower = f.toLowerCase().trim();
+    if (/^no\s+(agent|admin|application|reference)\s+fee/i.test(lower)) return false;
+    if (/^no\s+deposit/i.test(lower)) return false;
+    return /^no\s+/i.test(f) || /not\s+accepted/i.test(f) || /not\s+allowed/i.test(f);
+  };
   const propertyFeatures = toArray(listing.features).filter(f => !isNegative(f)).slice(0, 3);
   
   // Source site badge
@@ -224,6 +229,14 @@ export default function ListingCard({ listing, isSaved, compact, displayScore, o
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-muted"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
             {isAvailableUncertain ? 'Date not provided' : `Available ${listing.available_from}`}
           </div>
+          {listing.commute_time_minutes != null && (
+            <div className={`flex items-center gap-1.5 text-xs font-bold ${
+              listing.commute_time_minutes <= 30 ? 'text-emerald-400' : listing.commute_time_minutes <= 45 ? 'text-amber-400' : 'text-red-400'
+            }`}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="opacity-70"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              {listing.commute_time_minutes} min
+            </div>
+          )}
         </div>
 
         {/* Summary Area - Only renders if data exists */}

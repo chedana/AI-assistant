@@ -155,9 +155,17 @@ def merge_constraints(old: Optional[dict], new: dict) -> dict:
         "min_size_sqft",
         "k",
         "geo_bound",
+        "commute_destination",
     ]:
         if new.get(key) is not None:
             out[key] = new.get(key)
+
+    # bool_preferences: merge dicts (new keys override old)
+    new_bools = new.get("bool_preferences")
+    if isinstance(new_bools, dict) and new_bools:
+        merged_bools = dict(out.get("bool_preferences") or {})
+        merged_bools.update(new_bools)
+        out["bool_preferences"] = merged_bools
 
     def merge_list(a, b):
         a = a or []

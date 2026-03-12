@@ -72,6 +72,10 @@ const FIELD_CONFIG: Record<string, FieldConfig> = {
     },
     clearFields: ["min_tenancy_months"],
   },
+  commute_destination: {
+    label: (v) => (typeof v === 'string' && v ? `Commute: ${v}` : null),
+    clearFields: ["commute_destination"],
+  },
 };
 
 export default function ConstraintTags({ constraints, onRemove, inline }: Props) {

@@ -16,6 +16,8 @@ class QuerySnapshot:
     min_tenancy_months: Optional[float] = None
     min_size_sqm: Optional[float] = None
     geo_bound: Optional[Dict[str, Any]] = None
+    bool_preferences: Dict[str, bool] = field(default_factory=dict)
+    commute_destination: Optional[Dict[str, Any]] = None
 
     # Display setting — not a search constraint; excluded from hash.
     k: Optional[int] = None
@@ -51,6 +53,8 @@ class QuerySnapshot:
             "min_tenancy_months": self._norm_num(self.min_tenancy_months),
             "min_size_sqm": self._norm_num(self.min_size_sqm),
             "geo_bound": self.geo_bound,
+            "bool_preferences": dict(sorted((self.bool_preferences or {}).items())),
+            "commute_destination": self.commute_destination,
         }
 
     def get_hash(self) -> str:

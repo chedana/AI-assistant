@@ -344,6 +344,18 @@ def search_node(state: GraphState) -> GraphState:
         is_reset = plan.is_reset
         plan_source = plan.source
 
+    # Infer boolean preferences from user text (regex) and merge into set_fields
+    # so they flow through the snapshot → constraints → pipeline path.
+    try:
+        from skills.search.constraint_extraction import _infer_bool_preferences_from_query
+        inferred_bools = _infer_bool_preferences_from_query(str(state.get("user_input") or ""))
+        if inferred_bools:
+            existing_bools = dict(set_fields.get("bool_preferences") or {})
+            existing_bools.update(inferred_bools)
+            set_fields["bool_preferences"] = existing_bools
+    except Exception:
+        pass
+
     # If a new budget is being set (or full reset), clear stored original_budget.
     if "max_rent_pcm" in set_fields or is_reset:
         agent_state.original_budget = None
@@ -625,10 +637,76 @@ def qa_plan_node(state: GraphState) -> GraphState:
     return state
 
 
+def _try_answer_commute_question(user_in: str, agent_state) -> Optional[str]:
+    """Detect commute questions like 'how long to get to X' and answer with TfL data."""
+    import re as _re
+    patterns = [
+        r"how (?:long|far|much time).*(?:to get to|to reach|to commute to|to travel to|to go to|from here to)\s+(.+?)(?:\s*[?.!]|\s*$)",
+        r"(?:commute|travel|journey|trip)\s+(?:time\s+)?(?:to|from here to)\s+(.+?)(?:\s*[?.!]|\s*$)",
+        r"how (?:long|far).*(?:from (?:this|here|the flat|the listing|the property) to)\s+(.+?)(?:\s*[?.!]|\s*$)",
+    ]
+    dest_name = None
+    for pat in patterns:
+        m = _re.search(pat, user_in, _re.IGNORECASE)
+        if m:
+            dest_name = m.group(1).strip().rstrip(".,;?!")
+            break
+    if not dest_name:
+        return None
+
+    # Get the focused listing's lat/lon
+    focus = agent_state.current_focus_listing_payload
+    if not focus:
+        results = agent_state.last_results or []
+        if results:
+            focus = results[0]
+    if not focus:
+        return None
+    from_lat = focus.get("latitude") or focus.get("lat")
+    from_lon = focus.get("longitude") or focus.get("lon")
+    if from_lat is None or from_lon is None:
+        return None
+
+    # Geocode the destination
+    from skills.search.constraint_extraction import _geocode_commute_destination
+    geocoded = _geocode_commute_destination(dest_name)
+    if not geocoded:
+        return f"I couldn't find \"{dest_name}\" on the map. Could you be more specific?"
+
+    # Call TfL Journey API
+    from backend.api_server import _fetch_commute_time
+    result = _fetch_commute_time(float(from_lat), float(from_lon), float(geocoded["lat"]), float(geocoded["lon"]))
+
+    listing_title = focus.get("title", "this listing")
+
+    # Also set commute_destination on constraints for future searches
+    if agent_state.constraints is None:
+        agent_state.constraints = {}
+    agent_state.constraints["commute_destination"] = geocoded
+
+    if result:
+        return (
+            f"From **{listing_title}** to **{geocoded['name']}**: **{result['summary']}**.\n\n"
+            f"I've noted your commute destination — future results will show commute times to {geocoded['name']}."
+        )
+    else:
+        return (
+            f"I couldn't get journey data from TfL for the route from {listing_title} to {geocoded['name']}. "
+            "The TfL API may be temporarily unavailable."
+        )
+
+
 def qa_execute_node(state: GraphState) -> GraphState:
     agent_state = state["agent_state"]
     runtime = state["runtime"]
     user_in = str(state.get("user_input") or "")
+
+    # Intercept commute questions — answer with real TfL data
+    commute_answer = _try_answer_commute_question(user_in, agent_state)
+    if commute_answer:
+        state["reply_text"] = commute_answer
+        return state
+
     qa_ctx = {
         "question_text": user_in,
         "extraction_input": str(state.get("qa_extraction_input") or user_in),

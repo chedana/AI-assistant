@@ -20,6 +20,8 @@ STRUCTURED_FIELDS = [
     "min_size_sqm",
     "location_keywords",
     "k",
+    "bool_preferences",
+    "commute_destination",
 ]
 
 

@@ -60,7 +60,13 @@ export default function ListingDetailDrawer({ listing, onClose }: Props) {
     setCurrentImageIndex((prev) => (prev + 1) % images.length);
   };
 
-  const isNegative = (f: string) => /^no\s+/i.test(f) || /not\s+accepted/i.test(f) || /not\s+allowed/i.test(f);
+  const isNegative = (f: string) => {
+    const lower = f.toLowerCase().trim();
+    // "No agent fees", "No admin fees", "No deposit" are renter-positive, not restrictions
+    if (/^no\s+(agent|admin|application|reference)\s+fee/i.test(lower)) return false;
+    if (/^no\s+deposit/i.test(lower)) return false;
+    return /^no\s+/i.test(f) || /not\s+accepted/i.test(f) || /not\s+allowed/i.test(f);
+  };
   const allFeatures = toArray(listing.features).filter(f => !["ask agent", "n/a", "none"].includes(f.toLowerCase().trim()));
   const features = allFeatures.filter(f => !isNegative(f));
   const restrictions = allFeatures.filter(f => isNegative(f));
@@ -208,34 +214,37 @@ export default function ListingDetailDrawer({ listing, onClose }: Props) {
                 </span>
               </div>
               <div className="flex gap-2">
-                <a
-                  href={listing.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-bold text-surface transition-all hover:bg-accent-dim active:scale-95"
-                >
-                  {listing.openrent_url ? "Rightmove" : listing.url?.includes("openrent") ? "OpenRent" : listing.url?.includes("rightmove") ? "Rightmove" : "View Listing"}
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                    <polyline points="15 3 21 3 21 9" />
-                    <line x1="10" y1="14" x2="21" y2="3" />
-                  </svg>
-                </a>
-                {listing.openrent_url && (
-                  <a
-                    href={listing.openrent_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white transition-all hover:bg-emerald-700 active:scale-95"
-                  >
-                    OpenRent
+                {(() => {
+                  const isMerged = listing.source_site?.includes("+") || (listing.openrent_url && listing.openrent_url.length > 0);
+                  const isOpenrent = listing.source_site === "openrent" || (!isMerged && listing.url?.includes("openrent"));
+                  const linkIcon = (
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
                       <polyline points="15 3 21 3 21 9" />
                       <line x1="10" y1="14" x2="21" y2="3" />
                     </svg>
-                  </a>
-                )}
+                  );
+                  if (isMerged) {
+                    return (
+                      <>
+                        <a href={listing.url} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-bold text-surface transition-all hover:bg-accent-dim active:scale-95">
+                          Rightmove {linkIcon}
+                        </a>
+                        <a href={listing.openrent_url} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white transition-all hover:bg-emerald-700 active:scale-95">
+                          OpenRent {linkIcon}
+                        </a>
+                      </>
+                    );
+                  }
+                  return (
+                    <a href={listing.url} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-bold text-surface transition-all hover:bg-accent-dim active:scale-95">
+                      {isOpenrent ? "OpenRent" : "Rightmove"} {linkIcon}
+                    </a>
+                  );
+                })()}
               </div>
             </div>
 
@@ -265,6 +274,16 @@ export default function ListingDetailDrawer({ listing, onClose }: Props) {
                 <span className="text-[10px] font-bold uppercase tracking-widest text-muted">Available From</span>
                 <span className="mt-1 text-sm font-semibold text-text">{listing.available_from || "Ask agent"}</span>
               </div>
+              {listing.commute_time_minutes != null && (
+                <div>
+                  <dt className="text-[10px] font-bold uppercase tracking-wider text-muted">Commute</dt>
+                  <dd className={`mt-1 text-sm font-bold ${
+                    listing.commute_time_minutes <= 30 ? 'text-emerald-400' : listing.commute_time_minutes <= 45 ? 'text-amber-400' : 'text-red-400'
+                  }`}>
+                    {listing.commute_summary || `${listing.commute_time_minutes} min`}
+                  </dd>
+                </div>
+              )}
             </div>
 
             {/* AI Match Analysis */}

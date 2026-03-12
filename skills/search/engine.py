@@ -69,7 +69,13 @@ def load_qdrant_client() -> QdrantClient:
         client = QdrantClient(path=QDRANT_LOCAL_PATH)
         log_message("INFO", f"boot qdrant mode=local path={QDRANT_LOCAL_PATH}")
 
-    if not client.collection_exists(QDRANT_COLLECTION):
+    try:
+        exists = client.collection_exists(QDRANT_COLLECTION)
+    except Exception:
+        # Read-only API keys may lack permission for the HEAD endpoint;
+        # fall back to get_collection which uses GET.
+        exists = True
+    if not exists:
         raise FileNotFoundError(
             f"Missing Qdrant collection: {QDRANT_COLLECTION}"
         )

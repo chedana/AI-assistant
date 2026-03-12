@@ -390,6 +390,29 @@ def rank_stage_c(
     transit_terms = signals.get("topic_preferences", {}).get("transit_terms", [])
     school_terms = signals.get("topic_preferences", {}).get("school_terms", [])
     pref_terms = signals.get("general_semantic", [])
+    # Remove terms already handled by boolean signal scoring to avoid
+    # false-positive semantic hits (e.g. "garden" matching unrelated descriptions).
+    _bool_pref_keys = set((hard.get("bool_preferences") or {}).keys())
+    if _bool_pref_keys:
+        import re as _re
+        _bool_term_patterns = {
+            "pets_allowed": _re.compile(r"\bpets?\b|pet.?friendly", _re.IGNORECASE),
+            "garden": _re.compile(r"\bgarden\b", _re.IGNORECASE),
+            "parking": _re.compile(r"\bparking\b|\bgarage\b|\bdriveway\b", _re.IGNORECASE),
+            "bills_included": _re.compile(r"\bbills?\b", _re.IGNORECASE),
+            "student_friendly": _re.compile(r"\bstudent", _re.IGNORECASE),
+            "families_allowed": _re.compile(r"\bfamil", _re.IGNORECASE),
+            "smokers_allowed": _re.compile(r"\bsmok", _re.IGNORECASE),
+            "dss_accepted": _re.compile(r"\bdss\b|\bhousing.benefit\b|\buniversal.credit\b", _re.IGNORECASE),
+        }
+        def _is_bool_handled(term: str) -> bool:
+            t = term.lower().strip()
+            for bk in _bool_pref_keys:
+                pat = _bool_term_patterns.get(bk)
+                if pat and pat.search(t):
+                    return True
+            return False
+        pref_terms = [t for t in pref_terms if not _is_bool_handled(t)]
     location_terms = []
     for x in signals.get("location_intent", []):
         t = _normalize_location_keyword(x)
@@ -409,6 +432,7 @@ def rank_stage_c(
     out["preference_hits"] = ""
     out["preference_source"] = ""
     out["bool_match_score"] = 0.0
+    out["match_pct"] = 100
     out["penalty_reasons"] = ""
     out["red_flags"] = ""
     out["transit_detail"] = ""
@@ -567,6 +591,53 @@ def rank_stage_c(
         if pref_terms and not pref_text:
             penalty_score += 0.08
             penalties.append("missing_text(+0.08)")
+
+        # --- Match percentage: requirement-satisfaction only ---
+        # Listings already passed hard filters (budget, beds, baths, location)
+        # so those are always 100%.  Only soft requirements can reduce match_pct.
+        # Each requirement category gets a weight; unmet ones deduct proportionally.
+        _match_checks: List[Tuple[float, bool]] = []  # (weight, is_met)
+
+        # Boolean preferences — high impact, split equally among active prefs
+        if bool_prefs:
+            _bool_weight_total = 25.0  # total weight for all boolean prefs combined
+            _per_bool = _bool_weight_total / len(bool_prefs)
+            for signal_name, wanted in bool_prefs.items():
+                resolved = _resolve_bool_signal(signal_name, r) if _resolve_bool_signal else None
+                # True match → met.  None (unknown) → half credit.  Wrong → not met.
+                if resolved == wanted:
+                    _match_checks.append((_per_bool, True))
+                elif resolved is None:
+                    _match_checks.append((_per_bool * 0.5, True))  # half credit for unknown
+                    _match_checks.append((_per_bool * 0.5, False))
+                else:
+                    _match_checks.append((_per_bool, False))
+
+        # Transit proximity — medium-high impact
+        if transit_terms:
+            _match_checks.append((15.0, transit_score > 0.1))
+
+        # School proximity — medium-high impact
+        if school_terms:
+            _match_checks.append((15.0, school_score > 0.1))
+
+        # Semantic preferences are NOT included in match_pct.
+        # They influence ranking via final_score, but match_pct reflects only
+        # concrete, measurable requirements (bool prefs, furnishing, transit, school).
+
+        # Furnishing match — low-medium impact
+        if furnish_req:
+            furn_val = _norm_furnish_value(r.get("furnish_type"))
+            _match_checks.append((8.0, bool(furn_val and furn_val != "ask agent" and furn_val == furnish_req)))
+
+        # Compute match_pct
+        if _match_checks:
+            _total_w = sum(w for w, _ in _match_checks)
+            _met_w = sum(w for w, met in _match_checks if met)
+            _match_pct = round(100.0 * _met_w / _total_w) if _total_w > 0 else 100
+        else:
+            _match_pct = 100  # no soft requirements → perfect match
+        out.at[idx, "match_pct"] = int(max(50, min(100, _match_pct)))
 
         out.at[idx, "transit_score"] = float(transit_score)
         out.at[idx, "school_score"] = float(school_score)

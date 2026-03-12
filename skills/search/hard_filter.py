@@ -9,6 +9,11 @@ import pandas as pd
 from skills.search.text_utils import _norm_furnish_value, _safe_text, _to_float
 from skills.search.signals import candidate_snapshot
 
+try:
+    from skills.search.bool_signals import resolve_bool_signal
+except ImportError:
+    resolve_bool_signal = None  # type: ignore[assignment]
+
 
 # ---------------------------------------------------------------------------
 # Date helpers
@@ -234,6 +239,14 @@ def apply_hard_filters_with_audit(df: pd.DataFrame, c: Dict[str, Any]) -> Tuple[
             }
             if actual_sqm is not None and actual_sqm < float(size_req):
                 reasons.append(f"size_sqm {actual_sqm:g} < {float(size_req):g}")
+
+        # Boolean signal hard filtering
+        if resolve_bool_signal is not None:
+            bool_prefs = c.get("bool_preferences") or {}
+            for signal_name, wanted in bool_prefs.items():
+                resolved = resolve_bool_signal(signal_name, r)
+                if resolved is not None and resolved != wanted:
+                    reasons.append(f"bool_{signal_name}={resolved} != wanted={wanted}")
 
         hard_pass = len(reasons) == 0
         if hard_pass:

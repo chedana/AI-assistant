@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import json as _json_mod
 import os
 import re
+import time as _time
+import urllib.request as _urllib_request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 from typing import AsyncGenerator, Dict, List, Literal, Optional, Union
 
@@ -113,6 +117,16 @@ def _features_list(val: object) -> list[str]:
     return []
 
 
+def _safe_str(val: object) -> str:
+    """Convert to string, treating None/NaN/nan as empty."""
+    if val is None:
+        return ""
+    s = str(val)
+    if s in ("nan", "None", "NaN"):
+        return ""
+    return s
+
+
 def _to_list(val: object) -> list[str]:
     """Normalise a field that may be str, list, or None into list[str]."""
     if isinstance(val, list):
@@ -157,15 +171,144 @@ def _parse_deposit(val: object) -> float | int | None:
     return None
 
 
+def _is_real_image(url: str) -> bool:
+    """Filter out placeholder/logo images — only keep real property photos."""
+    if not url:
+        return False
+    low = url.lower()
+    # OpenRent logo served from staticcdn, or static map images
+    if "staticcdn.openrent" in low:
+        return False
+    if "staticmapphoto" in low:
+        return False
+    # Generic placeholder patterns
+    if "logo" in low or "placeholder" in low or "noimage" in low:
+        return False
+    return True
+
+
+# --- Commute time enrichment via TfL Journey API ---
+_COMMUTE_CACHE: Dict[tuple, tuple] = {}  # key -> (result_dict, timestamp)
+_COMMUTE_CACHE_TTL = 3600  # 1 hour
+_COMMUTE_CACHE_MAX = 2000
+
+
+def _commute_cache_key(from_lat, from_lon, to_lat, to_lon):
+    return (round(from_lat, 3), round(from_lon, 3), round(to_lat, 3), round(to_lon, 3))
+
+
+def _fetch_commute_time(from_lat: float, from_lon: float, to_lat: float, to_lon: float) -> Optional[dict]:
+    """Fetch commute time from TfL Journey API. Returns {minutes, summary} or None."""
+    key = _commute_cache_key(from_lat, from_lon, to_lat, to_lon)
+
+    # Check cache
+    cached = _COMMUTE_CACHE.get(key)
+    if cached:
+        result, ts = cached
+        if _time.time() - ts < _COMMUTE_CACHE_TTL:
+            return result
+        else:
+            del _COMMUTE_CACHE[key]
+
+    try:
+        url = (
+            f"https://api.tfl.gov.uk/Journey/JourneyResults/"
+            f"{from_lat},{from_lon}/to/{to_lat},{to_lon}"
+            f"?time=0900&timeIs=Departing"
+        )
+        req = _urllib_request.Request(url, headers={"User-Agent": "RentSearch/1.0"})
+        with _urllib_request.urlopen(req, timeout=4) as resp:
+            data = _json_mod.loads(resp.read().decode())
+
+        journeys = data.get("journeys") or []
+        if not journeys:
+            return None
+
+        # Pick the fastest journey
+        best = min(journeys, key=lambda j: j.get("duration", 9999))
+        duration = best.get("duration")
+        if duration is None:
+            return None
+
+        # Build summary from legs (e.g. "25 min via Victoria line")
+        legs = best.get("legs") or []
+        tube_legs = [l for l in legs if l.get("mode", {}).get("name") in ("tube", "elizabeth-line", "dlr", "overground-train")]
+        if tube_legs:
+            line_name = tube_legs[0].get("routeOptions", [{}])[0].get("name", "")
+            if line_name:
+                summary = f"{duration} min via {line_name}"
+            else:
+                mode_name = tube_legs[0].get("mode", {}).get("name", "transit")
+                summary = f"{duration} min via {mode_name}"
+        else:
+            # Bus or walking only
+            modes = list(set(l.get("mode", {}).get("name", "") for l in legs if l.get("mode", {}).get("name") != "walking"))
+            if modes:
+                summary = f"{duration} min via {modes[0]}"
+            else:
+                summary = f"{duration} min (walking)"
+
+        result = {"minutes": int(duration), "summary": summary}
+
+        # Store in cache (with LRU eviction)
+        if len(_COMMUTE_CACHE) >= _COMMUTE_CACHE_MAX:
+            # Remove oldest entry
+            oldest_key = min(_COMMUTE_CACHE, key=lambda k: _COMMUTE_CACHE[k][1])
+            del _COMMUTE_CACHE[oldest_key]
+        _COMMUTE_CACHE[key] = (result, _time.time())
+
+        return result
+    except Exception:
+        return None
+
+
+def _enrich_commute_times(listings: list, dest: dict) -> None:
+    """Add commute_time_minutes and commute_summary to each listing dict."""
+    dest_lat = dest.get("lat")
+    dest_lon = dest.get("lon")
+    if dest_lat is None or dest_lon is None:
+        return
+
+    def _fetch_for_listing(listing):
+        lat = listing.get("lat")
+        lon = listing.get("lon")
+        if lat is None or lon is None:
+            return listing, None
+        return listing, _fetch_commute_time(float(lat), float(lon), float(dest_lat), float(dest_lon))
+
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {executor.submit(_fetch_for_listing, l): l for l in listings}
+        for future in as_completed(futures, timeout=8):
+            try:
+                listing, result = future.result(timeout=5)
+                if result:
+                    listing["commute_time_minutes"] = result["minutes"]
+                    listing["commute_summary"] = result["summary"]
+                else:
+                    listing["commute_time_minutes"] = None
+                    listing["commute_summary"] = None
+            except Exception:
+                listing = futures[future]
+                listing["commute_time_minutes"] = None
+                listing["commute_summary"] = None
+
+
 def build_metadata(state: AgentState) -> dict | None:
     """Extract structured metadata from agent state for the frontend."""
     meta: dict = {}
 
     def _map_listing(r: dict) -> dict:
+        raw_cover = str(r.get("image_url", ""))
+        cover = raw_cover if _is_real_image(raw_cover) else ""
+        raw_gallery = _json_list(r.get("image_urls"))
+        gallery = [u for u in raw_gallery if _is_real_image(u)]
+        # If cover was filtered out but gallery has real images, use first as cover
+        if not cover and gallery:
+            cover = gallery[0]
         return {
             "title": str(r.get("title", "")),
             "url": str(r.get("url", "")),
-            "image_url": str(r.get("image_url", "")),
+            "image_url": cover,
             "address": str(r.get("address", "")),
             "price_pcm": _num(r.get("price_pcm")),
             "bedrooms": _num(r.get("bedrooms")),
@@ -177,14 +320,17 @@ def build_metadata(state: AgentState) -> dict | None:
             "furnish_type": str(r.get("furnish_type", "")),
             "lat": _num(r.get("latitude"), None),
             "lon": _num(r.get("longitude"), None),
-            "image_urls": _json_list(r.get("image_urls")),
+            "image_urls": gallery,
             "deposit": _num(r.get("deposit")),
             "final_score": _num(r.get("final_score")),
             "penalty_reasons": [p for p in _to_list(r.get("penalty_reasons")) if not p.startswith("unknown_hard(")],
             "preference_hits": _to_list(r.get("preference_hits")),
             "red_flags": _to_list(r.get("red_flags")),
-            "source_site": str(r.get("source_site") or r.get("source") or ""),
-            "openrent_url": str(r.get("openrent_url") or ""),
+            "match_pct": int(_num(r.get("match_pct"), 100)),
+            "source_site": _safe_str(r.get("source_site") or r.get("source")),
+            "openrent_url": _safe_str(r.get("openrent_url")),
+            "commute_time_minutes": r.get("commute_time_minutes"),
+            "commute_summary": r.get("commute_summary"),
         }
 
     def _map_listing_light(r: dict) -> dict:
@@ -204,6 +350,24 @@ def build_metadata(state: AgentState) -> dict | None:
     # Search results
     if state.last_results:
         listings = [_map_listing(r) for r in state.last_results]
+        # Enrich with commute times if destination is set
+        commute_dest = (state.constraints or {}).get("commute_destination")
+        if isinstance(commute_dest, dict) and commute_dest.get("lat"):
+            _enrich_commute_times(listings, commute_dest)
+            # Adjust match_pct based on commute time
+            for l in listings:
+                ct = l.get("commute_time_minutes")
+                if ct is not None:
+                    if ct <= 30:
+                        pass  # full match
+                    elif ct <= 45:
+                        l["match_pct"] = max(50, (l.get("match_pct") or 100) - 7)
+                    else:
+                        l["match_pct"] = max(50, (l.get("match_pct") or 100) - 15)
+                else:
+                    l["match_pct"] = max(50, (l.get("match_pct") or 100) - 5)
+        # Re-sort: match_pct descending first, then final_score descending as tiebreaker
+        listings.sort(key=lambda l: (-(l.get("match_pct") or 0), -(l.get("final_score") or 0)))
         all_listings = [_map_listing_light(r) for r in state.search_full_results] if state.search_full_results else listings
         total = len(state.search_full_results)
         k = int((state.constraints or {}).get("k") or 5)
@@ -237,6 +401,10 @@ def build_metadata(state: AgentState) -> dict | None:
                     display["bedrooms"] = sorted(beds)
             elif key in ("furnish_type", "let_type", "available_from", "min_tenancy_months"):
                 display[key] = val
+            elif key == "bool_preferences" and isinstance(val, dict) and val:
+                display["preferences"] = [k.replace("_", " ") for k, v in val.items() if v]
+            elif key == "commute_destination" and isinstance(val, dict) and val.get("name"):
+                display["commute_destination"] = val["name"]
         if display:
             meta["constraints"] = display
 

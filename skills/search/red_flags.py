@@ -50,18 +50,7 @@ _FLAGS: Dict[str, Dict[str, Any]] = {
         "bool_field": "pets_allowed",
         "bool_negative": False,
     },
-    "Admin fees": {
-        "positive": [],
-        "negative": [
-            r"\badmin(?:istration)?\s+fee",
-            r"\breference\s+fee",
-            r"\bcheck[- ]?in\s+fee",
-            r"\bnon[- ]?refundable\s+(?:fee|charge|deposit|payment)",
-        ],
-        "bool_field": None,
-        "bool_negative": None,
-    },
-    "No deposit protection": {
+"No deposit protection": {
         "positive": [
             r"deposit\s+(?:protected|registered|held)\s+(?:with|by|in)\s+(?:tds|dps|mydeposits|tenancy\s+deposit\s+scheme)",
         ],

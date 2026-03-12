@@ -8,6 +8,10 @@ from typing import Any, Dict, List, Optional
 from core.llm_client import qwen_chat
 from orchestration.merger import SNAPSHOT_FIELDS
 from skills.common.parse_signals import parse_signals
+from skills.search.constraint_extraction import (
+    _geocode_commute_destination,
+    _infer_commute_destination_from_query,
+)
 from skills.search.extractors import (
     _extract_json_obj,
     _normalize_constraint_extract,
@@ -54,9 +58,11 @@ def _try_build_plan_via_llm(
     system_prompt = (
         "Rental-search constraint extractor. Return STRICT JSON only, no markdown.\n"
         "Omit null values, empty arrays [], empty objects {}, and false booleans. Only include fields the user actually mentioned.\n"
-        "set_fields keys (only these 8): location_keywords(string[]), max_rent_pcm(number), available_from(string), "
+        "set_fields keys: location_keywords(string[]), max_rent_pcm(number), available_from(string), "
         "furnish_type(string), let_type(string), layout_options([{bedrooms,bathrooms,property_type,layout_tag,max_rent_pcm}]), "
-        "min_tenancy_months(number), min_size_sqm(number).\n"
+        "min_tenancy_months(number), min_size_sqm(number), commute_destination(string|null).\n"
+        "commute_destination: a place the user commutes or works at. Only set when user explicitly mentions working, commuting, or travelling to a specific place. "
+        "Extract the place name only (e.g. \"Oxford Circus\", \"Canary Wharf\", \"London Bridge\"). Do NOT set this for general location preferences.\n"
         "clear_fields: list field names ONLY when user explicitly says remove/clear/no-preference (e.g. \"no budget limit\"). Default is SET, not CLEAR.\n"
         "is_reset: true only for explicit reset/start-over intent.\n"
         "semantic_terms: {transit_terms[], school_terms[], general_semantic_phrases[]} — soft reranking phrases only, no hard constraints.\n"
@@ -69,6 +75,8 @@ def _try_build_plan_via_llm(
         'A: {"is_reset":true}\n'
         "Q: 'furnished flat near good schools in Brixton'\n"
         'A: {"set_fields":{"location_keywords":["Brixton"],"furnish_type":"furnished"},"semantic_terms":{"school_terms":["good schools"]}}\n'
+        "Q: '2 bed in islington, I work at Oxford Circus, under 2000'\n"
+        'A: {"set_fields":{"location_keywords":["islington"],"max_rent_pcm":2000,"layout_options":[{"bedrooms":2}],"commute_destination":"Oxford Circus"}}\n'
     )
     user_payload = "User input:\n" + str(user_text or "")
     try:
@@ -109,6 +117,32 @@ def _try_build_plan_via_llm(
     )
 
 
+def _enrich_commute_destination(plan: RefinementPlan, user_text: str) -> None:
+    """Geocode commute_destination from LLM extraction or regex fallback."""
+    cd = plan.set_fields.get("commute_destination")
+
+    # LLM extracted a string → geocode it
+    if isinstance(cd, str) and cd.strip():
+        geocoded = _geocode_commute_destination(cd.strip())
+        if geocoded:
+            plan.set_fields["commute_destination"] = geocoded
+        else:
+            plan.set_fields.pop("commute_destination", None)
+        return
+
+    # Already a geocoded dict → keep it
+    if isinstance(cd, dict) and cd.get("lat"):
+        return
+
+    # Regex fallback if LLM missed it
+    dest_name = _infer_commute_destination_from_query(user_text)
+    if not dest_name:
+        return
+    geocoded = _geocode_commute_destination(dest_name)
+    if geocoded:
+        plan.set_fields["commute_destination"] = geocoded
+
+
 def build_refinement_plan(
     *,
     user_text: str,
@@ -123,6 +157,7 @@ def build_refinement_plan(
         inferred_clear = _infer_clear_fields_from_text(user_text)
         if inferred_clear:
             llm_plan.clear_fields = list(dict.fromkeys(llm_plan.clear_fields + inferred_clear))
+        _enrich_commute_destination(llm_plan, user_text)
         return llm_plan
 
     parsed = parse_signals(
@@ -143,10 +178,12 @@ def build_refinement_plan(
     clear_fields.extend(_infer_clear_fields_from_text(user_text))
     clear_fields = list(dict.fromkeys([x for x in clear_fields if x in SNAPSHOT_FIELDS]))
 
-    return RefinementPlan(
+    plan = RefinementPlan(
         set_fields=set_fields,
         clear_fields=clear_fields,
         is_reset=is_reset,
         semantic_terms=parsed.get("semantic_terms") or {},
         source="parse_signals+rules",
     )
+    _enrich_commute_destination(plan, user_text)
+    return plan

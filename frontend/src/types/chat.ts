@@ -35,11 +35,14 @@ export type ListingData = {
   lat?: number | null;
   lon?: number | null;
   final_score?: number;
+  match_pct?: number;
   penalty_reasons?: string[];
   preference_hits?: string[];
   red_flags?: string[];
   source_site?: string;
   openrent_url?: string;
+  commute_time_minutes?: number | null;
+  commute_summary?: string | null;
 };
 
 export type SearchResultsMeta = {
