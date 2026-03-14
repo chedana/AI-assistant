@@ -869,6 +869,7 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5173
 | `2d3211b` | 2026-03-11 | fix | Python 3.9 compatibility fix for london_regions.py (typing imports) |
 | `b6ac8c5` | 2026-03-12 | feat | extract full image gallery from window.PAGE_MODEL in Rightmove scraper |
 | TBD | 2026-03-12 | data | backfill images for 28,945 listings; remove 2,599 dead (410) listings from Qdrant + local JSONL — 29,119 clean listings |
+| `56d62cb` | 2026-03-14 | fix | hide skeleton cards during pagination; port conflict docs; backfill OpenRent gallery images (5,516 listings) |
 
 ---
 
