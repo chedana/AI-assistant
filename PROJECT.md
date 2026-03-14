@@ -15,7 +15,7 @@
 |-------|--------|-------|
 | Backend API | ✅ Running | FastAPI · `cd backend && uvicorn api_server:app --host 0.0.0.0 --port 8000` |
 | Qdrant Cloud | ✅ Connected | **29,119 listings** (23,592 Rightmove + 6,586 OpenRent, 1,343 merged), `rent_listings` collection |
-| Frontend | ✅ Running | Vite · `cd frontend && npm run dev -- --host 0.0.0.0 --port 5173` |
+| Frontend | ✅ Running | Vite · `cd frontend && node node_modules/.bin/vite --host 0.0.0.0 --port 5174` (NOT 5173 — see CLAUDE.md) |
 | Search pipeline | ✅ Working | LangGraph + 4-stage pipeline (retrieve → filter → rank → explain) |
 | SSE streaming | ✅ Working | delta / metadata / done events |
 | Session persistence | ✅ Working | localStorage `openclaw-sessions-v2` |
@@ -25,9 +25,10 @@
 ## Immediate Next Priority
 
 ```
-1. Re-crawl Rightmove with area names (B-B2)     → fix location miss rate
-2. Session rename (F-F4)                         → double-click to rename
-3. Viewing checklist UI (F-F5)                   → per-listing checklist panel
+1. Tenant rights RAG re-implementation (B-F7)    → Tier 1+2 lost, needs rebuild
+2. Quick/Deep toggle button (F-F8)               → backend ready, needs frontend UI
+3. Session rename (F-F4)                         → double-click to rename
+4. Re-crawl Rightmove with area names (B-B2)     → fix location miss rate
 ```
 
 ---
@@ -40,7 +41,7 @@
 | OpenRent London | 6,586 | Good | Full amenity fields: bills, pets, garden, EPC, tenant prefs |
 | Merged (both portals) | 1,343 | Good | Rightmove base + OpenRent enrichment; `source_site=rightmove+openrent` |
 | Qdrant Cloud total | **29,119** | Clean | All dead (410) listings removed; images backfilled |
-| Gallery images | ~29,119 | Partial | OpenRent: 100% in JSONL; Rightmove: backfilled to Qdrant only (re-run `backfill_images.py` after full sync) |
+| Gallery images | ~29,119 | Good | Rightmove: backfilled via `backfill_images.py`; OpenRent: backfilled via `backfill_openrent_images.py` (5,516 updated, 11 dead) |
 
 ---
 
@@ -55,6 +56,8 @@
 | F-B4 | ✅ Fixed | ListingCard compact mode + bookmark style polish | Smaller bookmark button in compact mode, accent fill when saved |
 | F-B5 | ✅ Fixed | Feature items show leading `- ` dash | `_clean()` in `_features_list()` strips `- `, `–`, `•` list markers |
 | F-B6 | ✅ Fixed | Parking/garage listings appear in search results | `apply_hard_filters_with_audit` now excludes non-residential property types |
+| F-B7 | ✅ Fixed | Skeleton placeholders flash during pagination | Added `!isSilentAction` guard to skeleton render in `ListingsPanel.tsx` |
+| F-B8 | ✅ Fixed | OpenRent listings show only 1 photo (logo) | Gallery images backfilled to Qdrant via `backfill_openrent_images.py` (5,516 listings) |
 
 ### Polish
 
@@ -78,6 +81,7 @@
 | F-F4 | Claude | 🔴 Open | **Session rename** | Double-click session title to rename |
 | F-F5 | Claude | 🔴 Open | **Viewing checklist** | Per-listing checklist panel (legal + physical checks) |
 | F-F6 | Claude | 🔴 Open | **Contract upload UI** | File upload → send to contract analysis endpoint |
+| F-F8 | Claude | 🔴 Open | **Quick/Deep toggle** | Session-level mode switch; backend already emits `thinking_mode` in metadata |
 
 ---
 
@@ -119,7 +123,7 @@
 | B-F5 | Claude | ✅ Done | **Commute time** | TfL Journey API: LLM extracts commute_destination, geocoded via stations.json (721 stations, fuzzy+abbrev) / TfL Place Search / OSM Nominatim; parallel TfL calls in build_metadata (cached 1hr); card shows color-coded time; QA interceptor for "how long to X"; match_pct redesigned as requirement-satisfaction score | 2 |
 | B-F5b | Claude | 🔴 Open | **Commute QA: merge LLM call into router** | `_try_extract_commute_destination_via_llm()` fires an extra OpenAI call on every QA question — wasteful since most QA is about pets/rent/bedrooms. Merge commute detection into the existing router prompt so it's one call, not two. | 1 |
 | B-F6 | Claude | 🔴 Open | **Contract analysis** | `POST /api/contract/analyse`, PDF → plain-English summary + clause flags | 5 |
-| B-F7 | Claude | 🔴 Open | **Tenant rights RAG** | Index GOV.UK + Shelter + Renters Reform Act | 6 |
+| B-F7 | Claude | 🔴 Open | **Tenant rights RAG** | Tier 1+2 built in prev session (curated files + Qdrant vector search) but commits lost during git reset; needs re-implementation | 6 |
 
 ---
 
@@ -181,8 +185,8 @@ event: error     data: {"message": "..."}        # on failure
 | Section | Status | Key features |
 |---------|--------|-------------|
 | 1 · Find | ✅ Working | Multi-portal search (Rightmove + OpenRent); conversational constraints; LangGraph orchestration |
-| 2 · Research | 🔴 Planned | Commute (TfL), crime (police.uk), avg rent, flood risk, EPC |
-| 3 · Contact | 🔴 Planned | Red flag detection, draft viewing email, holding deposit warnings |
+| 2 · Research | 🔄 Partial | Commute time (TfL) ✅; crime (police.uk), avg rent, flood risk, EPC 🔴 |
+| 3 · Contact | 🔄 Partial | Red flag detection ✅; draft viewing email 🔴, holding deposit warnings 🔴 |
 | 4 · View | 🔴 Planned | Legal checklist, inspection checklist, agent question generator |
 | 5 · Sign | 🔴 Planned | Contract PDF analysis, clause flagging, deposit protection explainer |
-| 6 · Rights | 🔴 Planned | RAG over UK tenant law: repairs, eviction, rent increases |
+| 6 · Rights | 🔴 Planned | Tier 1+2 RAG built in previous session but commits lost; needs re-implementation |
