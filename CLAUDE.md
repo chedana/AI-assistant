@@ -12,14 +12,26 @@ Multi-turn conversational rental search assistant. Users describe rental require
 
 ## Commands
 
-### Backend (2 terminals)
+### IMPORTANT: Port Conflicts
+
+Another user (`claudesubscription`) runs a **stale** copy of the frontend on port **5173** from `/Users/claudesubscription/Desktop/LLM_project/AI-assistant/frontend/`. That is **old code** — do NOT use it.
+
+Always start our frontend on **port 5174** to avoid conflicts:
+
 ```bash
-# Terminal 1: FastAPI backend (set OPENAI_API_KEY first)
-export OPENAI_API_KEY="sk-..."
+cd frontend && node node_modules/.bin/vite --host 0.0.0.0 --port 5174
+```
+
+Before starting any server, check existing processes with `lsof -i :<port>` and `ps aux | grep vite` to avoid connecting to stale instances.
+
+### Backend + Frontend
+```bash
+# Terminal 1: FastAPI backend
+# Must set LLM proxy + Qdrant Cloud env vars (see Configuration section)
 cd backend && uvicorn api_server:app --host 0.0.0.0 --port 8000
 
-# Terminal 2: Frontend dev server
-cd frontend && npm install && npm run dev -- --host 0.0.0.0 --port 5173
+# Terminal 2: Frontend dev server (port 5174, NOT 5173)
+cd frontend && node node_modules/.bin/vite --host 0.0.0.0 --port 5174
 ```
 
 ### Frontend build

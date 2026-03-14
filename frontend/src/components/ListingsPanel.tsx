@@ -188,7 +188,7 @@ export default function ListingsPanel({
                     />
                   ))}
 
-                  {isGenerating && (
+                  {isGenerating && !isSilentAction && (
                     <div className="space-y-4">
                       <ListingSkeleton />
                       <ListingSkeleton />
@@ -251,7 +251,7 @@ export default function ListingsPanel({
                 }}
               />
             )
-          ) : isGenerating ? (
+          ) : isGenerating && !isSilentAction ? (
             <div className="mx-auto max-w-4xl space-y-4 p-5 md:p-6">
               <ListingSkeleton />
               <ListingSkeleton />
