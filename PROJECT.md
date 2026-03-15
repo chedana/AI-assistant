@@ -26,8 +26,8 @@
 
 ```
 1. Quick/Deep toggle button (F-F8)               → backend ready, needs frontend UI
-2. Session rename (F-F4)                         → double-click to rename
-3. Re-crawl Rightmove with area names (B-B2)     → fix location miss rate
+2. Re-crawl Rightmove with area names (B-B2)     → fix location miss rate
+3. Commute LLM optimisation (B-F5b)              → merge into router (1 call not 2)
 ```
 
 ---
@@ -79,7 +79,7 @@
 | F-F2 | Claude | ✅ Done | **Listing detail drawer** | Slide-out with full info, Portal rendering, scroll lock, keyboard focus trap |
 | F-F7 | Claude | ✅ Done | **Image carousel** | Left/right arrows, dot indicators, 1/N counter. Features/description on card |
 | F-F3 | Claude | ✅ Done | **Mobile bottom nav** | Switch Chat ↔ Results on mobile |
-| F-F4 | Claude | 🔴 Open | **Session rename** | Double-click session title to rename |
+| F-F4 | Claude | ✅ Done | **Session rename** | Double-click session title to rename |
 | F-F5 | Claude | 🔴 Open | **Viewing checklist** | Per-listing checklist panel (legal + physical checks) |
 | F-F6 | Claude | 🔴 Open | **Contract upload UI** | File upload → send to contract analysis endpoint |
 | F-F8 | Claude | 🔴 Open | **Quick/Deep toggle** | Session-level mode switch; backend already emits `thinking_mode` in metadata |
