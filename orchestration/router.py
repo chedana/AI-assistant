@@ -20,7 +20,7 @@ class RouteDecision:
     page_action: Optional[str] = None
 
 
-_INTENTS = {"Search", "Specific_QA", "Compare", "AreaCompare", "Shortlist", "Chitchat", "Page_Nav", "AcceptSuggestion", "Explain"}
+_INTENTS = {"Search", "Specific_QA", "Compare", "AreaCompare", "Shortlist", "Chitchat", "Page_Nav", "AcceptSuggestion", "Explain", "TenantRights"}
 
 
 def _extract_first_json_obj(raw_text: str) -> Optional[Dict[str, Any]]:
@@ -61,10 +61,11 @@ def _classify_with_llm_no_listings(
     prompt = (
         "Rental assistant router. State: has_listings=false, has_focus=false.\n"
         "Return STRICT JSON. Omit null values, empty arrays, and false booleans.\n"
-        "Fields: intent(Search|Chitchat|Page_Nav|AreaCompare|Shortlist), confidence(0-1), reason(string), "
+        "Fields: intent(Search|Chitchat|Page_Nav|AreaCompare|Shortlist|TenantRights), confidence(0-1), reason(string), "
         "target_areas(string[]), shortlist_action(show|clear), page_action(next|prev), refinement_type(string).\n"
         "Policy: Without listings, QA/Compare/Explain→Search. Chitchat for greetings. "
         "AreaCompare for cross-area price comparison (set target_areas). "
+        "TenantRights for legal questions about landlord obligations, eviction, deposits, repairs, tenancy law. "
         "Shortlist: show/clear only (add/remove need listings). Page_Nav for paging.\n"
         "\n"
         'Q: \'How r you\' → {"intent":"Chitchat","confidence":0.92,"reason":"small_talk"}\n'
@@ -72,6 +73,9 @@ def _classify_with_llm_no_listings(
         'Q: \'show more\' → {"intent":"Page_Nav","confidence":0.95,"reason":"next_page","page_action":"next"}\n'
         'Q: \'Is Hackney cheaper than Peckham?\' → {"intent":"AreaCompare","target_areas":["Hackney","Peckham"],"confidence":0.95,"reason":"area_comparison"}\n'
         'Q: \'show my shortlist\' → {"intent":"Shortlist","shortlist_action":"show","confidence":0.97,"reason":"show_saved"}\n'
+        'Q: \'what are my rights if the landlord won\\\'t fix the boiler\' → {"intent":"TenantRights","confidence":0.96,"reason":"tenant_rights_repairs"}\n'
+        'Q: \'can my landlord evict me for having a pet\' → {"intent":"TenantRights","confidence":0.95,"reason":"tenant_rights_eviction"}\n'
+        'Q: \'is my deposit protected\' → {"intent":"TenantRights","confidence":0.97,"reason":"tenant_rights_deposit"}\n'
     )
     user_payload = f"Conversation summary:\n{history_hint or '(none)'}\n\nUser input:\n{text}"
     try:
@@ -181,7 +185,7 @@ def _classify_with_llm_for_listings(
         "Rental assistant router. State: has_listings=true, "
         f"has_focus={'true' if has_focus else 'false'}.\n"
         "Return STRICT JSON. Omit null values, empty arrays, and false booleans.\n"
-        "Fields: intent(Search|Specific_QA|Compare|AreaCompare|Shortlist|Chitchat|Page_Nav|AcceptSuggestion|Explain), "
+        "Fields: intent(Search|Specific_QA|Compare|AreaCompare|Shortlist|Chitchat|Page_Nav|AcceptSuggestion|Explain|TenantRights), "
         "confidence(0-1), reason(string), target_indices(int[]), target_areas(string[]), "
         "shortlist_action(add|remove|show|clear), refinement_type(string), page_action(next|prev), "
         "need_clarify(bool), clarify_question(string).\n"
@@ -190,6 +194,7 @@ def _classify_with_llm_for_listings(
         "AreaCompare=cross-area price comparison (set target_areas). "
         "Page_Nav=paging (page_action=next/prev). "
         "Shortlist: add/remove (target_indices=[N]), show, clear. "
+        "TenantRights=legal questions about landlord obligations, eviction, deposits, repairs, tenancy law. "
         "Chitchat=greetings/thanks. "
         "If has_focus=true, QA without index→Specific_QA. "
         "If ambiguous QA target and no focus, need_clarify=true. "
@@ -211,6 +216,9 @@ def _classify_with_llm_for_listings(
         'Q: \'Hackney vs Peckham?\' → {"intent":"AreaCompare","target_areas":["Hackney","Peckham"],"confidence":0.95,"reason":"area_compare"}\n'
         'Q: \'save listing 2\' → {"intent":"Shortlist","shortlist_action":"add","target_indices":[2],"confidence":0.97,"reason":"save"}\n'
         'Q: \'show my shortlist\' → {"intent":"Shortlist","shortlist_action":"show","confidence":0.97,"reason":"show_saved"}\n'
+        'Q: \'what are my rights if the landlord won\\\'t fix the boiler\' → {"intent":"TenantRights","confidence":0.96,"reason":"tenant_rights_repairs"}\n'
+        'Q: \'can my landlord evict me for having a pet\' → {"intent":"TenantRights","confidence":0.95,"reason":"tenant_rights_eviction"}\n'
+        'Q: \'is my deposit protected\' → {"intent":"TenantRights","confidence":0.97,"reason":"tenant_rights_deposit"}\n'
     )
     user_payload = f"Conversation summary:\n{history_hint or '(none)'}\n\nUser input:\n{text}"
     try:

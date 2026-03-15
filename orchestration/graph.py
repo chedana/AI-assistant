@@ -17,6 +17,7 @@ from orchestration.nodes import (
     qa_execute_node,
     qa_plan_node,
     paginate_node,
+    rights_node,
     route_branch,
     route_node,
     search_node,
@@ -56,6 +57,7 @@ def build_graph() -> Any:
     graph.add_node("area_compare", area_compare_node)
     graph.add_node("shortlist", shortlist_node)
     graph.add_node("explain", explain_node)
+    graph.add_node("rights", rights_node)
     graph.add_node("direct_reply", direct_reply_node)
     graph.add_node("fallback", fallback_node)
 
@@ -85,6 +87,7 @@ def build_graph() -> Any:
             "AreaCompare": "area_compare",
             "Shortlist": "shortlist",
             "Explain": "explain",
+            "TenantRights": "rights",
             "DirectReply": "direct_reply",
             "Page_Nav": "paginate",
             "Fallback": "fallback",
@@ -110,6 +113,7 @@ def build_graph() -> Any:
     graph.add_edge("area_compare", "finalize")
     graph.add_edge("shortlist", "finalize")
     graph.add_edge("explain", "finalize")
+    graph.add_edge("rights", "finalize")
     graph.add_edge("direct_reply", "finalize")
     graph.add_edge("fallback", "finalize")
 

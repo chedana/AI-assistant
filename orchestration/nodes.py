@@ -32,7 +32,7 @@ from skills.search.handler import format_listing_row
 
 from orchestration.state import GraphState
 
-IntentName = Literal["Search", "Specific_QA", "Compare", "AreaCompare", "Shortlist", "Chitchat", "DirectReply", "Page_Nav", "Fallback", "Explain"]
+IntentName = Literal["Search", "Specific_QA", "Compare", "AreaCompare", "Shortlist", "Chitchat", "DirectReply", "Page_Nav", "Fallback", "Explain", "TenantRights"]
 
 
 def _auto_focus_first(agent_state) -> None:
@@ -1522,6 +1522,17 @@ def finalize_node(state: GraphState) -> GraphState:
     return state
 
 
+def rights_node(state: GraphState) -> GraphState:
+    from skills.rights.handler import answer_rights_question
+    agent_state = state["agent_state"]
+    question = str(state.get("user_input") or "")
+    deep = (agent_state.thinking_mode == "deep") if hasattr(agent_state, 'thinking_mode') else False
+    history = list(agent_state.history or [])
+    reply = answer_rights_question(question, chat_history=history, deep=deep)
+    state["reply_text"] = reply
+    return state
+
+
 def route_branch(state: GraphState) -> IntentName:
     intent = str(state.get("intent") or "").strip()
     if intent == "Search":
@@ -1538,6 +1549,8 @@ def route_branch(state: GraphState) -> IntentName:
         return "AcceptSuggestion"
     if intent == "Explain":
         return "Explain"
+    if intent == "TenantRights":
+        return "TenantRights"
     if intent == "DirectReply":
         return "DirectReply"
     if intent == "Page_Nav":

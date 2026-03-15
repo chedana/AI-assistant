@@ -87,6 +87,7 @@ class AgentState:
     # Structure: {"areas": List[str]}
     shortlist: List[Dict[str, Any]] = field(default_factory=list)  # user-saved listings
     last_compare_source: Optional[str] = None  # "shortlist" | "results" — set by compare_node
+    thinking_mode: str = "quick"  # "quick" | "deep" — controls rights handler model selection
 
 
 class GraphState(TypedDict, total=False):
