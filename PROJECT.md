@@ -25,10 +25,9 @@
 ## Immediate Next Priority
 
 ```
-1. Tenant rights RAG re-implementation (B-F7)    → Tier 1+2 lost, needs rebuild
-2. Quick/Deep toggle button (F-F8)               → backend ready, needs frontend UI
-3. Session rename (F-F4)                         → double-click to rename
-4. Re-crawl Rightmove with area names (B-B2)     → fix location miss rate
+1. Quick/Deep toggle button (F-F8)               → backend ready, needs frontend UI
+2. Session rename (F-F4)                         → double-click to rename
+3. Re-crawl Rightmove with area names (B-B2)     → fix location miss rate
 ```
 
 ---
@@ -123,7 +122,7 @@
 | B-F5 | Claude | ✅ Done | **Commute time** | TfL Journey API: LLM extracts commute_destination, geocoded via stations.json (721 stations, fuzzy+abbrev) / TfL Place Search / OSM Nominatim; parallel TfL calls in build_metadata (cached 1hr); card shows color-coded time; QA interceptor for "how long to X"; match_pct redesigned as requirement-satisfaction score | 2 |
 | B-F5b | Claude | 🔴 Open | **Commute QA: merge LLM call into router** | `_try_extract_commute_destination_via_llm()` fires an extra OpenAI call on every QA question — wasteful since most QA is about pets/rent/bedrooms. Merge commute detection into the existing router prompt so it's one call, not two. | 1 |
 | B-F6 | Claude | 🔴 Open | **Contract analysis** | `POST /api/contract/analyse`, PDF → plain-English summary + clause flags | 5 |
-| B-F7 | Claude | 🔴 Open | **Tenant rights RAG** | Tier 1+2 built in prev session (curated files + Qdrant vector search) but commits lost during git reset; needs re-implementation | 6 |
+| B-F7 | Claude | ✅ Done | **Tenant rights RAG** | Tier 1 (11 curated Markdown files + keyword/LLM topic router) + Tier 2 (Qdrant vector search, 147 chunks, fastembed + cross-encoder rerank); LangGraph `rights` node wired | 6 |
 
 ---
 
@@ -189,4 +188,4 @@ event: error     data: {"message": "..."}        # on failure
 | 3 · Contact | 🔄 Partial | Red flag detection ✅; draft viewing email 🔴, holding deposit warnings 🔴 |
 | 4 · View | 🔴 Planned | Legal checklist, inspection checklist, agent question generator |
 | 5 · Sign | 🔴 Planned | Contract PDF analysis, clause flagging, deposit protection explainer |
-| 6 · Rights | 🔴 Planned | Tier 1+2 RAG built in previous session but commits lost; needs re-implementation |
+| 6 · Rights | ✅ Working | Tier 1 (curated files + topic router) + Tier 2 (Qdrant vector search); LangGraph `TenantRights` intent wired |
