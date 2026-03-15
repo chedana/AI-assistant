@@ -871,6 +871,7 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5173
 | TBD | 2026-03-12 | data | backfill images for 28,945 listings; remove 2,599 dead (410) listings from Qdrant + local JSONL — 29,119 clean listings |
 | `56d62cb` | 2026-03-14 | fix | hide skeleton cards during pagination; port conflict docs; backfill OpenRent gallery images (5,516 listings) |
 | `af1bc23` | 2026-03-15 | feat | Rebuild tenant rights RAG (B-F7) — 11 curated reference files, topic router (keyword regex + LLM), Qdrant retriever (147 chunks, fastembed + cross-encoder rerank), handler with escalation detection, LangGraph `TenantRights` intent wired |
+| `e63ff89` | 2026-03-15 | docs | Mark B-F7 done in PROJECT.md; create skills/rights/DEV_PROGRESS.md |
 
 ---
 
@@ -880,9 +881,9 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5173
 |--------|-------|
 | Total commits (all branches) | ~140 |
 | Project start | 2026-02-17 |
-| Latest commit | 2026-03-01 (`f1597ae`, restructure) |
+| Latest commit | 2026-03-15 (`e63ff89`, openclaw) |
 | OpenClaw branch start | 2026-03-07 |
-| Days active | 18 |
+| Days active | 27 |
 
 - `9d35dc3` perf: parallel refinement plan + metadata-first → ~1.4s consistent time-to-cards (backend-2)
 - `ef42c1e` perf: shrink router prompt (2-turn history, 120-char truncation) + switch to gpt-4o-mini → stable 1.4–1.6s (backend-2)

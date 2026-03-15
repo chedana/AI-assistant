@@ -41,6 +41,8 @@
 | Merged (both portals) | 1,343 | Good | Rightmove base + OpenRent enrichment; `source_site=rightmove+openrent` |
 | Qdrant Cloud total | **29,119** | Clean | All dead (410) listings removed; images backfilled |
 | Gallery images | ~29,119 | Good | Rightmove: backfilled via `backfill_images.py`; OpenRent: backfilled via `backfill_openrent_images.py` (5,516 updated, 11 dead) |
+| Tenant rights (Qdrant) | 147 chunks | Good | `tenant_rights` collection; 384-dim COSINE; all-MiniLM-L6-v2; covers 9 topics |
+| Tenant rights (curated) | 11 files | Good | `skills/rights/references/` — deposits, eviction, repairs, rent, harassment, fees, pets, tenancy types, RRA 2025 |
 
 ---
 
