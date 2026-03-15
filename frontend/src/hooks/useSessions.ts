@@ -68,6 +68,12 @@ export function useSessions() {
     });
   }
 
+  function renameChat(sessionId: string, newTitle: string) {
+    setSessions((prev) =>
+      prev.map((s) => (s.id === sessionId ? { ...s, title: newTitle } : s))
+    );
+  }
+
   return {
     sessions,
     activeId,
@@ -76,6 +82,7 @@ export function useSessions() {
     updateSession,
     createChat,
     removeChat,
+    renameChat,
   };
 }
 

@@ -12,6 +12,7 @@ type Props = {
   onSelectSession: (id: string) => void;
   onCreateSession: () => void;
   onRemoveSession: (id: string) => void;
+  onRenameSession: (id: string, newTitle: string) => void;
   onRemoveConstraint: (fields: string[]) => void;
   onShortlistToggle: () => void;
   onMobileViewToggle: (view: "chat" | "results") => void;
@@ -27,12 +28,15 @@ export default function Header({
   onSelectSession,
   onCreateSession,
   onRemoveSession,
+  onRenameSession,
   onRemoveConstraint,
   onShortlistToggle,
   onMobileViewToggle,
 }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState("");
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -43,6 +47,22 @@ export default function Header({
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  function startEdit(session: ChatSession) {
+    setEditingId(session.id);
+    setEditingTitle(session.title);
+  }
+
+  function commitEdit() {
+    if (!editingId) return;
+    const original = sessions.find((s) => s.id === editingId)?.title ?? "";
+    onRenameSession(editingId, editingTitle.trim() || original);
+    setEditingId(null);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+  }
 
   const hasConstraints = constraints && Object.keys(constraints).length > 0;
 
@@ -113,22 +133,42 @@ export default function Header({
                       key={session.id}
                       className="group flex items-center gap-1"
                     >
-                      <button
-                        onClick={() => {
-                          onSelectSession(session.id);
-                          setMenuOpen(false);
-                        }}
-                        className={`flex flex-1 items-center gap-3 rounded-lg px-4 py-2 text-left text-sm transition-colors ${
-                          session.id === activeId
-                            ? "bg-surface text-text"
-                            : "text-muted hover:bg-surface/50 hover:text-text"
-                        }`}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 opacity-40">
-                          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                        </svg>
-                        <span className="truncate">{session.title}</span>
-                      </button>
+                      {editingId === session.id ? (
+                        <input
+                          autoFocus
+                          className="flex-1 bg-surface/50 rounded-lg px-4 py-2 text-sm text-text outline-none border border-accent"
+                          value={editingTitle}
+                          onChange={(e) => setEditingTitle(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") { e.preventDefault(); commitEdit(); }
+                            if (e.key === "Escape") cancelEdit();
+                          }}
+                          onBlur={commitEdit}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      ) : (
+                        <button
+                          onClick={() => {
+                            onSelectSession(session.id);
+                            setMenuOpen(false);
+                          }}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            startEdit(session);
+                          }}
+                          title="Double-click to rename"
+                          className={`flex flex-1 items-center gap-3 rounded-lg px-4 py-2 text-left text-sm transition-colors ${
+                            session.id === activeId
+                              ? "bg-surface text-text"
+                              : "text-muted hover:bg-surface/50 hover:text-text"
+                          }`}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 opacity-40">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                          </svg>
+                          <span className="truncate">{session.title}</span>
+                        </button>
+                      )}
                       <button
                         disabled={isGenerating}
                         onClick={() => onRemoveSession(session.id)}

@@ -16,6 +16,7 @@ export default function App() {
     updateSession,
     createChat,
     removeChat,
+    renameChat,
   } = useSessions();
 
   const {
@@ -117,6 +118,7 @@ export default function App() {
         onSelectSession={setActiveId}
         onCreateSession={createChat}
         onRemoveSession={(id) => removeChat(id, isGenerating)}
+        onRenameSession={renameChat}
         onRemoveConstraint={handleRemoveConstraint}
         onShortlistToggle={() => setShortlistOpen((o) => !o)}
         mobileView={mobileView}
