@@ -24,7 +24,7 @@ function toArray(val: string[] | string | undefined): string[] {
   return [];
 }
 
-function ImageCarousel({ images, title, price, weeklyPrice }: { images: string[]; title: string; price: number; weeklyPrice: number }) {
+function ImageCarousel({ images, title, price, weeklyPrice, priceVsArea }: { images: string[]; title: string; price: number; weeklyPrice: number; priceVsArea?: "below" | "average" | "above" | null }) {
   const [idx, setIdx] = useState(0);
   const prev = (e: React.MouseEvent) => { e.stopPropagation(); setIdx(i => (i - 1 + images.length) % images.length); };
   const next = (e: React.MouseEvent) => { e.stopPropagation(); setIdx(i => (i + 1) % images.length); };
@@ -62,7 +62,20 @@ function ImageCarousel({ images, title, price, weeklyPrice }: { images: string[]
             <span className="text-2xl font-black text-white">£{price.toLocaleString()}</span>
             <span className="text-xs font-medium text-white/60">pcm</span>
           </div>
-          <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider">£{weeklyPrice} pw</span>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider">£{weeklyPrice} pw</span>
+            {priceVsArea && (
+              <span className={`rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
+                priceVsArea === "below"
+                  ? "bg-emerald-500/25 text-emerald-300"
+                  : priceVsArea === "above"
+                  ? "bg-amber-500/25 text-amber-300"
+                  : "bg-white/10 text-white/50"
+              }`}>
+                {priceVsArea === "below" ? "Below avg" : priceVsArea === "above" ? "Above avg" : "Average"}
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -186,6 +199,7 @@ export default function ListingCard({ listing, isSaved, compact, displayScore, o
         title={listing.title}
         price={listing.price_pcm}
         weeklyPrice={weeklyPrice}
+        priceVsArea={listing.price_vs_area}
       />
 
       {/* Details Section */}

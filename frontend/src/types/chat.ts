@@ -47,6 +47,7 @@ export type ListingData = {
   commute_summary?: string | null;
   crime_level?: string | null;
   crime_total?: number | null;
+  price_vs_area?: "below" | "average" | "above" | null;
 };
 
 export type SearchResultsMeta = {
@@ -119,4 +120,5 @@ export type SessionMetadata = {
   compare_data?: CompareData;
   shortlist?: ShortlistMeta;
   thinking_mode?: "quick" | "deep";
+  area_rent_stats?: { median: number; p25: number; p75: number; count: number } | null;
 };
