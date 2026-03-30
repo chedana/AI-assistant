@@ -60,7 +60,7 @@ export default function ChatInput({ isGenerating, thinkingMode, onToggleMode, on
           type="button"
           title={thinkingMode === "quick" ? "Quick mode — click for Deep" : "Deep mode — click for Quick"}
           disabled={isGenerating}
-          onClick={onToggleMode}
+          onClick={() => { if (!isGenerating) onToggleMode(); }}
           className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-all active:scale-95 disabled:opacity-40 disabled:pointer-events-none ${
             thinkingMode === "deep"
               ? "bg-accent/15 text-accent shadow-[0_0_8px_rgba(16,185,129,0.3)]"
