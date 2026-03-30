@@ -18,6 +18,7 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
   const [isSilentAction, setIsSilentAction] = useState(false);
   const [metadata, setMetadata] = useState<SessionMetadata | null>(null);
   const [activeAssistantId, setActiveAssistantId] = useState<string | null>(null);
+  const [thinkingMode, setThinkingMode] = useState<"quick" | "deep">("quick");
   // metadataForId: the message ID where cards/compare are rendered inline (most recent).
   const [metadataForId, setMetadataForId] = useState<string | null>(null);
   // suppressedIds: ALL message IDs that produced structured UI — accumulated so old
@@ -34,6 +35,7 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
     setMetadataForId(null);
     setActiveAssistantId(null);
     setSuppressedIds(new Set());
+    setThinkingMode("quick");
     lastSearchSigRef.current = "";
     lastAckIdRef.current = null;
   }, [activeSession?.id]);
@@ -83,6 +85,7 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
     const mergedHint = { ...routeHint, thinking_mode: thinkingMode };
 
     try {
+      const mergedHint = { ...routeHint, thinking_mode: thinkingMode };
       await streamChat(activeSession.id, prompt, {
         signal: controller.signal,
         routeHint: mergedHint,
@@ -188,6 +191,7 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
     const silentMergedHint = { ...routeHint, thinking_mode: thinkingMode };
 
     try {
+      const mergedHint = { ...routeHint, thinking_mode: thinkingMode };
       await streamChat(activeSession.id, prompt, {
         signal: controller.signal,
         routeHint: silentMergedHint,

@@ -32,12 +32,39 @@ export default function ChatInput({ isGenerating, thinkingMode, onToggleMode, on
     onSend(text);
   }
 
+  const isDeep = thinkingMode === "deep";
+
   return (
     <div className="border-t border-border bg-panel-alt/50 p-4 backdrop-blur-sm md:p-6">
-      <form 
-        onSubmit={handleSubmit} 
+      <form
+        onSubmit={handleSubmit}
         className="relative mx-auto flex max-w-4xl items-end gap-3 rounded-2xl border border-border bg-panel p-2 shadow-lg transition-all focus-within:border-accent/50 focus-within:ring-1 focus-within:ring-accent/20"
       >
+        {/* Thinking mode toggle */}
+        <button
+          type="button"
+          onClick={onToggleMode}
+          disabled={isGenerating}
+          title={isDeep ? "Deep mode" : "Quick mode"}
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-all duration-200 ${
+            isGenerating
+              ? "cursor-not-allowed opacity-40"
+              : isDeep
+                ? "bg-accent/15 text-accent shadow-[0_0_8px_rgba(var(--color-accent-rgb,99,102,241),0.3)] hover:bg-accent/25"
+                : "text-muted hover:bg-surface hover:text-text"
+          }`}
+        >
+          {isDeep ? (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8L12 2z" />
+            </svg>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z" />
+            </svg>
+          )}
+        </button>
+
         <textarea
           ref={textareaRef}
           value={input}
