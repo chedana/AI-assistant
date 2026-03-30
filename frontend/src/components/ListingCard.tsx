@@ -1,10 +1,6 @@
 import { useState, useEffect } from "react";
 import type { ListingData } from "../types/chat";
-<<<<<<< HEAD
-import { hasChecklistProgress } from "../hooks/useViewingChecklist";
-=======
 import { getChecklistProgress } from "../hooks/useViewingChecklist";
->>>>>>> worktree-agent-adbf86d5
 import ViewingChecklist from "./ViewingChecklist";
 
 type Props = {
@@ -76,8 +72,6 @@ export default function ListingCard({ listing, isSaved, compact, displayScore, o
   const [showChecklist, setShowChecklist] = useState(false);
   const [checklistProgress, setChecklistProgress] = useState(() => getChecklistProgress(listing.url));
   const saved = optimisticSaved !== null ? optimisticSaved : (isSaved ?? false);
-  const [checklistOpen, setChecklistOpen] = useState(false);
-  const [hasProgress, setHasProgress] = useState(() => hasChecklistProgress(listing.url));
 
   // Once server state catches up, clear optimistic override
   useEffect(() => {
@@ -210,25 +204,7 @@ export default function ListingCard({ listing, isSaved, compact, displayScore, o
               }`}>{sourceLabel}</span>}
             </div>
           </div>
-<<<<<<< HEAD
           <div className="flex shrink-0 items-center gap-2">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setChecklistOpen(true);
-              }}
-              className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-surface text-muted shadow-sm transition-all duration-200 hover:border-accent hover:text-accent hover:bg-accent/5"
-              title="Viewing checklist"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
-                <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
-                <path d="M9 14l2 2 4-4" />
-              </svg>
-              {hasProgress && (
-                <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-accent shadow-sm shadow-accent/40" />
-=======
-          <div className="flex items-center gap-2">
             <button
               onClick={(e) => { e.stopPropagation(); setShowChecklist(true); }}
               className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border bg-surface text-muted shadow-sm transition-all duration-200 hover:border-accent hover:text-accent hover:bg-accent/5"
@@ -242,16 +218,11 @@ export default function ListingCard({ listing, isSaved, compact, displayScore, o
                 <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[8px] font-bold text-white">
                   {checklistProgress}
                 </span>
->>>>>>> worktree-agent-adbf86d5
               )}
             </button>
             <button
               onClick={handleSaveToggle}
-<<<<<<< HEAD
-              className={`flex h-10 w-10 items-center justify-center rounded-xl border transition-all duration-200 shadow-sm ${
-=======
               className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-all duration-200 shadow-sm ${
->>>>>>> worktree-agent-adbf86d5
                 saved
                   ? "border-accent bg-accent text-white shadow-accent/20"
                   : "border-border bg-surface text-muted hover:border-accent hover:text-accent hover:bg-accent/5"
@@ -332,21 +303,12 @@ export default function ListingCard({ listing, isSaved, compact, displayScore, o
         </div>
       </div>
 
-<<<<<<< HEAD
-      {checklistOpen && (
-        <ViewingChecklist
-          listingUrl={listing.url}
-          onClose={() => {
-            setChecklistOpen(false);
-            setHasProgress(hasChecklistProgress(listing.url));
-=======
       {showChecklist && (
         <ViewingChecklist
           listingUrl={listing.url}
           onClose={() => {
             setShowChecklist(false);
             setChecklistProgress(getChecklistProgress(listing.url));
->>>>>>> worktree-agent-adbf86d5
           }}
         />
       )}

@@ -166,11 +166,7 @@ export default function App() {
           <ChatInput
             isGenerating={isGenerating}
             thinkingMode={thinkingMode}
-<<<<<<< HEAD
             onToggleMode={() => setThinkingMode(thinkingMode === "quick" ? "deep" : "quick")}
-=======
-            onToggleMode={() => setThinkingMode(m => m === "quick" ? "deep" : "quick")}
->>>>>>> worktree-agent-a589d718
             onSend={(text) => void sendMessage(text)}
             onStop={stopGenerating}
           />
