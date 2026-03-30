@@ -88,3 +88,6 @@ PREF_VECTOR_PATH = os.environ.get(
 )
 PREF_VECTOR_FEATURE_WEIGHT = float(os.environ.get("RENT_PREF_VECTOR_FEATURE_WEIGHT", "0.80"))
 PREF_VECTOR_DESCRIPTION_WEIGHT = float(os.environ.get("RENT_PREF_VECTOR_DESCRIPTION_WEIGHT", "0.60"))
+
+# EPC (Energy Performance Certificate) API
+EPC_API_TOKEN = os.environ.get("EPC_API_TOKEN", "")

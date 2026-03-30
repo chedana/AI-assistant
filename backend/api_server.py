@@ -337,6 +337,28 @@ def _enrich_commute_times(listings: list, dest: dict) -> None:
                 listing["commute_summary"] = None
 
 
+_UK_POSTCODE_RE = re.compile(r"[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}", re.IGNORECASE)
+
+
+def _enrich_epc_ratings(listings: list) -> None:
+    """Add epc_rating and epc_potential to each listing dict via EPC API."""
+    for listing in listings:
+        address = listing.get("address") or listing.get("title") or ""
+        m = _UK_POSTCODE_RE.search(address)
+        if not m:
+            listing["epc_rating"] = None
+            listing["epc_potential"] = None
+            continue
+        postcode = m.group()
+        epc = get_epc(postcode, address)
+        if epc:
+            listing["epc_rating"] = epc.rating
+            listing["epc_potential"] = epc.potential_rating
+        else:
+            listing["epc_rating"] = None
+            listing["epc_potential"] = None
+
+
 def build_metadata(state: AgentState) -> dict | None:
     """Extract structured metadata from agent state for the frontend."""
     meta: dict = {}
@@ -401,6 +423,8 @@ def build_metadata(state: AgentState) -> dict | None:
     # Search results
     if state.last_results:
         listings = [_map_listing(r) for r in state.last_results]
+        # Enrich with EPC ratings
+        _enrich_epc_ratings(listings)
         # Enrich with commute times if destination is set
         commute_dest = (state.constraints or {}).get("commute_destination")
         if isinstance(commute_dest, dict) and commute_dest.get("lat"):

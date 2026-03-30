@@ -48,6 +48,8 @@ export type ListingData = {
   crime_level?: string | null;
   crime_total?: number | null;
   flood_risk?: string | null;
+  epc_rating?: string | null;
+  epc_potential?: string | null;
   price_vs_area?: "below" | "average" | "above" | null;
 };
 
