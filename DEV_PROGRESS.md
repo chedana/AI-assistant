@@ -891,3 +891,5 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5173
 - `54979da` | 2026-03-15 | feat | F-F4 session rename — double-click to rename in sidebar and mobile menu (Header + Sidebar + useSessions.renameChat)
 
 - `c37002b` | 2026-03-15 | fix | Replace double-click rename with pencil icon in Header menu; reset editingId on menu close to prevent stale input blocking session switching
+
+- `ae51b43` | 2026-03-30 | feat | F-F8 Quick/Deep thinking mode toggle — bolt/sparkle button in ChatInput; backend reads thinking_mode from route_hint and exposes in SSE metadata; resets to "quick" on session switch

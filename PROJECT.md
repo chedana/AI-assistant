@@ -25,7 +25,7 @@
 ## Immediate Next Priority
 
 ```
-1. Quick/Deep toggle button (F-F8)               → backend ready, needs frontend UI
+1. Quick/Deep toggle button (F-F8)               → ✅ done
 2. Re-crawl Rightmove with area names (B-B2)     → fix location miss rate
 3. Commute LLM optimisation (B-F5b)              → merge into router (1 call not 2)
 ```
@@ -82,7 +82,7 @@
 | F-F4 | Claude | ✅ Done | **Session rename** | Double-click session title to rename |
 | F-F5 | Claude | 🔴 Open | **Viewing checklist** | Per-listing checklist panel (legal + physical checks) |
 | F-F6 | Claude | 🔴 Open | **Contract upload UI** | File upload → send to contract analysis endpoint |
-| F-F8 | Claude | 🔴 Open | **Quick/Deep toggle** | Session-level mode switch; backend already emits `thinking_mode` in metadata |
+| F-F8 | Claude | ✅ Done | **Quick/Deep toggle** | Bolt/sparkle toggle in ChatInput; backend reads from route_hint, exposes in metadata; resets on session switch |
 
 ---
 
