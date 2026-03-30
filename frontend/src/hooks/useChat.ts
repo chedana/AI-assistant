@@ -18,6 +18,7 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
   const [isSilentAction, setIsSilentAction] = useState(false);
   const [metadata, setMetadata] = useState<SessionMetadata | null>(null);
   const [activeAssistantId, setActiveAssistantId] = useState<string | null>(null);
+  const [thinkingMode, setThinkingMode] = useState<"quick" | "deep">("quick");
   // metadataForId: the message ID where cards/compare are rendered inline (most recent).
   const [metadataForId, setMetadataForId] = useState<string | null>(null);
   // suppressedIds: ALL message IDs that produced structured UI — accumulated so old
@@ -34,6 +35,7 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
     setMetadataForId(null);
     setActiveAssistantId(null);
     setSuppressedIds(new Set());
+    setThinkingMode("quick");
     lastSearchSigRef.current = "";
     lastAckIdRef.current = null;
   }, [activeSession?.id]);
@@ -71,9 +73,10 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
     }));
 
     try {
+      const mergedHint = { ...routeHint, thinking_mode: thinkingMode };
       await streamChat(activeSession.id, prompt, {
         signal: controller.signal,
-        routeHint,
+        routeHint: mergedHint,
         onChunk: (chunk) => {
           updateSession(activeSession.id, (session) => {
             const messages = session.messages.map((m) =>
@@ -174,9 +177,10 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
     abortRef.current = controller;
 
     try {
+      const mergedHint = { ...routeHint, thinking_mode: thinkingMode };
       await streamChat(activeSession.id, prompt, {
         signal: controller.signal,
-        routeHint,
+        routeHint: mergedHint,
         onChunk: () => {},
         onMetadata: (meta) => {
           setMetadata(meta);
@@ -220,6 +224,8 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
     suppressedIds,
     metadataForId,
     activeAssistantId,
+    thinkingMode,
+    setThinkingMode,
     sendMessage,
     sendSilentAction,
     stopGenerating,
