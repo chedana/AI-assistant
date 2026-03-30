@@ -45,6 +45,8 @@ export type ListingData = {
   openrent_url?: string;
   commute_time_minutes?: number | null;
   commute_summary?: string | null;
+  crime_level?: string | null;
+  crime_total?: number | null;
 };
 
 export type SearchResultsMeta = {

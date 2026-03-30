@@ -277,6 +277,14 @@ export default function ListingCard({ listing, isSaved, compact, displayScore, o
               {listing.commute_time_minutes} min
             </div>
           )}
+          {listing.crime_level && (
+            <div className={`flex items-center gap-1.5 text-xs font-bold ${
+              listing.crime_level === 'Low' ? 'text-emerald-400' : listing.crime_level === 'Medium' ? 'text-amber-400' : 'text-red-400'
+            }`}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="opacity-70"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              {listing.crime_level} crime
+            </div>
+          )}
         </div>
 
         {/* Summary Area - Only renders if data exists */}

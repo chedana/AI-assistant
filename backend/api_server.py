@@ -28,6 +28,8 @@ from core.chatbot_config import QWEN_MODEL
 from orchestration.state import AgentState
 from orchestration.workflow import process_turn
 from skills.search.agentic import build_search_runtime
+from skills.research.crime import get_crime_stats
+from skills.research.rent_stats import get_area_rent_stats
 
 
 class ChatMessage(BaseModel):
@@ -265,6 +267,26 @@ def _fetch_commute_time(from_lat: float, from_lon: float, to_lat: float, to_lon:
         return None
 
 
+async def _enrich_crime_stats(listings: list) -> None:
+    """Add crime_level and crime_total to each listing dict via data.police.uk."""
+    async def _fetch_for(listing: dict) -> None:
+        lat = listing.get("lat")
+        lon = listing.get("lon")
+        if lat is None or lon is None:
+            listing["crime_level"] = None
+            listing["crime_total"] = None
+            return
+        stats = await get_crime_stats(float(lat), float(lon))
+        if stats:
+            listing["crime_level"] = stats.level
+            listing["crime_total"] = stats.total
+        else:
+            listing["crime_level"] = None
+            listing["crime_total"] = None
+
+    await asyncio.gather(*[_fetch_for(l) for l in listings])
+
+
 def _enrich_commute_times(listings: list, dest: dict) -> None:
     """Add commute_time_minutes and commute_summary to each listing dict."""
     dest_lat = dest.get("lat")
@@ -335,6 +357,8 @@ def build_metadata(state: AgentState) -> dict | None:
             "openrent_url": _safe_str(r.get("openrent_url")),
             "commute_time_minutes": r.get("commute_time_minutes"),
             "commute_summary": r.get("commute_summary"),
+            "crime_level": r.get("crime_level"),
+            "crime_total": r.get("crime_total"),
         }
 
     def _map_listing_light(r: dict) -> dict:
@@ -384,6 +408,37 @@ def build_metadata(state: AgentState) -> dict | None:
             "total": total,
             "remaining": max(0, total - shown_so_far),
         }
+
+        # Enrich with area rent stats for price context
+        area_keywords = (state.constraints or {}).get("location_keywords") or []
+        area_bedrooms = None
+        layout_opts = (state.constraints or {}).get("layout_options") or []
+        if layout_opts:
+            bed_vals = [lo.get("bedrooms") for lo in layout_opts if lo.get("bedrooms") is not None]
+            if len(bed_vals) == 1:
+                area_bedrooms = int(bed_vals[0])
+        rent_stats = None
+        if area_keywords:
+            for kw in area_keywords:
+                rent_stats = get_area_rent_stats(kw, area_bedrooms)
+                if rent_stats:
+                    break
+        if rent_stats:
+            meta["area_rent_stats"] = {
+                "median": rent_stats.median,
+                "p25": rent_stats.p25,
+                "p75": rent_stats.p75,
+                "count": rent_stats.count,
+            }
+            for l in listings:
+                price = l.get("price_pcm")
+                if price and price > 0:
+                    if price < rent_stats.p25:
+                        l["price_vs_area"] = "below"
+                    elif price > rent_stats.p75:
+                        l["price_vs_area"] = "above"
+                    else:
+                        l["price_vs_area"] = "average"
 
     # Constraints
     if state.constraints:
@@ -693,6 +748,12 @@ async def chat_stream(req: ChatStreamRequest, request: Request) -> StreamingResp
             print(f"[TIMING] process_turn={t2-t1:.2f}s  total_so_far={t2-t0:.2f}s  reply_len={len(reply)}")
 
             metadata = build_metadata(state)
+            # Enrich listings with crime stats (async, parallel per listing)
+            if metadata and metadata.get("search_results", {}).get("listings"):
+                try:
+                    await _enrich_crime_stats(metadata["search_results"]["listings"])
+                except Exception:
+                    pass  # crime enrichment is best-effort
             t3 = time.perf_counter()
             has_search = bool(metadata and metadata.get("search_results", {}).get("listings"))
 
