@@ -29,6 +29,7 @@ from orchestration.state import AgentState
 from orchestration.workflow import process_turn
 from skills.search.agentic import build_search_runtime
 from skills.research.crime import get_crime_stats
+from skills.research.rent_stats import get_area_rent_stats
 
 
 class ChatMessage(BaseModel):
@@ -358,6 +359,7 @@ def build_metadata(state: AgentState) -> dict | None:
             "commute_summary": r.get("commute_summary"),
             "crime_level": r.get("crime_level"),
             "crime_total": r.get("crime_total"),
+            "price_vs_area": r.get("price_vs_area"),
         }
 
     def _map_listing_light(r: dict) -> dict:
@@ -407,6 +409,37 @@ def build_metadata(state: AgentState) -> dict | None:
             "total": total,
             "remaining": max(0, total - shown_so_far),
         }
+
+        # Enrich with area rent stats for price context
+        area_keywords = (state.constraints or {}).get("location_keywords") or []
+        area_bedrooms = None
+        layout_opts = (state.constraints or {}).get("layout_options") or []
+        if layout_opts:
+            bed_vals = [lo.get("bedrooms") for lo in layout_opts if lo.get("bedrooms") is not None]
+            if len(bed_vals) == 1:
+                area_bedrooms = int(bed_vals[0])
+        rent_stats = None
+        if area_keywords:
+            for kw in area_keywords:
+                rent_stats = get_area_rent_stats(kw, area_bedrooms)
+                if rent_stats:
+                    break
+        if rent_stats:
+            meta["area_rent_stats"] = {
+                "median": rent_stats.median,
+                "p25": rent_stats.p25,
+                "p75": rent_stats.p75,
+                "count": rent_stats.count,
+            }
+            for l in listings:
+                price = l.get("price_pcm")
+                if price and price > 0:
+                    if price < rent_stats.p25:
+                        l["price_vs_area"] = "below"
+                    elif price > rent_stats.p75:
+                        l["price_vs_area"] = "above"
+                    else:
+                        l["price_vs_area"] = "average"
 
     # Constraints
     if state.constraints:
