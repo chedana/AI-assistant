@@ -138,6 +138,7 @@ python-dateutil==2.9.0.post0
 python-dotenv==1.2.1
 python-json-logger==4.0.0
 python-multipart==0.0.22
+pymupdf==1.25.5
 python-slugify==8.0.4
 pytz==2025.2
 qdrant-client==1.15.1

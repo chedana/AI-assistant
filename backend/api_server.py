@@ -12,7 +12,7 @@ from threading import Lock
 from typing import AsyncGenerator, Dict, List, Literal, Optional, Union
 
 from cachetools import TTLCache
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
@@ -594,6 +594,47 @@ async def draft_viewing_email(request: Request) -> JSONResponse:
         return JSONResponse({"error": "Failed to parse email draft"}, status_code=500)
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+_CONTRACT_MAX_SIZE = 10 * 1024 * 1024  # 10 MB
+
+@app.post("/api/contract/analyse")
+async def analyse_contract_endpoint(file: UploadFile = File(...)) -> JSONResponse:
+    """Analyse a tenancy agreement PDF and return a structured report."""
+    # Validate content type
+    if file.content_type not in ("application/pdf", "application/x-pdf"):
+        return JSONResponse({"error": "Only PDF files are supported"}, status_code=400)
+
+    # Read and validate size
+    pdf_bytes = await file.read()
+    if len(pdf_bytes) > _CONTRACT_MAX_SIZE:
+        return JSONResponse(
+            {"error": f"File too large ({len(pdf_bytes) // (1024*1024)}MB). Maximum is 10MB."},
+            status_code=400,
+        )
+
+    # Extract text
+    try:
+        from skills.contract.extractor import extract_text
+        text = extract_text(pdf_bytes)
+    except RuntimeError as exc:
+        # PyMuPDF not installed
+        return JSONResponse({"error": str(exc)}, status_code=501)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+    # Analyse
+    try:
+        from skills.contract.analyser import analyse_contract
+        from dataclasses import asdict
+        report = await asyncio.to_thread(analyse_contract, text)
+        result = asdict(report)
+        result["disclaimer"] = "This is not legal advice. Consult a solicitor for legal matters."
+        return JSONResponse(result)
+    except json.JSONDecodeError:
+        return JSONResponse({"error": "Failed to parse contract analysis — LLM returned invalid JSON"}, status_code=500)
+    except Exception as exc:
+        return JSONResponse({"error": f"Contract analysis failed: {exc}"}, status_code=500)
 
 
 @app.get("/healthz")

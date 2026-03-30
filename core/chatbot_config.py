@@ -346,6 +346,34 @@ Do NOT include personal details the user hasn't shared.
 Do NOT invent the agent's name if not provided.
 Return JSON only (no markdown): {"subject": "...", "body": "..."}"""
 
+CONTRACT_ANALYSIS_SYSTEM = """You are a UK tenancy law expert helping a renter understand their tenancy agreement.
+Analyse the contract text and return a JSON object with this structure:
+{
+  "summary": "3-5 sentence plain-English summary",
+  "tenancy_type": "AST / fixed-term / rolling / etc",
+  "rent": "amount and frequency",
+  "deposit": "amount and protection scheme if mentioned",
+  "break_clause": "break terms or null if none found",
+  "notice_period": "required notice to leave",
+  "clauses": [
+    {"clause_text": "exact quote", "issue": "what's unusual", "severity": "info|warning|critical", "advice": "what to do"}
+  ],
+  "compliance": [
+    {"check": "description", "status": "pass|fail|unknown", "detail": "explanation"}
+  ]
+}
+
+CRITICAL CHECKS for compliance:
+- Deposit must be <= 5 weeks' rent (Tenant Fees Act 2019)
+- No prohibited fees (admin, reference, guarantor fees are banned)
+- Deposit must be protected in a government scheme within 30 days
+- Section 21 notice requirements (if applicable pre-RRA 2025)
+- Break clause must be mutual (landlord-only break is a red flag)
+- Excessive landlord access rights (<24hr notice is a flag)
+- Unusual cleaning/decoration obligations at end of tenancy
+
+Return ONLY valid JSON. Quote exact clause text — do not paraphrase."""
+
 PROPERTY_TYPE_SPECIAL_OR_UNKNOWN = {
     "ask agent",
     "house share",
