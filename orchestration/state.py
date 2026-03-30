@@ -113,6 +113,7 @@ class GraphState(TypedDict, total=False):
     shortlist_action: Optional[str]
     refinement_type: Optional[str]
     page_action: Optional[str]
+    commute_destination: Optional[str]
 
     # ── Speculative parallel execution ────────────────────────────────────────
     _spec_key: Optional[int]         # key into nodes._SPEC_CACHE for parallel refinement_plan
@@ -170,6 +171,7 @@ def make_graph_state(user_input: str, *, agent_state: Any, runtime: Any, router_
         shortlist_action=None,
         refinement_type=None,
         page_action=None,
+        commute_destination=None,
         # Turn output defaults
         reply_text="",
         error=None,
