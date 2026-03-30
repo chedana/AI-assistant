@@ -206,11 +206,68 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5174
 
 ---
 
-## Phase 4-5: 待开发
+## Phase 4: Contract Analysis
+
+### B-F6 Contract Analysis Endpoint
+
+**Team:** bf6-dev → bf6-debug (发现 2 bug → 修复 → 复审通过) → bf6-validate
+**Commits:** `c8a66fb`, `0486d19` (bug fix)
+**Status:** Code complete, team-validated. Awaiting lead sign-off.
+
+| # | Check | Agent 结果 | Lead 验收 |
+|---|-------|-----------|----------|
+| 1 | `python3 -m py_compile backend/api_server.py` 通过 | PASS | [ ] |
+| 2 | `python3 -m py_compile core/chatbot_config.py` 通过 | PASS | [ ] |
+| 3 | `python3 -m py_compile skills/contract/extractor.py` 通过 | PASS | [ ] |
+| 4 | `python3 -m py_compile skills/contract/analyser.py` 通过 | PASS | [ ] |
+| 5 | `POST /api/contract/analyse` 端点存在（api_server.py line 601） | PASS | [ ] |
+| 6 | 文件类型验证：仅 PDF → 400（content_type check） | PASS | [ ] |
+| 7 | 文件大小验证：<= 10MB → 400 | PASS | [ ] |
+| 8 | `CONTRACT_ANALYSIS_SYSTEM` prompt 存在（chatbot_config.py line 349） | PASS | [ ] |
+| 9 | Prompt 反幻觉："Quote exact clause text — do not paraphrase" | PASS | [ ] |
+| 10 | 合规检查覆盖 5 项：押金上限、禁止费用、押金保护、break clause、access rights | PASS | [ ] |
+| 11 | `ContractReport` dataclass 有全部 8 个字段 | PASS | [ ] |
+| 12 | 无文本错误处理：ValueError + 清晰提示 | PASS | [ ] |
+| 13 | 免责声明："This is not legal advice" | PASS | [ ] |
+| 14 | 无 debug print 语句 | PASS | [ ] |
+| 15 | 无 hardcoded secrets | PASS | [ ] |
+
+**Debug 发现的问题及修复：**
+- `data.get("clauses", [])` 当 LLM 返回 `"clauses": null` 时返回 None → TypeError → 改为 `data.get("clauses") or []`
+- `ClauseFlag(**c)` 在 LLM 返回额外字段时崩溃 → 改为过滤已知字段
+
+---
+
+### F-F6 Contract Upload UI
+
+**Team:** ff6-dev → ff6-debug → ff6-validate
+**Commit:** `7a042a3`
+**Status:** Code complete, team-validated. Awaiting lead sign-off.
+
+| # | Check | Agent 结果 | Lead 验收 |
+|---|-------|-----------|----------|
+| 1 | `cd frontend && npx tsc --noEmit` 通过（排除预存问题） | PASS | [ ] |
+| 2 | `ContractUpload.tsx` 有拖拽 drop zone + file picker | PASS | [ ] |
+| 3 | 文件验证：仅 PDF（content_type check）+ <= 10MB | PASS | [ ] |
+| 4 | Fetch 调用 `POST /api/contract/analyse` with FormData | PASS | [ ] |
+| 5 | Loading 状态：dot 动画 + "Analysing contract..." | PASS | [ ] |
+| 6 | Error 状态：红色内联错误提示（非崩溃） | PASS | [ ] |
+| 7 | `ContractReportView` 渲染：summary + key terms + clause flags + compliance | PASS | [ ] |
+| 8 | 严重度颜色：info=绿 / warning=琥珀 / critical=红 | PASS | [ ] |
+| 9 | 合规图标：pass=✓ / fail=✗ / unknown=? | PASS | [ ] |
+| 10 | 免责声明文本存在 | PASS | [ ] |
+| 11 | "Upload another" 按钮可用 | PASS | [ ] |
+| 12 | `Header.tsx` 有文档图标按钮（onContractToggle） | PASS | [ ] |
+| 13 | Overlay 响应式（mobile-friendly，max-w-lg，mx-4） | PASS | [ ] |
+| 14 | 无 `console.log` 调试语句 | PASS | [ ] |
+| 15 | 无 hardcoded secrets | PASS | [ ] |
+
+---
+
+## Phase 5: 待开发
 
 | Phase | 任务 | 状态 |
 |-------|------|------|
-| Phase 4 | B-F6 合同分析 + F-F6 上传 UI | 未开始 |
 | Phase 5 | Crime / Flood / EPC / Rent Stats APIs | 未开始 |
 
 ---
