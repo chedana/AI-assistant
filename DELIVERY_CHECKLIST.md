@@ -121,4 +121,108 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5174
 
 ---
 
+---
+
+## Phase 2: Data Quality & Viewing Checklist
+
+### B-P2 Unify Listing Fields
+
+**Team:** bp2-dev → bp2-debug → bp2-validate
+**Commits:** `ae51b43` (merged via `3fa86c6`)
+**Status:** Code complete, team-validated. Awaiting lead sign-off.
+
+| # | Check | Agent 结果 | Lead 验收 |
+|---|-------|-----------|----------|
+| 1 | `python3 -m py_compile backend/api_server.py` 通过 | PASS | [ ] |
+| 2 | `cd frontend && npx tsc --noEmit` 通过（排除 ListingsPanel 预存问题） | PASS | [ ] |
+| 3 | `_map_listing()` 和 compare path 使用相同字段名（compare 复用 `_map_listing()` + 加 `index`） | PASS | [ ] |
+| 4 | 输出值中无 `"nan"` / `"NaN"` / `"None"` 字符串（仅在 `_safe_str` guard 中出现） | PASS | [ ] |
+| 5 | `deposit`: `_parse_deposit()` → 始终 `int|float|None` → TS 中 `number|null` | PASS | [ ] |
+| 6 | `size_sqm`: `_num(val, None)` → 始终 `number|None` | PASS | [ ] |
+| 7 | `openrent_url`: `_safe_str()` 处理 → 始终 string | PASS | [ ] |
+| 8 | `ListingData` 覆盖 `_map_listing()` 输出的全部 26 个字段 | PASS | [ ] |
+| 9 | 无新增 debug print 语句 | PASS | [ ] |
+
+---
+
+### F-F5 Viewing Checklist
+
+**Team:** ff5-dev → ff5-debug → ff5-validate
+**Commits:** `33c5277` (merged via `bcce2b4`)
+**Status:** Code complete, team-validated. Awaiting lead sign-off.
+
+| # | Check | Agent 结果 | Lead 验收 |
+|---|-------|-----------|----------|
+| 1 | `cd frontend && npx tsc --noEmit` 通过（排除 ListingsPanel 预存问题） | PASS | [ ] |
+| 2 | `viewingChecklist.ts` 有 3 个分类：Legal (7) + Physical (10) + Questions (8) = 25 项 | PASS | [ ] |
+| 3 | Legal 项目准确：gas cert (annual), EICR (5yr), EPC (min E), smoke/CO, deposit protection, How to Rent, landlord ID | PASS | [ ] |
+| 4 | `useViewingChecklist.ts` 按 `openclaw-viewing-${encodeURIComponent(listingUrl)}` 存储到 localStorage | PASS | [ ] |
+| 5 | Checkbox 状态持久化：`useState` 从 `loadChecked()` 读取 localStorage 初始化；`toggle` 每次调用 `saveChecked` | PASS | [ ] |
+| 6 | 进度指示器显示 `{catChecked}/{catTotal}` per category | PASS | [ ] |
+| 7 | `ViewingChecklist.tsx` 有关闭按钮（X icon，调用 `onClose`） | PASS | [ ] |
+| 8 | `ListingCard.tsx` 有 clipboard icon 按钮，点击 `setChecklistOpen(true)`，带绿色进度点 | PASS | [ ] |
+| 9 | 无后端 API 调用（grep fetch/axios → 0 matches） | PASS | [ ] |
+| 10 | 无 `console.log` 调试语句 | PASS | [ ] |
+
+---
+
+## Phase 2 通用验收
+
+| # | Check | Agent 结果 | Lead 验收 |
+|---|-------|-----------|----------|
+| 1 | Python 编译通过（api_server.py） | PASS | [ ] |
+| 2 | TypeScript 编译通过（排除预存问题） | PASS | [ ] |
+| 3 | 无 `console.log` / `print()` 调试残留 | PASS | [ ] |
+| 4 | 无 hardcoded secrets | PASS | [ ] |
+| 5 | 无 merge conflict markers（`grep -r "<<<<<<" orchestration/ backend/ frontend/src/`） | PASS | [ ] |
+| 6 | Worktree 分支已合并到 openclaw | PASS | [ ] |
+
+---
+
+## Phase 3-5: 待开发
+
+| Phase | 任务 | 状态 |
+|-------|------|------|
+| Phase 3 | B-F4 看房邮件草稿 | 未开始 |
+| Phase 4 | B-F6 合同分析 + F-F6 上传 UI | 未开始 |
+| Phase 5 | Crime / Flood / EPC / Rent Stats APIs | 未开始 |
+
+---
+
+## How to review
+
+```bash
+# 1. Quick compile check
+python3 -m py_compile backend/api_server.py orchestration/router.py orchestration/nodes.py orchestration/state.py
+cd frontend && npx tsc --noEmit
+
+# 2. Check old function deleted
+grep -rn "_try_extract_commute_destination_via_llm" orchestration/
+
+# 3. Check no merge conflict markers
+grep -r "<<<<<<" orchestration/ backend/ frontend/src/
+
+# 4. Check no "nan" in field mapping
+grep -n '"nan"\|"NaN"' backend/api_server.py
+
+# 5. Start backend + frontend, test manually
+cd backend && uvicorn api_server:app --host 0.0.0.0 --port 8000
+cd frontend && npm run dev -- --host 0.0.0.0 --port 5174
+
+# 6. In browser:
+#    Phase 1:
+#    - Toggle Quick/Deep button visible next to send
+#    - Send a search query → check SSE metadata has thinking_mode
+#    - Ask "how long to King's Cross" → commute QA works
+#    - Ask "is this pet-friendly" → no commute extraction fired
+#    Phase 2:
+#    - Search results → no "nan" in any listing field
+#    - Compare 2 listings → same fields as search results
+#    - Click clipboard icon on listing → viewing checklist opens
+#    - Check items → close → reopen → items still checked
+#    - Switch to different listing → checklist is independent
+```
+
+---
+
 *每项 `[ ]` 由 Lead 手动验收后改为 `[x]`。全部通过后 push 到 origin/main。*
