@@ -813,3 +813,7 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5173
 - `ae51b43` | 2026-03-30 | feat | F-F8 Quick/Deep thinking mode toggle — bolt/sparkle button in ChatInput; backend reads thinking_mode from route_hint and exposes in SSE metadata; resets to "quick" on session switch
 
 - `af4ffe4` | 2026-03-30 | fix | Resolve leftover merge conflict markers across api_server.py, App.tsx, ListingCard.tsx, ViewingChecklist.tsx, useChat.ts
+
+- `c8a66fb` | 2026-03-30 | feat | B-F6: Contract analysis endpoint — PDF extraction via PyMuPDF, LLM-based ContractReport, POST /api/contract/analyse with validation and disclaimer
+
+- `96eb960` | 2026-03-30 | feat | B-rent: Area rent stats aggregation from Qdrant + ListingCard price context badge (Below avg / Average / Above avg)
