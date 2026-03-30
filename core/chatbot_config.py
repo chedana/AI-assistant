@@ -337,6 +337,15 @@ PROPERTY_TYPE_FLAT_LIKE = {
     "block of apartments",
     "block of apartment",
 }
+DRAFT_VIEWING_EMAIL_SYSTEM = """You are helping a tenant write a viewing request email.
+Given the listing details, write a brief, polite email requesting a viewing.
+Include: greeting, interest in the property, preferred viewing times (suggest 2-3 flexible slots),
+brief mention of the tenant (working professional / couple / etc if known from conversation).
+Keep it under 150 words. Professional but warm tone.
+Do NOT include personal details the user hasn't shared.
+Do NOT invent the agent's name if not provided.
+Return JSON only (no markdown): {"subject": "...", "body": "..."}"""
+
 PROPERTY_TYPE_SPECIAL_OR_UNKNOWN = {
     "ask agent",
     "house share",

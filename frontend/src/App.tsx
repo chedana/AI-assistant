@@ -138,6 +138,7 @@ export default function App() {
             savedIds={savedIds}
             quickReplies={metadata?.quick_replies}
             viewMode={viewMode}
+            sessionId={activeSession?.id}
             onViewModeToggle={setViewMode}
             onSaveListing={handleSaveListing}
             onRemoveListing={handleRemoveListingFromResults}

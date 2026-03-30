@@ -1,6 +1,7 @@
 import { useMemo, useEffect, useRef, useState } from "react";
-import type { SessionMetadata, QuickReply, ListingData } from "../types/chat";
+import type { SessionMetadata, QuickReply, ListingData, DraftEmailResponse } from "../types/chat";
 import CompareTable from "./CompareTable";
+import DraftEmailModal from "./DraftEmailModal";
 import ListingCard from "./ListingCard";
 import ListingDetailDrawer from "./ListingDetailDrawer";
 import WelcomeScreen from "./WelcomeScreen";
@@ -13,6 +14,7 @@ type Props = {
   savedIds: Set<string>;
   quickReplies: QuickReply[] | undefined;
   viewMode: "list" | "map";
+  sessionId?: string;
   onViewModeToggle: (mode: "list" | "map") => void;
   onSaveListing: (pageIndex: number, url: string) => void;
   onRemoveListing: (pageIndex: number, url: string) => void;
@@ -45,6 +47,7 @@ export default function ListingsPanel({
   savedIds,
   quickReplies,
   viewMode,
+  sessionId,
   onViewModeToggle,
   onSaveListing,
   onRemoveListing,
@@ -56,6 +59,32 @@ export default function ListingsPanel({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [selectedListing, setSelectedListing] = useState<ListingData | null>(null);
   const [didGeoSearch, setDidGeoSearch] = useState(false);
+  const [draftEmail, setDraftEmail] = useState<DraftEmailResponse | null>(null);
+  const [draftLoadingIdx, setDraftLoadingIdx] = useState<number | null>(null);
+
+  const handleDraftEmail = async (listingIndex: number) => {
+    if (!sessionId || draftLoadingIdx !== null) return;
+    setDraftLoadingIdx(listingIndex);
+    try {
+      const base = import.meta.env.VITE_API_BASE ?? "";
+      const res = await fetch(`${base}/api/contact/draft`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId, listing_index: listingIndex }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Request failed" }));
+        console.error("Draft email error:", err);
+        return;
+      }
+      const data: DraftEmailResponse = await res.json();
+      setDraftEmail(data);
+    } catch (err) {
+      console.error("Draft email error:", err);
+    } finally {
+      setDraftLoadingIdx(null);
+    }
+  };
   
   const results = metadata?.search_results;
   const compare = metadata?.compare_data;
@@ -185,6 +214,8 @@ export default function ListingsPanel({
                       onSave={isGenerating ? undefined : () => onSaveListing(idx + 1, listing.url)}
                       onRemove={isGenerating ? undefined : () => onRemoveListing(idx + 1, listing.url)}
                       onClick={() => setSelectedListing(listing)}
+                      onDraftEmail={sessionId ? () => handleDraftEmail(idx + 1) : undefined}
+                      draftLoading={draftLoadingIdx === idx + 1}
                     />
                   ))}
 
@@ -264,10 +295,19 @@ export default function ListingsPanel({
       </section>
 
       {/* Listing Detail Drawer Overlay */}
-      <ListingDetailDrawer 
-        listing={selectedListing} 
-        onClose={() => setSelectedListing(null)} 
+      <ListingDetailDrawer
+        listing={selectedListing}
+        onClose={() => setSelectedListing(null)}
       />
+
+      {/* Draft Email Modal */}
+      {draftEmail && (
+        <DraftEmailModal
+          subject={draftEmail.subject}
+          body={draftEmail.body}
+          onClose={() => setDraftEmail(null)}
+        />
+      )}
     </>
   );
 }

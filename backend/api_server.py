@@ -22,6 +22,9 @@ os.environ.setdefault("QWEN_BASE_URL", "https://api.openai.com/v1")
 os.environ.setdefault("ROUTER_BASE_URL", os.environ["QWEN_BASE_URL"])
 os.environ.setdefault("ROUTER_API_KEY", os.environ.get("OPENAI_API_KEY", ""))
 
+from core.chatbot_config import DRAFT_VIEWING_EMAIL_SYSTEM
+from core.llm_client import qwen_client
+from core.chatbot_config import QWEN_MODEL
 from orchestration.state import AgentState
 from orchestration.workflow import process_turn
 from skills.search.agentic import build_search_runtime
@@ -517,6 +520,80 @@ def get_session_lock(session_id: str) -> Lock:
 def _run_locked(lock: Lock, user_in: str, state: AgentState, runtime, router_debug: bool, route_hint: dict | None = None) -> str:
     with lock:
         return process_turn(user_in, state, runtime, router_debug, route_hint=route_hint)
+
+
+@app.post("/api/contact/draft")
+async def draft_viewing_email(request: Request) -> JSONResponse:
+    """Generate a draft viewing request email for a listing."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+
+    session_id = body.get("session_id")
+    listing_index = body.get("listing_index")
+    if not session_id or listing_index is None:
+        return JSONResponse({"error": "session_id and listing_index are required"}, status_code=400)
+
+    try:
+        listing_index = int(listing_index)
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "listing_index must be an integer"}, status_code=400)
+
+    state = get_or_create_state(session_id)
+    if not state.last_results or listing_index < 1 or listing_index > len(state.last_results):
+        return JSONResponse({"error": f"Listing index {listing_index} out of range"}, status_code=400)
+
+    listing = state.last_results[listing_index - 1]
+    context_parts = []
+    if listing.get("title"):
+        context_parts.append(f"Property: {listing['title']}")
+    if listing.get("address"):
+        context_parts.append(f"Address: {listing['address']}")
+    if listing.get("price_pcm"):
+        context_parts.append(f"Rent: £{listing['price_pcm']} per month")
+    if listing.get("bedrooms"):
+        context_parts.append(f"Bedrooms: {listing['bedrooms']}")
+    if listing.get("property_type"):
+        context_parts.append(f"Type: {listing['property_type']}")
+    if listing.get("available_from"):
+        context_parts.append(f"Available from: {listing['available_from']}")
+    listing_context = "\n".join(context_parts)
+
+    try:
+        import asyncio
+        resp = await asyncio.to_thread(
+            lambda: qwen_client.chat.completions.create(
+                model=QWEN_MODEL,
+                messages=[
+                    {"role": "system", "content": DRAFT_VIEWING_EMAIL_SYSTEM},
+                    {"role": "user", "content": f"Listing details:\n{listing_context}"},
+                ],
+            )
+        )
+        raw = resp.choices[0].message.content.strip()
+        # Parse JSON from response
+        parsed = json.loads(raw)
+        return JSONResponse({
+            "subject": parsed.get("subject", ""),
+            "body": parsed.get("body", ""),
+        })
+    except json.JSONDecodeError:
+        # If LLM didn't return valid JSON, try to extract it
+        import re
+        m = re.search(r'\{.*\}', raw, re.DOTALL)
+        if m:
+            try:
+                parsed = json.loads(m.group())
+                return JSONResponse({
+                    "subject": parsed.get("subject", ""),
+                    "body": parsed.get("body", ""),
+                })
+            except json.JSONDecodeError:
+                pass
+        return JSONResponse({"error": "Failed to parse email draft"}, status_code=500)
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
 
 
 @app.get("/healthz")

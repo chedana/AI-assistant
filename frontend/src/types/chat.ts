@@ -78,6 +78,11 @@ export type ShortlistMeta = {
   listings: ListingData[];
 };
 
+export type DraftEmailResponse = {
+  subject: string;
+  body: string;
+};
+
 export type SessionMetadata = {
   search_results?: SearchResultsMeta;
   constraints?: ConstraintsMeta;
