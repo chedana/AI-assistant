@@ -24,6 +24,8 @@ export default function App() {
     isSilentAction,
     metadata,
     activeAssistantId,
+    thinkingMode,
+    setThinkingMode,
     sendMessage,
     sendSilentAction,
     stopGenerating,
@@ -163,6 +165,8 @@ export default function App() {
           />
           <ChatInput
             isGenerating={isGenerating}
+            thinkingMode={thinkingMode}
+            onToggleMode={() => setThinkingMode((m) => m === "quick" ? "deep" : "quick")}
             onSend={(text) => void sendMessage(text)}
             onStop={stopGenerating}
           />

@@ -92,4 +92,5 @@ export type SessionMetadata = {
   quick_replies?: QuickReply[];
   compare_data?: CompareData;
   shortlist?: ShortlistMeta;
+  thinking_mode?: "quick" | "deep";
 };
