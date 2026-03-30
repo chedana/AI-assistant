@@ -312,12 +312,65 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5174
 
 ---
 
-## Phase 5b: 待开发
+## Phase 5b: Area Research — Flood + EPC
 
-| 任务 | 状态 |
-|------|------|
-| Flood Risk (Environment Agency) | 未开始 |
-| EPC Rating (gov.uk) | 未开始 |
+### Flood Risk (Environment Agency)
+
+**Team:** flood-dev → flood-debug → flood-validate
+**Status:** Code complete, team-validated. Awaiting lead sign-off.
+
+| # | Check | Agent 结果 | Lead 验收 |
+|---|-------|-----------|----------|
+| 1 | `python3 -m py_compile` flood.py + api_server.py | PASS | [ ] |
+| 2 | `cd frontend && npx tsc --noEmit` 通过 | PASS | [ ] |
+| 3 | API URL: `environment.data.gov.uk` | PASS | [ ] |
+| 4 | Cache 7-day TTL (604800s) | PASS | [ ] |
+| 5 | Risk levels: very_low / low / medium / high | PASS | [ ] |
+| 6 | ListingCard badge: very_low 隐藏，low=蓝，medium=琥珀，high=红 | PASS | [ ] |
+| 7 | ListingData 有 `flood_risk` 字段 | PASS | [ ] |
+| 8 | Error handling 返回 None（不崩溃） | PASS | [ ] |
+| 9 | 无 debug 语句，无 secrets | PASS | [ ] |
+
+---
+
+### EPC Rating (gov.uk)
+
+**Team:** epc-dev → epc-debug (16 checks) → epc-validate (12 checks + token grep)
+**Status:** Code complete, team-validated. Awaiting lead sign-off.
+
+| # | Check | Agent 结果 | Lead 验收 |
+|---|-------|-----------|----------|
+| 1 | `python3 -m py_compile` epc.py + api_server.py + settings.py | PASS | [ ] |
+| 2 | `cd frontend && npx tsc --noEmit` 通过 | PASS | [ ] |
+| 3 | `EPC_API_TOKEN` 在 core/settings.py 从 env var 读取 | PASS | [ ] |
+| 4 | **无 hardcoded API token**（grep 0 matches） | PASS | [ ] |
+| 5 | API URL: `epc.opendatacommunities.org` | PASS | [ ] |
+| 6 | Auth header: `Basic` + token from settings | PASS | [ ] |
+| 7 | Token 为空时 graceful skip（return None） | PASS | [ ] |
+| 8 | 地址模糊匹配（normalise + substring） | PASS | [ ] |
+| 9 | Cache 30-day TTL (2592000s) | PASS | [ ] |
+| 10 | Badge 颜色: A/B=绿, C/D=琥珀, E/F/G=红 | PASS | [ ] |
+| 11 | ListingData 有 `epc_rating` + `epc_potential` 字段 | PASS | [ ] |
+| 12 | 无 debug 语句 | PASS | [ ] |
+
+---
+
+## All Phases Complete
+
+| Phase | 功能 | Validate 结果 |
+|-------|------|-------------|
+| 1 | F-F8 Quick/Deep Toggle | 13/14 PASS |
+| 1 | B-F5b Commute LLM Merge | 13/13 PASS |
+| 2 | B-P2 Unify Listing Fields | 9/9 PASS |
+| 2 | F-F5 Viewing Checklist | 10/10 PASS |
+| 3 | B-F4 Draft Viewing Email | 14/14 PASS |
+| 4 | B-F6 Contract Analysis | 15/15 PASS |
+| 4 | F-F6 Contract Upload UI | 15/15 PASS |
+| 5a | Crime Index | 10/10 PASS |
+| 5a | Average Rent | 11/11 PASS |
+| 5b | Flood Risk | 9/9 PASS |
+| 5b | EPC Rating | 12/12 PASS |
+| **Total** | **11 features** | **131/132 PASS** |
 
 ---
 
