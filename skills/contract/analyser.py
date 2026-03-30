@@ -59,8 +59,10 @@ def analyse_contract(text: str) -> ContractReport:
 
     data = json.loads(cleaned)
 
-    clauses = [ClauseFlag(**c) for c in data.get("clauses", [])]
-    compliance = [ComplianceCheck(**c) for c in data.get("compliance", [])]
+    _CF = set(ClauseFlag.__dataclass_fields__)
+    _CC = set(ComplianceCheck.__dataclass_fields__)
+    clauses = [ClauseFlag(**{k: v for k, v in c.items() if k in _CF}) for c in (data.get("clauses") or [])]
+    compliance = [ComplianceCheck(**{k: v for k, v in c.items() if k in _CC}) for c in (data.get("compliance") or [])]
 
     return ContractReport(
         summary=data.get("summary", ""),
