@@ -162,28 +162,85 @@ All tunable parameters are env vars (see `run.sh` for defaults, `core/settings.p
 ## Git Conventions
 
 - Do **not** add `Co-Authored-By` trailers to commit messages.
-- Always commit to the **`restructure`** branch (worktree at `.claude/worktrees/gracious-clarke`).
+- Default branch: **`openclaw`**. Push to `origin/openclaw` and `origin/main`.
+
+---
+
+## Development Workflow — Agent Teams
+
+All feature development uses a **3-role pipeline** with Agent Teams. Each task goes through Dev → Debug → Validate, with agents communicating via `SendMessage` and coordinating via a shared `TaskList`.
+
+### Pipeline Structure
+
+```
+[Dev agent]  ── writes code ──→  [Debug agent]  ── reviews code ──→  [Validate agent]
+                  ↑                     │                                    │
+                  └── fix bug feedback ←─┘          ← reject & rework ──────┘
+```
+
+### How to Run
+
+1. **Create team:** `TeamCreate` with a name per phase (e.g., `phase1`, `phase2`).
+2. **Create tasks** with dependencies:
+   - Task N: `<feature> Dev` — implement the feature
+   - Task N+1: `<feature> Debug` — review code (blocked by N)
+   - Task N+2: `<feature> Validate` — run acceptance checklist (blocked by N+1)
+3. **Spawn 3 agents per task** as teammates:
+   - `<feature>-dev` — general-purpose, writes code (may use worktree isolation)
+   - `<feature>-debug` — general-purpose, reads dev's code, runs compile checks, reports bugs back to dev
+   - `<feature>-validate` — general-purpose, runs the full delivery checklist, reports PASS/FAIL to team lead
+4. **Agents communicate:**
+   - Dev finishes → sends message to Debug
+   - Debug finds bug → sends message to Dev with fix instructions → Dev fixes → notifies Debug
+   - Debug passes → sends message to Validate
+   - Validate fails an item → sends message to Dev with what to fix
+   - Validate passes all → sends message to team lead
+5. **Team lead** (you, the main conversation) monitors, resolves blockers, merges worktrees.
+6. **Shutdown** all agents when phase is complete; `TeamDelete` to clean up.
+
+### Multiple Tasks in Parallel
+
+Independent tasks (e.g., a frontend feature + a backend refactor) run their pipelines in parallel:
+
+```
+F-F8 pipeline:  ff8-dev ──→ ff8-debug ──→ ff8-validate     ← parallel
+B-F5b pipeline: bf5b-dev ──→ bf5b-debug ──→ bf5b-validate   ← parallel
+```
+
+### Delivery Checklist (`DELIVERY_CHECKLIST.md`)
+
+After every phase, maintain `DELIVERY_CHECKLIST.md` with:
+- Per-task checklist (specific verification items)
+- Agent results column (filled by validate agents: PASS/FAIL)
+- **Lead 验收 column** (`[ ]` for lead to manually check and sign off)
+- Manual test steps (commands + browser verification)
+
+**Lead reviews the checklist in the evening.** All `[ ]` must become `[x]` before pushing to `origin/main`.
+
+### Planning Reference
+
+| File | Purpose |
+|------|---------|
+| `DEVELOPMENT_PLAN.md` | Full dev/test/validation spec per feature, grouped by phase |
+| `DELIVERY_CHECKLIST.md` | Sign-off checklist — agent results + lead verification |
+| `DEV_PROGRESS.md` | Append-only commit log |
 
 ---
 
 ## Progress Tracking
 
-Two files manage work across sessions:
+Three files manage work across sessions:
 
 | File | Purpose |
 |------|---------|
-| `TODO.md` | What needs to be done — tasks assigned per session by the lead. **Read this to know what to work on.** |
+| `DEVELOPMENT_PLAN.md` | What to build — phased plan with dev spec, test plan, and validation criteria per task. |
+| `DELIVERY_CHECKLIST.md` | Sign-off gate — agent validation results + lead manual verification. |
 | `DEV_PROGRESS.md` | What has been done — append-only commit log per session. |
 
 ### After every commit (mandatory)
 
-1. **Remove the completed task from `TODO.md`** (your session's section).
-2. **Append a done line to `DEV_PROGRESS.md`** under your session (format: `` - `<hash>` <type>: <description> ``).
-3. If working in a **worktree**, commit both file changes and ensure they reach `restructure`:
-   ```bash
-   git add TODO.md DEV_PROGRESS.md
-   git commit -m "docs: update TODO + DEV_PROGRESS after <short hash>"
-   ```
+1. **Append a done line to `DEV_PROGRESS.md`** (format: `` - `<hash>` <type>: <description> ``).
+2. **Update `DELIVERY_CHECKLIST.md`** if the commit relates to a tracked task.
 
 ### Session Identity
 

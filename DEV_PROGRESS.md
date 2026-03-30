@@ -805,3 +805,7 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5173
 - `c37002b` | 2026-03-15 | fix | Replace double-click rename with pencil icon in Header menu; reset editingId on menu close to prevent stale input blocking session switching
 
 - `adcc25e` | 2026-03-30 | feat | B-F5b: merge commute destination extraction into router prompt — eliminate separate LLM call on every QA, add regex fallback
+
+- `bcd1625` | 2026-03-30 | fix | B-P2: unify listing fields between search_results and compare_data — DRY compare mapping via _map_listing(), _parse_deposit for deposit, _safe_str for all string fields, add size_sqm, fix CompareListingData type
+
+- `5433987` | 2026-03-30 | feat | F-F5: viewing checklist — 3 categories (legal/physical/questions), 25 items, localStorage persistence per listing, overlay panel with progress bar, checklist button on ListingCard with green dot indicator
