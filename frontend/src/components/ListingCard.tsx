@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import type { ListingData } from "../types/chat";
+import { getChecklistProgress } from "../hooks/useViewingChecklist";
+import ViewingChecklist from "./ViewingChecklist";
 
 type Props = {
   listing: ListingData;
@@ -67,6 +69,8 @@ function ImageCarousel({ images, title, price, weeklyPrice }: { images: string[]
 
 export default function ListingCard({ listing, isSaved, compact, displayScore, onSave, onRemove, onClick }: Props) {
   const [optimisticSaved, setOptimisticSaved] = useState<boolean | null>(null);
+  const [showChecklist, setShowChecklist] = useState(false);
+  const [checklistProgress, setChecklistProgress] = useState(() => getChecklistProgress(listing.url));
   const saved = optimisticSaved !== null ? optimisticSaved : (isSaved ?? false);
 
   // Once server state catches up, clear optimistic override
@@ -200,19 +204,36 @@ export default function ListingCard({ listing, isSaved, compact, displayScore, o
               }`}>{sourceLabel}</span>}
             </div>
           </div>
-          <button
-            onClick={handleSaveToggle}
-            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-all duration-200 shadow-sm ${
-              saved
-                ? "border-accent bg-accent text-white shadow-accent/20"
-                : "border-border bg-surface text-muted hover:border-accent hover:text-accent hover:bg-accent/5"
-            }`}
-            title={saved ? "Remove from shortlist" : "Save to shortlist"}
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill={saved ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-            </svg>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowChecklist(true); }}
+              className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border bg-surface text-muted shadow-sm transition-all duration-200 hover:border-accent hover:text-accent hover:bg-accent/5"
+              title="Viewing checklist"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 11l3 3L22 4" />
+                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+              </svg>
+              {checklistProgress > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[8px] font-bold text-white">
+                  {checklistProgress}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={handleSaveToggle}
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-all duration-200 shadow-sm ${
+                saved
+                  ? "border-accent bg-accent text-white shadow-accent/20"
+                  : "border-border bg-surface text-muted hover:border-accent hover:text-accent hover:bg-accent/5"
+              }`}
+              title={saved ? "Remove from shortlist" : "Save to shortlist"}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill={saved ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-y border-border/50 py-3">
@@ -281,6 +302,16 @@ export default function ListingCard({ listing, isSaved, compact, displayScore, o
           ))}
         </div>
       </div>
+
+      {showChecklist && (
+        <ViewingChecklist
+          listingUrl={listing.url}
+          onClose={() => {
+            setShowChecklist(false);
+            setChecklistProgress(getChecklistProgress(listing.url));
+          }}
+        />
+      )}
     </div>
   );
 }
