@@ -29,6 +29,8 @@ from orchestration.state import AgentState
 from orchestration.workflow import process_turn
 from skills.search.agentic import build_search_runtime
 from skills.research.crime import get_crime_stats
+from skills.research.epc import get_epc
+from skills.research.flood import get_flood_risk
 from skills.research.rent_stats import get_area_rent_stats
 
 
@@ -267,6 +269,23 @@ def _fetch_commute_time(from_lat: float, from_lon: float, to_lat: float, to_lon:
         return None
 
 
+async def _enrich_flood_risk(listings: list) -> None:
+    """Add flood_risk to each listing dict via Environment Agency API."""
+    async def _fetch_for(listing: dict) -> None:
+        lat = listing.get("lat")
+        lon = listing.get("lon")
+        if lat is None or lon is None:
+            listing["flood_risk"] = None
+            return
+        risk = await get_flood_risk(float(lat), float(lon))
+        if risk:
+            listing["flood_risk"] = risk.level
+        else:
+            listing["flood_risk"] = None
+
+    await asyncio.gather(*[_fetch_for(l) for l in listings])
+
+
 async def _enrich_crime_stats(listings: list) -> None:
     """Add crime_level and crime_total to each listing dict via data.police.uk."""
     async def _fetch_for(listing: dict) -> None:
@@ -359,6 +378,9 @@ def build_metadata(state: AgentState) -> dict | None:
             "commute_summary": r.get("commute_summary"),
             "crime_level": r.get("crime_level"),
             "crime_total": r.get("crime_total"),
+            "flood_risk": r.get("flood_risk"),
+            "epc_rating": r.get("epc_rating"),
+            "epc_potential": r.get("epc_potential"),
             "price_vs_area": r.get("price_vs_area"),
         }
 
@@ -749,12 +771,16 @@ async def chat_stream(req: ChatStreamRequest, request: Request) -> StreamingResp
             print(f"[TIMING] process_turn={t2-t1:.2f}s  total_so_far={t2-t0:.2f}s  reply_len={len(reply)}")
 
             metadata = build_metadata(state)
-            # Enrich listings with crime stats (async, parallel per listing)
+            # Enrich listings with crime + flood stats (async, parallel per listing)
             if metadata and metadata.get("search_results", {}).get("listings"):
+                _listings = metadata["search_results"]["listings"]
                 try:
-                    await _enrich_crime_stats(metadata["search_results"]["listings"])
+                    await asyncio.gather(
+                        _enrich_crime_stats(_listings),
+                        _enrich_flood_risk(_listings),
+                    )
                 except Exception:
-                    pass  # crime enrichment is best-effort
+                    pass  # enrichment is best-effort
             t3 = time.perf_counter()
             has_search = bool(metadata and metadata.get("search_results", {}).get("listings"))
 

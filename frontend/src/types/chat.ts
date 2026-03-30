@@ -47,6 +47,7 @@ export type ListingData = {
   commute_summary?: string | null;
   crime_level?: string | null;
   crime_total?: number | null;
+  flood_risk?: string | null;
   price_vs_area?: "below" | "average" | "above" | null;
 };
 
