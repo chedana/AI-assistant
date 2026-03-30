@@ -64,7 +64,9 @@ def _classify_with_llm_no_listings(
         "Return STRICT JSON. Omit null values, empty arrays, and false booleans.\n"
         "Fields: intent(Search|Chitchat|Page_Nav|AreaCompare|Shortlist|TenantRights), confidence(0-1), reason(string), "
         "target_areas(string[]), shortlist_action(show|clear), page_action(next|prev), refinement_type(string), "
-        "commute_destination(string|null).\n"
+        "commute_destination(string).\n"
+        "If user asks about commute, travel time, distance, or how to get to a specific place, "
+        "set commute_destination to the place name (a station, area, or landmark). Otherwise omit it.\n"
         "Policy: Without listings, QA/Compare/Explain→Search. Chitchat for greetings. "
         "AreaCompare for cross-area price comparison (set target_areas). "
         "TenantRights for legal questions about landlord obligations, eviction, deposits, repairs, tenancy law. "
@@ -153,7 +155,7 @@ def _classify_with_llm_no_listings(
     if not need_clarify:
         clarify_question = None
     commute_destination = obj.get("commute_destination")
-    commute_destination = str(commute_destination).strip().strip("\"'") if commute_destination is not None else None
+    commute_destination = str(commute_destination).strip().strip('"\'').rstrip(".,;?!") if commute_destination is not None else None
     if commute_destination in {"", "none", "null", "None"}:
         commute_destination = None
     return RouteDecision(
@@ -197,7 +199,9 @@ def _classify_with_llm_for_listings(
         "Fields: intent(Search|Specific_QA|Compare|AreaCompare|Shortlist|Chitchat|Page_Nav|AcceptSuggestion|Explain|TenantRights), "
         "confidence(0-1), reason(string), target_indices(int[]), target_areas(string[]), "
         "shortlist_action(add|remove|show|clear), refinement_type(string), page_action(next|prev), "
-        "need_clarify(bool), clarify_question(string), commute_destination(string|null).\n"
+        "need_clarify(bool), clarify_question(string), commute_destination(string).\n"
+        "If user asks about commute, travel time, distance, or how to get to a specific place, "
+        "set commute_destination to the place name (a station, area, or landmark). Otherwise omit it.\n"
         "Policy: Search=new/refine/reset. Specific_QA=detail questions (set target_indices=[N]). "
         "Compare=side-by-side (set target_indices). Explain=holistic eval (which is best?, why these?). "
         "AreaCompare=cross-area price comparison (set target_areas). "
@@ -231,6 +235,8 @@ def _classify_with_llm_for_listings(
         'Q: \'is my deposit protected\' → {"intent":"TenantRights","confidence":0.97,"reason":"tenant_rights_deposit"}\n'
         'Q: \'how long to King\\\'s Cross?\' → {"intent":"Specific_QA","confidence":0.95,"reason":"commute_question","commute_destination":"King\\\'s Cross"}\n'
         'Q: \'what\\\'s the commute to Canary Wharf\' → {"intent":"Specific_QA","confidence":0.94,"reason":"commute_question","commute_destination":"Canary Wharf"}\n'
+        'Q: \'how long to get to Oxford Circus\' → {"intent":"Specific_QA","confidence":0.93,"reason":"commute_question","commute_destination":"Oxford Circus"}\n'
+        'Q: \'how far is Canary Wharf\' → {"intent":"Specific_QA","confidence":0.94,"reason":"commute_question","commute_destination":"Canary Wharf"}\n'
     )
     user_payload = f"Conversation summary:\n{history_hint or '(none)'}\n\nUser input:\n{text}"
     try:
@@ -308,7 +314,7 @@ def _classify_with_llm_for_listings(
     if not need_clarify:
         clarify_question = None
     commute_destination = obj.get("commute_destination")
-    commute_destination = str(commute_destination).strip().strip("\"'") if commute_destination is not None else None
+    commute_destination = str(commute_destination).strip().strip('"\'').rstrip(".,;?!") if commute_destination is not None else None
     if commute_destination in {"", "none", "null", "None"}:
         commute_destination = None
     return RouteDecision(

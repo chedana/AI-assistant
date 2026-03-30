@@ -113,7 +113,7 @@ class GraphState(TypedDict, total=False):
     shortlist_action: Optional[str]
     refinement_type: Optional[str]
     page_action: Optional[str]
-    commute_destination: Optional[str]
+    commute_destination: Optional[str]  # place name extracted by router for commute questions
 
     # ── Speculative parallel execution ────────────────────────────────────────
     _spec_key: Optional[int]         # key into nodes._SPEC_CACHE for parallel refinement_plan

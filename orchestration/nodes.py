@@ -179,6 +179,7 @@ def route_node(state: GraphState) -> GraphState:
     state["shortlist_action"] = decision.shortlist_action
     state["refinement_type"] = decision.refinement_type
     state["page_action"] = getattr(decision, "page_action", None)
+    state["commute_destination"] = getattr(decision, "commute_destination", None)
 
     # Commute destination: prefer router extraction, fall back to regex
     commute_dest = getattr(decision, "commute_destination", None)
@@ -201,6 +202,7 @@ def route_node(state: GraphState) -> GraphState:
                     "reason": decision.reason,
                     "need_clarify": decision.need_clarify,
                     "clarify_question": decision.clarify_question,
+                    "commute_destination": getattr(decision, "commute_destination", None),
                     "has_listings": bool(agent_state.last_results),
                     "has_focus": bool(agent_state.current_focus_listing_payload),
                 },
@@ -662,8 +664,35 @@ def qa_plan_node(state: GraphState) -> GraphState:
     return state
 
 
+_COMMUTE_KEYWORD_RE = re.compile(
+    r"\b(?:commut|travel|how\s+long|how\s+far|get\s+to|journey|distance\s+to|connected\s+to)\b",
+    re.IGNORECASE,
+)
+
+_COMMUTE_DEST_PATTERNS = [
+    re.compile(r"\b(?:commut(?:e|ing)|travel(?:ling)?|get|journey)\s+(?:to|from\s+here\s+to)\s+(.+?)(?:\s*[?,.]|\s+from\s+|\s*$)", re.IGNORECASE),
+    re.compile(r"\bhow\s+(?:long|far)\s+(?:to|is\s+it\s+to|from\s+here\s+to|to\s+get\s+to)\s+(.+?)(?:\s*[?,.]|\s*$)", re.IGNORECASE),
+    re.compile(r"\bdistance\s+(?:to|from\s+here\s+to)\s+(.+?)(?:\s*[?,.]|\s*$)", re.IGNORECASE),
+    re.compile(r"\bconnected\s+to\s+(.+?)(?:\s*[?,.]|\s*$)", re.IGNORECASE),
+    re.compile(r"\bhow\s+far\s+(?:is\s+)?(?:this|it)\s+from\s+(.+?)(?:\s*[?,.]|\s*$)", re.IGNORECASE),
+]
+
+
+def _try_extract_commute_destination_regex(user_in: str) -> Optional[str]:
+    """Regex fallback: extract commute destination from user text when router missed it."""
+    if not user_in or not _COMMUTE_KEYWORD_RE.search(user_in):
+        return None
+    for pat in _COMMUTE_DEST_PATTERNS:
+        m = pat.search(user_in)
+        if m:
+            dest = m.group(1).strip().strip('"\'').rstrip(".,;?!")
+            if dest and len(dest) > 1:
+                return dest
+    return None
+
+
 def _try_answer_commute_question(dest_name: str, agent_state) -> Optional[str]:
-    """Answer commute question with real TfL journey data given an already-extracted destination."""
+    """Given a commute destination name, answer with real TfL journey data."""
     # Get the focused listing's lat/lon
     focus = agent_state.current_focus_listing_payload
     if not focus:
@@ -711,8 +740,10 @@ def qa_execute_node(state: GraphState) -> GraphState:
     runtime = state["runtime"]
     user_in = str(state.get("user_input") or "")
 
-    # Intercept commute questions — answer with real TfL data
-    commute_dest = state.get("commute_destination")
+    # Intercept commute questions — answer with real TfL data.
+    # Primary: commute_destination extracted by the router (no extra LLM call).
+    # Fallback: regex extraction if the router missed commute keywords.
+    commute_dest = state.get("commute_destination") or _try_extract_commute_destination_regex(user_in)
     if commute_dest:
         commute_answer = _try_answer_commute_question(commute_dest, agent_state)
         if commute_answer:

@@ -795,4 +795,13 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5173
 | Project start | 2026-02-17 |
 | Latest commit | 2026-03-01 (`f1597ae`, restructure) |
 | OpenClaw branch start | 2026-03-07 |
-| Days active | 18 |
+| Days active | 27 |
+
+- `9d35dc3` perf: parallel refinement plan + metadata-first → ~1.4s consistent time-to-cards (backend-2)
+- `ef42c1e` perf: shrink router prompt (2-turn history, 120-char truncation) + switch to gpt-4o-mini → stable 1.4–1.6s (backend-2)
+
+- `54979da` | 2026-03-15 | feat | F-F4 session rename — double-click to rename in sidebar and mobile menu (Header + Sidebar + useSessions.renameChat)
+
+- `c37002b` | 2026-03-15 | fix | Replace double-click rename with pencil icon in Header menu; reset editingId on menu close to prevent stale input blocking session switching
+
+- `adcc25e` | 2026-03-30 | feat | B-F5b: merge commute destination extraction into router prompt — eliminate separate LLM call on every QA, add regex fallback
