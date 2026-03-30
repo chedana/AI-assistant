@@ -1,38 +1,38 @@
 import { useState, useCallback, useMemo } from "react";
-import { viewingChecklist, totalChecklistItems } from "../data/viewingChecklist";
+import { VIEWING_CHECKLIST } from "../data/viewingChecklist";
 
-function storageKey(listingUrl: string) {
-  return `openclaw-viewing-${encodeURIComponent(listingUrl)}`;
+function storageKey(listingUrl: string): string {
+  return `openclaw-viewing-${listingUrl}`;
 }
 
 function loadChecked(listingUrl: string): Set<string> {
   try {
     const raw = localStorage.getItem(storageKey(listingUrl));
     if (!raw) return new Set();
-    const arr = JSON.parse(raw) as string[];
-    return new Set(Array.isArray(arr) ? arr : []);
+    const arr = JSON.parse(raw);
+    if (Array.isArray(arr)) return new Set(arr as string[]);
   } catch {
-    return new Set();
+    // corrupted data — start fresh
   }
+  return new Set();
 }
 
 function saveChecked(listingUrl: string, checked: Set<string>) {
-  if (checked.size === 0) {
-    localStorage.removeItem(storageKey(listingUrl));
-  } else {
-    localStorage.setItem(storageKey(listingUrl), JSON.stringify([...checked]));
-  }
+  localStorage.setItem(storageKey(listingUrl), JSON.stringify([...checked]));
 }
 
 export function useViewingChecklist(listingUrl: string) {
   const [checked, setChecked] = useState<Set<string>>(() => loadChecked(listingUrl));
 
   const toggle = useCallback(
-    (id: string) => {
+    (itemId: string) => {
       setChecked((prev) => {
         const next = new Set(prev);
-        if (next.has(id)) next.delete(id);
-        else next.add(id);
+        if (next.has(itemId)) {
+          next.delete(itemId);
+        } else {
+          next.add(itemId);
+        }
         saveChecked(listingUrl, next);
         return next;
       });
@@ -40,32 +40,32 @@ export function useViewingChecklist(listingUrl: string) {
     [listingUrl],
   );
 
-  const isChecked = useCallback((id: string) => checked.has(id), [checked]);
+  const isChecked = useCallback((itemId: string) => checked.has(itemId), [checked]);
 
   const checkedCount = useCallback(
     (categoryTitle: string) => {
-      const cat = viewingChecklist.find((c) => c.title === categoryTitle);
-      if (!cat) return 0;
-      return cat.items.filter((item) => checked.has(item.id)).length;
+      const category = VIEWING_CHECKLIST.find((c) => c.title === categoryTitle);
+      if (!category) return 0;
+      return category.items.filter((item) => checked.has(item.id)).length;
     },
     [checked],
   );
 
-  const totalItems = totalChecklistItems;
+  const totalCount = useCallback((categoryTitle: string) => {
+    const category = VIEWING_CHECKLIST.find((c) => c.title === categoryTitle);
+    return category ? category.items.length : 0;
+  }, []);
 
   const totalChecked = useMemo(() => checked.size, [checked]);
+  const totalItems = useMemo(
+    () => VIEWING_CHECKLIST.reduce((sum, cat) => sum + cat.items.length, 0),
+    [],
+  );
 
-  return { checked, toggle, isChecked, checkedCount, totalItems, totalChecked };
+  return { toggle, isChecked, checkedCount, totalCount, totalChecked, totalItems };
 }
 
-/** Quick check: does a listing have any items checked? (no hook needed) */
-export function hasChecklistProgress(listingUrl: string): boolean {
-  try {
-    const raw = localStorage.getItem(storageKey(listingUrl));
-    if (!raw) return false;
-    const arr = JSON.parse(raw) as string[];
-    return Array.isArray(arr) && arr.length > 0;
-  } catch {
-    return false;
-  }
+/** Quickly read checked count for a listing without the full hook (for badge indicators). */
+export function getChecklistProgress(listingUrl: string): number {
+  return loadChecked(listingUrl).size;
 }

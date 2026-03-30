@@ -1,14 +1,7 @@
-export type ChecklistItem = {
-  id: string;
-  label: string;
-};
+export type ChecklistItem = { id: string; label: string };
+export type ChecklistCategory = { title: string; items: ChecklistItem[] };
 
-export type ChecklistCategory = {
-  title: string;
-  items: ChecklistItem[];
-};
-
-export const viewingChecklist: ChecklistCategory[] = [
+export const VIEWING_CHECKLIST: ChecklistCategory[] = [
   {
     title: "Legal Requirements",
     items: [
@@ -50,8 +43,3 @@ export const viewingChecklist: ChecklistCategory[] = [
     ],
   },
 ];
-
-export const totalChecklistItems = viewingChecklist.reduce(
-  (sum, cat) => sum + cat.items.length,
-  0,
-);
