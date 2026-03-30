@@ -13,6 +13,7 @@ export type ChatSession = {
   createdAt: number;
   updatedAt: number;
   messages: Message[];
+  thinkingMode?: "quick" | "deep";
 };
 
 // --- Metadata types (from backend SSE metadata event) ---
@@ -92,4 +93,5 @@ export type SessionMetadata = {
   quick_replies?: QuickReply[];
   compare_data?: CompareData;
   shortlist?: ShortlistMeta;
+  thinking_mode?: "quick" | "deep";
 };

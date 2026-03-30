@@ -484,6 +484,9 @@ def build_metadata(state: AgentState) -> dict | None:
     if quick:
         meta["quick_replies"] = quick
 
+    # Always include thinking_mode so the frontend stays in sync
+    meta["thinking_mode"] = state.thinking_mode
+
     return meta if meta else None
 
 
@@ -562,6 +565,10 @@ async def chat_stream(req: ChatStreamRequest, request: Request) -> StreamingResp
             import time
             t0 = time.perf_counter()
             state = get_or_create_state(req.session_id)
+            # Apply thinking_mode from route_hint if provided
+            if req.route_hint and req.route_hint.get("thinking_mode") in ("quick", "deep"):
+                state.thinking_mode = req.route_hint["thinking_mode"]
+                print(f"[thinking_mode={state.thinking_mode}]")
             session_lock = get_session_lock(req.session_id)
             hint_str = str(req.route_hint.get("intent") if req.route_hint else "none")
             print(f"[TIMING] start intent={hint_str!r} text={user_text[:60]!r}")

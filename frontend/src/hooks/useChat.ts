@@ -38,6 +38,16 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
     lastAckIdRef.current = null;
   }, [activeSession?.id]);
 
+  const thinkingMode = activeSession?.thinkingMode ?? "quick";
+
+  function setThinkingMode(mode: "quick" | "deep") {
+    if (!activeSession) return;
+    updateSession(activeSession.id, (session) => ({
+      ...session,
+      thinkingMode: mode,
+    }));
+  }
+
   async function sendMessage(input: string, routeHint?: Record<string, unknown>) {
     if (!activeSession || isGeneratingRef.current) return;
     const prompt = input.trim();
@@ -70,10 +80,12 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
       messages: [...session.messages, userMessage, assistantMessage],
     }));
 
+    const mergedHint = { ...routeHint, thinking_mode: activeSession.thinkingMode ?? "quick" };
+
     try {
       await streamChat(activeSession.id, prompt, {
         signal: controller.signal,
-        routeHint,
+        routeHint: mergedHint,
         onChunk: (chunk) => {
           updateSession(activeSession.id, (session) => {
             const messages = session.messages.map((m) =>
@@ -173,10 +185,12 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
     const controller = new AbortController();
     abortRef.current = controller;
 
+    const silentMergedHint = { ...routeHint, thinking_mode: activeSession.thinkingMode ?? "quick" };
+
     try {
       await streamChat(activeSession.id, prompt, {
         signal: controller.signal,
-        routeHint,
+        routeHint: silentMergedHint,
         onChunk: () => {},
         onMetadata: (meta) => {
           setMetadata(meta);
@@ -220,6 +234,8 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
     suppressedIds,
     metadataForId,
     activeAssistantId,
+    thinkingMode,
+    setThinkingMode,
     sendMessage,
     sendSilentAction,
     stopGenerating,
