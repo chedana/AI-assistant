@@ -161,6 +161,7 @@ def route_node(state: GraphState) -> GraphState:
     state["shortlist_action"] = decision.shortlist_action
     state["refinement_type"] = decision.refinement_type
     state["page_action"] = getattr(decision, "page_action", None)
+    state["commute_destination"] = getattr(decision, "commute_destination", None)
 
     if state.get("router_debug"):
         print(
@@ -176,6 +177,7 @@ def route_node(state: GraphState) -> GraphState:
                     "reason": decision.reason,
                     "need_clarify": decision.need_clarify,
                     "clarify_question": decision.clarify_question,
+                    "commute_destination": getattr(decision, "commute_destination", None),
                     "has_listings": bool(agent_state.last_results),
                     "has_focus": bool(agent_state.current_focus_listing_payload),
                 },
@@ -637,51 +639,35 @@ def qa_plan_node(state: GraphState) -> GraphState:
     return state
 
 
-def _try_extract_commute_destination_via_llm(user_in: str) -> Optional[str]:
-    """Use LLM to detect if the user is asking about commute/travel time and extract the destination."""
-    from core.llm_client import qwen_chat
-    try:
-        raw = qwen_chat(
-            [
-                {"role": "system", "content": (
-                    "You detect commute/travel questions about rental listings. "
-                    "If the user is asking about travel time, commute, or how to get to a specific place, "
-                    "return ONLY the destination as a geocodable place name — a station, street, address, or landmark. "
-                    "If the user mentions a company, university, hospital, or building, resolve it to the nearest "
-                    "well-known London station or street address using your knowledge. "
-                    "If the user is NOT asking about commute/travel, return exactly \"NONE\".\n"
-                    "Examples:\n"
-                    "- \"how long to get to Oxford Circus\" → Oxford Circus\n"
-                    "- \"what's the commute like to my office in Shoreditch\" → Shoreditch\n"
-                    "- \"can I get to Bank easily from here\" → Bank\n"
-                    "- \"how far is this from Kings Cross\" → Kings Cross\n"
-                    "- \"is this place well connected to Canary Wharf\" → Canary Wharf\n"
-                    "- \"I work at Google London\" → Kings Cross\n"
-                    "- \"my office is at Deloitte\" → Liverpool Street\n"
-                    "- \"I work at UCL\" → Euston Square\n"
-                    "- \"does this have a garden\" → NONE\n"
-                    "- \"what's the rent\" → NONE\n"
-                )},
-                {"role": "user", "content": user_in},
-            ],
-            temperature=0.0,
-        ).strip()
-    except Exception:
+_COMMUTE_KEYWORD_RE = re.compile(
+    r"\b(?:commut|travel|how\s+long|how\s+far|get\s+to|journey|distance\s+to|connected\s+to)\b",
+    re.IGNORECASE,
+)
+
+_COMMUTE_DEST_PATTERNS = [
+    re.compile(r"\b(?:commut(?:e|ing)|travel(?:ling)?|get|journey)\s+(?:to|from\s+here\s+to)\s+(.+?)(?:\s*[?,.]|\s+from\s+|\s*$)", re.IGNORECASE),
+    re.compile(r"\bhow\s+(?:long|far)\s+(?:to|is\s+it\s+to|from\s+here\s+to|to\s+get\s+to)\s+(.+?)(?:\s*[?,.]|\s*$)", re.IGNORECASE),
+    re.compile(r"\bdistance\s+(?:to|from\s+here\s+to)\s+(.+?)(?:\s*[?,.]|\s*$)", re.IGNORECASE),
+    re.compile(r"\bconnected\s+to\s+(.+?)(?:\s*[?,.]|\s*$)", re.IGNORECASE),
+    re.compile(r"\bhow\s+far\s+(?:is\s+)?(?:this|it)\s+from\s+(.+?)(?:\s*[?,.]|\s*$)", re.IGNORECASE),
+]
+
+
+def _try_extract_commute_destination_regex(user_in: str) -> Optional[str]:
+    """Regex fallback: extract commute destination from user text when router missed it."""
+    if not user_in or not _COMMUTE_KEYWORD_RE.search(user_in):
         return None
+    for pat in _COMMUTE_DEST_PATTERNS:
+        m = pat.search(user_in)
+        if m:
+            dest = m.group(1).strip().strip('"\'').rstrip(".,;?!")
+            if dest and len(dest) > 1:
+                return dest
+    return None
 
-    if not raw or raw.upper() == "NONE":
-        return None
-    # Clean up any quotes or punctuation the LLM might add
-    dest = raw.strip().strip('"\'').rstrip(".,;?!")
-    return dest if dest and len(dest) > 1 else None
 
-
-def _try_answer_commute_question(user_in: str, agent_state) -> Optional[str]:
-    """Use LLM to detect commute questions, then answer with real TfL journey data."""
-    dest_name = _try_extract_commute_destination_via_llm(user_in)
-    if not dest_name:
-        return None
-
+def _try_answer_commute_question(dest_name: str, agent_state) -> Optional[str]:
+    """Given a commute destination name, answer with real TfL journey data."""
     # Get the focused listing's lat/lon
     focus = agent_state.current_focus_listing_payload
     if not focus:
@@ -729,11 +715,15 @@ def qa_execute_node(state: GraphState) -> GraphState:
     runtime = state["runtime"]
     user_in = str(state.get("user_input") or "")
 
-    # Intercept commute questions — answer with real TfL data
-    commute_answer = _try_answer_commute_question(user_in, agent_state)
-    if commute_answer:
-        state["reply_text"] = commute_answer
-        return state
+    # Intercept commute questions — answer with real TfL data.
+    # Primary: commute_destination extracted by the router (no extra LLM call).
+    # Fallback: regex extraction if the router missed commute keywords.
+    commute_dest = state.get("commute_destination") or _try_extract_commute_destination_regex(user_in)
+    if commute_dest:
+        commute_answer = _try_answer_commute_question(commute_dest, agent_state)
+        if commute_answer:
+            state["reply_text"] = commute_answer
+            return state
 
     qa_ctx = {
         "question_text": user_in,
