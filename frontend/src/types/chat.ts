@@ -32,7 +32,8 @@ export type ListingData = {
   features?: string[];
   property_type?: string;
   furnish_type?: string;
-  deposit?: number;
+  deposit?: number | null;
+  size_sqm?: number | null;
   lat?: number | null;
   lon?: number | null;
   final_score?: number;
@@ -63,18 +64,8 @@ export type QuickReply = {
   route_hint?: Record<string, unknown>;
 };
 
-export type CompareListingData = {
+export type CompareListingData = ListingData & {
   index: number;
-  title: string;
-  url: string;
-  price_pcm: number;
-  bedrooms: number;
-  bathrooms: number;
-  deposit: number;
-  available_from: string;
-  size_sqm: number;
-  furnish_type: string;
-  property_type: string;
 };
 
 export type CompareData = {

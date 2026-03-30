@@ -306,22 +306,23 @@ def build_metadata(state: AgentState) -> dict | None:
         if not cover and gallery:
             cover = gallery[0]
         return {
-            "title": str(r.get("title", "")),
+            "title": _safe_str(r.get("title")),
             "url": str(r.get("url", "")),
             "image_url": cover,
-            "address": str(r.get("address", "")),
+            "address": _safe_str(r.get("address")),
             "price_pcm": _num(r.get("price_pcm")),
             "bedrooms": _num(r.get("bedrooms")),
             "bathrooms": _num(r.get("bathrooms")),
-            "available_from": str(r.get("available_from", "")),
-            "description": str(r.get("description", "")),
+            "available_from": _safe_str(r.get("available_from")),
+            "description": _safe_str(r.get("description")),
             "features": _features_list(r.get("features")),
-            "property_type": str(r.get("property_type", "")),
-            "furnish_type": str(r.get("furnish_type", "")),
+            "property_type": _safe_str(r.get("property_type")),
+            "furnish_type": _safe_str(r.get("furnish_type")),
             "lat": _num(r.get("latitude"), None),
             "lon": _num(r.get("longitude"), None),
             "image_urls": gallery,
-            "deposit": _num(r.get("deposit")),
+            "deposit": _parse_deposit(r.get("deposit")),
+            "size_sqm": _num(r.get("size_sqm"), None),
             "final_score": _num(r.get("final_score")),
             "penalty_reasons": [p for p in _to_list(r.get("penalty_reasons")) if not p.startswith("unknown_hard(")],
             "preference_hits": _to_list(r.get("preference_hits")),
@@ -408,7 +409,7 @@ def build_metadata(state: AgentState) -> dict | None:
         if display:
             meta["constraints"] = display
 
-    # Compare data — structured comparison table
+    # Compare data — structured comparison table (reuses _map_listing for consistency)
     if state.last_intent == "Compare":
         _compare_source = (
             list(state.shortlist or [])
@@ -418,22 +419,9 @@ def build_metadata(state: AgentState) -> dict | None:
         if _compare_source:
             compare_listings = []
             for i, r in enumerate(_compare_source):
-                compare_listings.append({
-                    "index": i + 1,
-                    "title": str(r.get("title", "")),
-                    "url": str(r.get("url", "")),
-                    "image_url": str(r.get("image_url", "")),
-                    "price_pcm": _num(r.get("price_pcm")),
-                    "bedrooms": _num(r.get("bedrooms")),
-                    "bathrooms": _num(r.get("bathrooms")),
-                    "deposit": _parse_deposit(r.get("deposit")),
-                    "available_from": str(r.get("available_from", "")),
-                    "size_sqm": _num(r.get("size_sqm")),
-                    "furnish_type": str(r.get("furnish_type") or ""),
-                    "property_type": str(r.get("property_type") or ""),
-                    "lat": _num(r.get("latitude"), None),
-                    "lon": _num(r.get("longitude"), None),
-                })
+                mapped = _map_listing(r)
+                mapped["index"] = i + 1
+                compare_listings.append(mapped)
             meta["compare_data"] = {"listings": compare_listings}
 
     # Shortlist — always included so frontend can show saved/unsaved state on cards
