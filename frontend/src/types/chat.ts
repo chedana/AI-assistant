@@ -83,6 +83,33 @@ export type DraftEmailResponse = {
   body: string;
 };
 
+// --- Contract analysis types ---
+
+export type ClauseFlag = {
+  clause_text: string;
+  issue: string;
+  severity: "info" | "warning" | "critical";
+  advice: string;
+};
+
+export type ComplianceCheck = {
+  check: string;
+  status: "pass" | "fail" | "unknown";
+  detail: string;
+};
+
+export type ContractReport = {
+  summary: string;
+  tenancy_type: string;
+  rent: string;
+  deposit: string;
+  break_clause: string | null;
+  notice_period: string;
+  clauses: ClauseFlag[];
+  compliance: ComplianceCheck[];
+  disclaimer?: string;
+};
+
 export type SessionMetadata = {
   search_results?: SearchResultsMeta;
   constraints?: ConstraintsMeta;

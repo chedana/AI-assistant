@@ -4,6 +4,7 @@ import ChatInput from "./components/ChatInput";
 import Header from "./components/Header";
 import ListingsPanel from "./components/ListingsPanel";
 import ShortlistPanel from "./components/ShortlistPanel";
+import ContractUpload from "./components/ContractUpload";
 import { useChat } from "./hooks/useChat";
 import { useSessions } from "./hooks/useSessions";
 
@@ -32,6 +33,7 @@ export default function App() {
   } = useChat({ activeSession, updateSession });
 
   const [shortlistOpen, setShortlistOpen] = useState(false);
+  const [contractOpen, setContractOpen] = useState(false);
   const [mobileView, setMobileView] = useState<"chat" | "results">("chat");
   const [viewMode, setViewMode] = useState<"list" | "map">("list");
 
@@ -123,6 +125,7 @@ export default function App() {
         onRenameSession={renameChat}
         onRemoveConstraint={handleRemoveConstraint}
         onShortlistToggle={() => setShortlistOpen((o) => !o)}
+        onContractToggle={() => setContractOpen((o) => !o)}
         mobileView={mobileView}
         onMobileViewToggle={(v) => setMobileView(v)}
       />
@@ -216,6 +219,13 @@ export default function App() {
             />
           </div>
         </>
+      )}
+      {/* Contract upload overlay */}
+      {contractOpen && activeSession && (
+        <ContractUpload
+          sessionId={activeSession.id}
+          onClose={() => setContractOpen(false)}
+        />
       )}
     </div>
   );
