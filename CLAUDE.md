@@ -12,26 +12,14 @@ Multi-turn conversational rental search assistant. Users describe rental require
 
 ## Commands
 
-### IMPORTANT: Port Conflicts
-
-Another user (`claudesubscription`) runs a **stale** copy of the frontend on port **5173** from `/Users/claudesubscription/Desktop/LLM_project/AI-assistant/frontend/`. That is **old code** — do NOT use it.
-
-Always start our frontend on **port 5174** to avoid conflicts:
-
+### Backend (2 terminals)
 ```bash
-cd frontend && node node_modules/.bin/vite --host 0.0.0.0 --port 5174
-```
-
-Before starting any server, check existing processes with `lsof -i :<port>` and `ps aux | grep vite` to avoid connecting to stale instances.
-
-### Backend + Frontend
-```bash
-# Terminal 1: FastAPI backend
-# Must set LLM proxy + Qdrant Cloud env vars (see Configuration section)
+# Terminal 1: FastAPI backend (set OPENAI_API_KEY first)
+export OPENAI_API_KEY="sk-..."
 cd backend && uvicorn api_server:app --host 0.0.0.0 --port 8000
 
-# Terminal 2: Frontend dev server (port 5174, NOT 5173)
-cd frontend && node node_modules/.bin/vite --host 0.0.0.0 --port 5174
+# Terminal 2: Frontend dev server
+cd frontend && npm install && npm run dev -- --host 0.0.0.0 --port 5173
 ```
 
 ### Frontend build
@@ -171,19 +159,10 @@ All tunable parameters are env vars (see `run.sh` for defaults, `core/settings.p
 
 ---
 
-## Design Principles
-
-- **LLM-first for user input understanding.** Whenever a user query needs to be interpreted, classified, or have information extracted from it, use the LLM — not regex. Regex is brittle and can only match patterns you anticipate. The LLM understands intent, handles misspellings, slang, and novel phrasing. Regex may be used only as a last-resort fallback if the LLM call fails, never as the primary path.
-- **Rule-based for data processing.** Hard filters, normalization, geocoding lookups, score computation — these operate on structured data, not user language. Rules are appropriate here.
-
-**Rule of thumb:** If it touches raw user text → LLM. If it transforms structured data → rules.
-
----
-
 ## Git Conventions
 
 - Do **not** add `Co-Authored-By` trailers to commit messages.
-- Always commit to the **`openclaw`** branch.
+- Always commit to the **`restructure`** branch (worktree at `.claude/worktrees/gracious-clarke`).
 
 ---
 
@@ -193,15 +172,25 @@ Two files manage work across sessions:
 
 | File | Purpose |
 |------|---------|
-| `PROJECT.md` | Living task tracker — current state, open tasks, bugs, roadmap. **Read this to know what to work on.** |
-| `DEV_PROGRESS.md` | Append-only commit log — what has been done, per session. |
+| `TODO.md` | What needs to be done — tasks assigned per session by the lead. **Read this to know what to work on.** |
+| `DEV_PROGRESS.md` | What has been done — append-only commit log per session. |
 
 ### After every commit (mandatory)
 
-1. **Update `PROJECT.md`** — mark completed tasks `✅`, update Current App State / Data State if changed.
-2. **Append a done line to `DEV_PROGRESS.md`** (format: `` | `<hash>` | <date> | <type> | <description> ``).
-3. Commit both:
+1. **Remove the completed task from `TODO.md`** (your session's section).
+2. **Append a done line to `DEV_PROGRESS.md`** under your session (format: `` - `<hash>` <type>: <description> ``).
+3. If working in a **worktree**, commit both file changes and ensure they reach `restructure`:
    ```bash
-   git add PROJECT.md DEV_PROGRESS.md
-   git commit -m "docs: update PROJECT + DEV_PROGRESS after <short hash>"
+   git add TODO.md DEV_PROGRESS.md
+   git commit -m "docs: update TODO + DEV_PROGRESS after <short hash>"
    ```
+
+### Session Identity
+
+| Session | Domain | Covers |
+|---------|--------|--------|
+| `backend-1` | Orchestration & search pipeline | `orchestration/`, `agent_graph/`, `agent/`, `skills/`, `core/` |
+| `backend-2` | API & infrastructure | `backend/api_server.py`, FastAPI endpoints, SSE streaming |
+| `frontend` | UI | `frontend/src/` — components, hooks, types, lib |
+| `test` | Testing | `test/`, test datasets, test scripts |
+| `data` | Data & embeddings | `crawler/`, `artifacts/`, Qdrant collection, embedding scripts |

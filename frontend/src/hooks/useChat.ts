@@ -80,7 +80,7 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
       messages: [...session.messages, userMessage, assistantMessage],
     }));
 
-    const mergedHint = { ...routeHint, thinking_mode: activeSession.thinkingMode ?? "quick" };
+    const mergedHint = { ...routeHint, thinking_mode: thinkingMode };
 
     try {
       await streamChat(activeSession.id, prompt, {
@@ -185,7 +185,7 @@ export function useChat({ activeSession, updateSession }: UseChatOptions) {
     const controller = new AbortController();
     abortRef.current = controller;
 
-    const silentMergedHint = { ...routeHint, thinking_mode: activeSession.thinkingMode ?? "quick" };
+    const silentMergedHint = { ...routeHint, thinking_mode: thinkingMode };
 
     try {
       await streamChat(activeSession.id, prompt, {

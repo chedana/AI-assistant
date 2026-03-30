@@ -58,24 +58,22 @@ export default function ChatInput({ isGenerating, thinkingMode, onToggleMode, on
         />
         <button
           type="button"
-          onClick={onToggleMode}
-          disabled={isGenerating}
           title={thinkingMode === "quick" ? "Quick mode — click for Deep" : "Deep mode — click for Quick"}
-          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-all active:scale-90 ${
-            isGenerating
-              ? "opacity-40 pointer-events-none"
-              : thinkingMode === "deep"
-                ? "bg-accent/15 text-accent ring-1 ring-accent/40"
-                : "bg-transparent text-muted hover:text-text hover:bg-surface"
+          disabled={isGenerating}
+          onClick={() => { if (!isGenerating) onToggleMode(); }}
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-all active:scale-95 disabled:opacity-40 disabled:pointer-events-none ${
+            thinkingMode === "deep"
+              ? "bg-accent/15 text-accent shadow-[0_0_8px_rgba(16,185,129,0.3)]"
+              : "bg-transparent text-muted hover:text-text hover:bg-surface"
           }`}
         >
-          {thinkingMode === "quick" ? (
+          {thinkingMode === "deep" ? (
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z" />
+              <path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8L12 2z" />
             </svg>
           ) : (
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-              <path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8L12 2z" />
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z" />
             </svg>
           )}
         </button>
