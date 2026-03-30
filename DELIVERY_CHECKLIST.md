@@ -264,11 +264,60 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5174
 
 ---
 
-## Phase 5: 待开发
+## Phase 5a: Area Research — Crime + Rent
 
-| Phase | 任务 | 状态 |
-|-------|------|------|
-| Phase 5 | Crime / Flood / EPC / Rent Stats APIs | 未开始 |
+### Crime Index (data.police.uk)
+
+**Team:** crime-dev → crime-debug (1 bug → 修复) → crime-validate
+**Commits:** `5bc8a18`, `225add0` (fix)
+**Status:** Code complete, team-validated. Awaiting lead sign-off.
+
+| # | Check | Agent 结果 | Lead 验收 |
+|---|-------|-----------|----------|
+| 1 | `python3 -m py_compile backend/api_server.py` 通过 | PASS | [ ] |
+| 2 | `python3 -m py_compile skills/research/crime.py` 通过 | PASS | [ ] |
+| 3 | `cd frontend && npx tsc --noEmit` 通过 | PASS | [ ] |
+| 4 | API URL: `https://data.police.uk/api/crimes-street/all-crime` | PASS | [ ] |
+| 5 | Cache: lat/lon rounded 2dp, 24hr TTL | PASS | [ ] |
+| 6 | Error handling: 返回 None（不崩溃） | PASS | [ ] |
+| 7 | Level 阈值: Low (<15/mo) / Medium (<35/mo) / High (>=35/mo) | PASS | [ ] |
+| 8 | ListingCard badge: shield icon, green/amber/red | PASS | [ ] |
+| 9 | ListingData 有 `crime_level` + `crime_total` 字段 | PASS | [ ] |
+| 10 | 无 debug 语句，无 secrets | PASS | [ ] |
+
+---
+
+### Average Rent (Qdrant 聚合)
+
+**Team:** rent-dev → rent-debug → rent-validate (1 FAIL → 修复 → 重验通过)
+**Commits:** rent_stats.py + `114127c` (fix: api_server integration)
+**Status:** Code complete, team-validated. Awaiting lead sign-off.
+
+| # | Check | Agent 结果 | Lead 验收 |
+|---|-------|-----------|----------|
+| 1 | `python3 -m py_compile` api_server.py + rent_stats.py | PASS | [ ] |
+| 2 | `cd frontend && npx tsc --noEmit` 通过 | PASS | [ ] |
+| 3 | Qdrant 使用 settings 中的 collection name | PASS | [ ] |
+| 4 | Bedrooms filter 应用到聚合查询 | PASS | [ ] |
+| 5 | Median / p25 / p75 计算正确 | PASS | [ ] |
+| 6 | Cache 1hr TTL | PASS | [ ] |
+| 7 | price_vs_area: below (<p25) / average (p25-p75) / above (>p75) | PASS | [ ] |
+| 8 | ListingCard badge: green "Below avg" / muted "Average" / amber "Above avg" | PASS | [ ] |
+| 9 | ListingData 有 `price_vs_area` 字段 | PASS | [ ] |
+| 10 | 无外部 API 调用（仅 Qdrant） | PASS | [ ] |
+| 11 | 无 debug 语句，无 secrets | PASS | [ ] |
+
+**Validate 发现的问题及修复：**
+- api_server.py 缺少 rent_stats 集成（import、调用、metadata 输出）→ `114127c` 修复
+
+---
+
+## Phase 5b: 待开发
+
+| 任务 | 状态 |
+|------|------|
+| Flood Risk (Environment Agency) | 未开始 |
+| EPC Rating (gov.uk) | 未开始 |
 
 ---
 
