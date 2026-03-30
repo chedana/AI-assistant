@@ -317,6 +317,7 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5173
 - `da9580b` fix: suppress assistant text bubble when listing cards are shown
 - `dae333e` fix: cards persist during generation; S1 tenancy redesign, S3/S4 null-safe rank
 - `7fc86f9` fix: search pipeline S5/S6/S8 — dead signals removed, unified normalize, clause boundary fix
+- `37c252f` refactor: merge commute destination LLM call into router (B-F5b) — eliminates extra OpenAI call per QA turn
 
 ---
 
