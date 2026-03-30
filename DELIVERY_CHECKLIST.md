@@ -179,11 +179,37 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 5174
 
 ---
 
-## Phase 3-5: 待开发
+## Phase 3: Contact Features
+
+### B-F4 Draft Viewing Request Email
+
+**Team:** bf4-dev → bf4-debug → bf4-validate
+**Commit:** `90ec023`
+**Status:** Code complete, team-validated. Awaiting lead sign-off.
+
+| # | Check | Agent 结果 | Lead 验收 |
+|---|-------|-----------|----------|
+| 1 | `python3 -m py_compile backend/api_server.py` 通过 | PASS | [ ] |
+| 2 | `python3 -m py_compile core/chatbot_config.py` 通过 | PASS | [ ] |
+| 3 | `cd frontend && npx tsc --noEmit` 通过（排除预存问题） | PASS | [ ] |
+| 4 | `POST /api/contact/draft` 端点存在（api_server.py line 525） | PASS | [ ] |
+| 5 | 端点读取 `session_id` + `listing_index` | PASS | [ ] |
+| 6 | `listing_index` 类型检查 + 范围检查 → 400 错误 | PASS | [ ] |
+| 7 | `DRAFT_VIEWING_EMAIL_SYSTEM` prompt 存在（chatbot_config.py line 340） | PASS | [ ] |
+| 8 | Prompt 指定 "under 150 words" + "do NOT include personal details" | PASS | [ ] |
+| 9 | `DraftEmailModal.tsx` 有可编辑 subject input + body textarea | PASS | [ ] |
+| 10 | Copy 使用 `navigator.clipboard.writeText`（带 fallback） | PASS | [ ] |
+| 11 | `ListingCard.tsx` 有 envelope SVG 按钮 + loading spinner | PASS | [ ] |
+| 12 | `DraftEmailResponse` 类型存在于 `types/chat.ts` | PASS | [ ] |
+| 13 | 无 `console.log` / `print()` 调试语句 | PASS | [ ] |
+| 14 | 无 hardcoded API keys 或 secrets | PASS | [ ] |
+
+---
+
+## Phase 4-5: 待开发
 
 | Phase | 任务 | 状态 |
 |-------|------|------|
-| Phase 3 | B-F4 看房邮件草稿 | 未开始 |
 | Phase 4 | B-F6 合同分析 + F-F6 上传 UI | 未开始 |
 | Phase 5 | Crime / Flood / EPC / Rent Stats APIs | 未开始 |
 
