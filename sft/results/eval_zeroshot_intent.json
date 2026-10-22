@@ -1,0 +1,14 @@
+{
+ "name": "zeroshot_intent",
+ "test": "test_intent_v1.jsonl",
+ "test_sha256": "988c401f33e4d6092b23bbf9afe8c98e127d1d889d7c38c23ba0086b5e8439bc",
+ "n": 300,
+ "field_f1": 0.9302,
+ "precision": 0.9184,
+ "recall": 0.9424,
+ "intent_accuracy": 0.8433,
+ "extra_field_rate": 0.0007,
+ "json_valid_rate": 1.0,
+ "schema_valid_rate": 0.88,
+ "missing_predictions": 0
+}

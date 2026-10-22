@@ -1,0 +1,10 @@
+{
+ "model": "Qwen/Qwen3.5-4B",
+ "lora": null,
+ "test": "data/test_intent_v1.jsonl",
+ "n": 300,
+ "batch_seconds": 59.61,
+ "latency_p50_s": 4.725,
+ "prompt": "zeroshot_v1",
+ "temperature": 0
+}

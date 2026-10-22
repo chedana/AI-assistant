@@ -1,0 +1,14 @@
+{
+ "name": "zeroshot_extract",
+ "test": "test_extract_v1.jsonl",
+ "test_sha256": "f2f9330dd29ba4f7f4dddadd3242d5a33e54e065bf645884a5a1e472167e7011",
+ "n": 300,
+ "field_f1": 0.923,
+ "precision": 0.9042,
+ "recall": 0.9426,
+ "intent_accuracy": 0.9933,
+ "extra_field_rate": 0.0122,
+ "json_valid_rate": 1.0,
+ "schema_valid_rate": 0.6767,
+ "missing_predictions": 0
+}
