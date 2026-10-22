@@ -1,0 +1,25 @@
+{"task_id":"Q-00002","query":"Are bills included in the rent for the SW17 one?","location_keywords":[]}
+{"task_id":"Q-00004","query":"About the second listing: does it allow pets?","location_keywords":[]}
+{"task_id":"Q-00006","query":"Does the £7,020 a month one have any outdoor space?","location_keywords":[]}
+{"task_id":"Q-00008","query":"Can you confirm whether the second one comes with any furniture?","location_keywords":[]}
+{"task_id":"Q-00010","query":"When is the Walthamstow studio available to move into?","location_keywords":[]}
+{"task_id":"Q-00012","query":"Could you compare all five in terms of location and transport links for commuting?","location_keywords":[]}
+{"task_id":"Q-00014","query":"How do the third and fifth listings compare?","location_keywords":[]}
+{"task_id":"Q-00016","query":"Talk me through the differences between numbers two and three.","location_keywords":[]}
+{"task_id":"Q-00018","query":"Of the second, fourth and fifth options, which offers the best value overall?","location_keywords":[]}
+{"task_id":"Q-00020","query":"Compare the rents for listings one, four and five, please.","location_keywords":[]}
+{"task_id":"Q-00022","query":"hey, how's it going?","location_keywords":[]}
+{"task_id":"Q-00024","query":"What's the difference between a holding deposit and a tenancy deposit in the UK?","location_keywords":[]}
+{"task_id":"Q-00026","query":"What does a tenancy guarantor actually do?","location_keywords":[]}
+{"task_id":"Q-00028","query":"London rents are ridiculous, feels like they go up every time I blink.","location_keywords":[]}
+{"task_id":"Q-00030","query":"Why do cats love cardboard boxes so much?","location_keywords":[]}
+{"task_id":"Q-00032","query":"hmm, show me unfurnished ones instead, max £3,500 pcm","location_keywords":[]}
+{"task_id":"Q-00034","query":"What about places in Islignton instead?","location_keywords":["Islignton"]}
+{"task_id":"Q-00036","query":"Could you look near New Beckneham instead?","location_keywords":["New Beckneham"]}
+{"task_id":"Q-00038","query":"Let's try Canray Wharf for the search instead.","location_keywords":["Canray Wharf"]}
+{"task_id":"Q-00040","query":"Any options close to Redbridge instead?","location_keywords":["Redbridge"]}
+{"task_id":"Q-00042","query":"2 bed flat near Finchley Road & Frognl for a long let, ideally with a roomy living area.","location_keywords":["Finchley Road & Frognl"],"soft_preferences":["a roomy living area"],"soft_pref_weights":[1]}
+{"task_id":"Q-00044","query":"need a 2 bed 1 bath place close to New Southgate, ideally with timber floors and a roomy lounge","location_keywords":["New Southgate"],"soft_preferences":["timber floors","a roomy lounge"],"soft_pref_weights":[1,1]}
+{"task_id":"Q-00046","query":"after a short let near Kentish Town Wset for no more than £3,400 a month, ideally with a recently updated kitchen and built-in storage","location_keywords":["Kentish Town Wset"],"soft_preferences":["a recently updated kitchen","built-in storage"],"soft_pref_weights":[1,1]}
+{"task_id":"Q-00048","query":"Show me 2 bed places in Enfield; a spacious living room and controlled access to the building would be nice.","location_keywords":["Enfield"],"soft_preferences":["a spacious living room","controlled access to the building"],"soft_pref_weights":[1,1]}
+{"task_id":"Q-00050","query":"need a studio near Finchley Road & Frognal; I really need a peaceful setting, and a gym I could use would be a bonus","location_keywords":["Finchley Road & Frognal"],"soft_preferences":["a peaceful setting","a gym I could use"],"soft_pref_weights":[2,1]}

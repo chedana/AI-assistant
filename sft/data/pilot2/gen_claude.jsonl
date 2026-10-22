@@ -1,0 +1,25 @@
+{"task_id": "Q-00001", "query": "What's the deposit on the £3,850 Clerkenwell one?", "location_keywords": []}
+{"task_id": "Q-00003", "query": "Is the SW4 flat on a high floor, and does the building have a lift?", "location_keywords": []}
+{"task_id": "Q-00005", "query": "Does the £6,500 one come furnished?", "location_keywords": []}
+{"task_id": "Q-00007", "query": "Are bills included for the only 1 bed in the list?", "location_keywords": []}
+{"task_id": "Q-00009", "query": "Does the £4,312 flat have any outdoor space, like a garden or a balcony?", "location_keywords": []}
+{"task_id": "Q-00011", "query": "Which of 2 and 4 is closer to a tube station?", "location_keywords": []}
+{"task_id": "Q-00013", "query": "can you compare all five for me", "location_keywords": []}
+{"task_id": "Q-00015", "query": "How do the layouts of the first and third compare? Which one gives more space?", "location_keywords": []}
+{"task_id": "Q-00017", "query": "Out of these, which one is the best value for money?", "location_keywords": []}
+{"task_id": "Q-00019", "query": "For a couple, would the second or the fourth one work better?", "location_keywords": []}
+{"task_id": "Q-00021", "query": "honestly these prices are insane, how does anyone afford London", "location_keywords": []}
+{"task_id": "Q-00023", "query": "What's a good recipe for a quick weeknight dinner?", "location_keywords": []}
+{"task_id": "Q-00025", "query": "rent keeps going up every single year, it's so depressing", "location_keywords": []}
+{"task_id": "Q-00027", "query": "thanks for your help, bye!", "location_keywords": []}
+{"task_id": "Q-00029", "query": "hey, morning!", "location_keywords": []}
+{"task_id": "Q-00031", "query": "what about tooting? need to move in april 2026", "location_keywords": ["tooting"]}
+{"task_id": "Q-00033", "query": "Show me only places that accept both students and families.", "location_keywords": []}
+{"task_id": "Q-00035", "query": "hmm try ealing instead", "location_keywords": ["ealing"]}
+{"task_id": "Q-00037", "query": "Any long-let options near South Quay?", "location_keywords": ["South Quay"]}
+{"task_id": "Q-00039", "query": "anything in NW4?", "location_keywords": ["NW4"]}
+{"task_id": "Q-00041", "query": "Furnished studio on a long let, no more than £3,100 a month; a gym in the building would be nice", "location_keywords": [], "soft_preferences": ["a gym in the building"], "soft_pref_weights": [1]}
+{"task_id": "Q-00043", "query": "Need a furnished place on a long-term let, somewhere with a view would be great", "location_keywords": [], "soft_preferences": ["somewhere with a view"], "soft_pref_weights": [1]}
+{"task_id": "Q-00045", "query": "2 bed 1 bath near hoxton, wooden floors would be a plus", "location_keywords": ["hoxton"], "soft_preferences": ["wooden floors"], "soft_pref_weights": [1]}
+{"task_id": "Q-00047", "query": "Furnished 3b2b in SW3 on a long let, ideally with a big kitchen for entertaining", "location_keywords": ["SW3"], "soft_preferences": ["a big kitchen for entertaining"], "soft_pref_weights": [1]}
+{"task_id": "Q-00049", "query": "Something in Whitechaple; ideally a balcony, and an en-suite would be a bonus", "location_keywords": ["Whitechaple"], "soft_preferences": ["a balcony", "an en-suite"], "soft_pref_weights": [1, 1]}

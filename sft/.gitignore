@@ -1,0 +1,2 @@
+# 可由 scripts/clean_listings.py 从原始数据重新生成，体积较大（约 51MB），不进仓库
+data/listings_clean.jsonl

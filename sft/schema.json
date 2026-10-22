@@ -1,0 +1,330 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Rental intent and constraint extraction — simplified v1",
+  "description": "已确认的阶段 1 简化规范 v1（2026-10-22）。用于模型输出或数据样本的 gold 对象，不用于整条数据样本。结构通过不等于语义正确；本次确认不代表测试集已冻结。",
+  "$comment": "依据 EXECUTION_PLAN.md 及负责人于 2026-10-22 的确认：保留 15 个 constraints；全部输出对象字段齐全且禁止额外字段；列表无值为 []，其他为 null；非 Search 全部约束及软偏好为空。只覆盖 flat，明确 studio 按本项目简化约定映射为 flat/0b1b；家具三类；明确布尔否定用 false，无要求为 null；必需条件进入 constraints，可选喜好进入 soft_preferences；只抽本轮，不合并历史；commute_destination 保留但不计入本轮字段级 F1；预算必须明确周期，日期必须明确绝对年月。最新确认覆盖原计划中的 studio 独立房型设定。",
+  "type": "object",
+  "required": [
+    "intent",
+    "constraints",
+    "soft_preferences"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "intent": {
+      "type": "string",
+      "enum": [
+        "Search",
+        "Specific_QA",
+        "Compare",
+        "Chitchat"
+      ],
+      "description": "Search 为找房或带新条件的追问；Specific_QA 为针对已展示单套房源的问题；Compare 为比较已展示房源；Chitchat 为闲聊或无关问题。"
+    },
+    "constraints": {
+      "$ref": "#/$defs/constraints"
+    },
+    "soft_preferences": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "query 中可选喜好的原文短语列表。花园等有硬字段的属性，在仅表示有则更好时也可进入本列表，对应硬字段保持空值；明确硬条件不重复放入本列表。没有软偏好或非 Search 时为 []。不计入字段级 F1；原文匹配与硬软语义需要另行核对。"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "intent": {
+            "enum": [
+              "Specific_QA",
+              "Compare",
+              "Chitchat"
+            ]
+          }
+        },
+        "required": [
+          "intent"
+        ]
+      },
+      "then": {
+        "properties": {
+          "constraints": {
+            "$ref": "#/$defs/empty_constraints"
+          },
+          "soft_preferences": {
+            "maxItems": 0
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "constraints": {
+      "type": "object",
+      "description": "本轮明确表达的硬条件。未提及或仅为可选喜好的列表条件填 []，其他填 null；不从房源属性或历史条件补全。明确 studio 使用已确认的特殊归一化。",
+      "required": [
+        "location_keywords",
+        "commute_destination",
+        "max_rent",
+        "layout_options",
+        "furnish_type",
+        "let_type",
+        "available_from",
+        "pets_allowed",
+        "garden",
+        "parking",
+        "bills_included",
+        "student_friendly",
+        "families_allowed",
+        "smokers_allowed",
+        "dss_accepted"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "location_keywords": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "query 中地点、邮编或车站名称的原文片段；不纠错、扩写、规范化或改写。无值为 []。原文匹配需要语义/文本核对。"
+        },
+        "commute_destination": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "仅在明确提及通勤、工作或经常前往某个具体地点时抽取。普通地点偏好不得填入此字段；未提及为 null。",
+          "$comment": "沿用现有 SEARCH_EXTRACT_ALL_SYSTEM 的明确提及规则；保留输出字段，但本轮字段级 F1 的 TP/FP/FN 不包含此字段。"
+        },
+        "max_rent": {
+          "description": "预算上限。无预算时整个字段为 null；否则同时提供正数 value 与原 query 的计价周期 period，不作周/月/每人换算。",
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/max_rent"
+            }
+          ]
+        },
+        "layout_options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/layout_option"
+          },
+          "description": "本轮明确表达的硬性户型选项；每项含全部三个键，未提及的子字段为 null。明确 studio 按项目简化约定归一为 bedrooms=0、bathrooms=1、property_type=flat；普通 flat 或仅 0 卧室不触发补一卫。没有户型要求时为 []，不合并历史户型，不输出旧 layout_tag 或户型级预算。"
+        },
+        "furnish_type": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "家具硬性要求：furnished、unfurnished 或 part-furnished；未提及、明确不限或仅可选喜好时为 null。",
+          "$comment": "Furnished/Fully furnished 对应 furnished，Unfurnished 对应 unfurnished，Part furnished/Part-furnished 对应 part-furnished。不能把灵活家具来源值强选为其中一类；本轮不以该值生成家具硬条件。",
+          "enum": [
+            "furnished",
+            "unfurnished",
+            "part-furnished",
+            null
+          ]
+        },
+        "let_type": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "明确长租/短租要求统一输出 long term/short term；未提及为 null。",
+          "$comment": "执行计划第 3 节只认 Long term/Short term，输出统一小写。不从具体月数猜租赁类别，不把 Furnished/Unfurnished 等家具值当租期。",
+          "enum": [
+            "long term",
+            "short term",
+            null
+          ]
+        },
+        "available_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+          "maxLength": 7,
+          "description": "明确的入住年月，格式 YYYY-MM；未提及为 null。年月粒度来自执行计划第 3 节。",
+          "$comment": "本轮只生成明确的绝对年月；now、next month、缺年份及需额外解释期限关系的表达不纳入本轮，不默认系统日期。房源与 scraped_at 前后 7 天的判定属于后续数据清洗。maxLength=7 仅确保 YYYY-MM 不含尾随换行。"
+        },
+        "pets_allowed": {
+          "$ref": "#/$defs/nullable_boolean",
+          "description": "住房允许宠物的要求；未提及为 null。"
+        },
+        "garden": {
+          "$ref": "#/$defs/nullable_boolean",
+          "description": "硬性要求有花园时为 true，硬性要求无花园时为 false；未提及、不要求或仅可选喜好时为 null。可选花园喜好的原文短语进入 soft_preferences。"
+        },
+        "parking": {
+          "$ref": "#/$defs/nullable_boolean",
+          "description": "硬性要求提供停车条件时为 true，硬性要求没有停车条件时为 false；未提及、不要求或仅可选喜好时为 null。"
+        },
+        "bills_included": {
+          "$ref": "#/$defs/nullable_boolean",
+          "description": "租金包含账单费用的要求；未提及为 null。具体账单范围尚无细化规则。"
+        },
+        "student_friendly": {
+          "$ref": "#/$defs/nullable_boolean",
+          "description": "住房接受学生租客的要求；未提及为 null。"
+        },
+        "families_allowed": {
+          "$ref": "#/$defs/nullable_boolean",
+          "description": "住房接受家庭租客的要求；未提及为 null。"
+        },
+        "smokers_allowed": {
+          "$ref": "#/$defs/nullable_boolean",
+          "description": "住房接受吸烟租客的要求；未提及为 null。"
+        },
+        "dss_accepted": {
+          "$ref": "#/$defs/nullable_boolean",
+          "description": "住房接受 DSS 收入来源的租客的要求；未提及为 null。",
+          "$comment": "源数据字段名为 dss_income_accepted，输出字段名为 dss_accepted；本任务不执行数据清洗或映射代码。"
+        }
+      }
+    },
+    "max_rent": {
+      "type": "object",
+      "required": [
+        "value",
+        "period"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "query 表达的正数预算上限；数字缩写如 2k 解析为 2000，不换算计价周期。"
+        },
+        "period": {
+          "type": "string",
+          "enum": [
+            "pcm",
+            "pw",
+            "pppw"
+          ],
+          "description": "pcm 为每月，pw 为每周，pppw 为每人每周；必须由 query 明确表达，不自行默认周期。裸 under 2k 等缺周期表达不纳入本轮生成，under 2k pcm 等明确周期表达可用。"
+        }
+      }
+    },
+    "layout_option": {
+      "type": "object",
+      "required": [
+        "bedrooms",
+        "bathrooms",
+        "property_type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "bedrooms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "非负整数卧室数；未提及为 null。明确 studio 按项目约定填 0。"
+        },
+        "bathrooms": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "非负数浴室数；未提及为 null。明确 studio 按项目简化约定填 1；不能仅因 flat 或 bedrooms=0 而补 1。"
+        },
+        "property_type": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "本轮非空房型仅为 flat；没有明确房型表达时为 null。studio 同样归一为 flat，并按本项目约定表示 0b1b。",
+          "$comment": "明确 Flat/Apartment/Penthouse/Maisonette 表达沿用计划的 flat 归类，Studio 按最新确认改为 flat。房型限制不是将来源 House/Room 等改标为 flat 的授权；来源范围在清洗任务中核验。schema 不包含 query，无法结构校验 studio 触发条件，不能添加 flat 或 bedrooms=0 就必须一卫的规则。",
+          "enum": [
+            "flat",
+            null
+          ]
+        }
+      }
+    },
+    "nullable_boolean": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "$comment": "明确要求房源属性存在或允许时为 true，明确要求不存在或不允许时为 false；没有要求、明确无所谓/不需要或仅可选喜好时为 null。可选喜好的原文进入 soft_preferences。否定租客身份不等于否定房源许可，例如 I do not smoke 不能据此填 smokers_allowed=false。本轮只覆盖明确的布尔否定，不把 not a house share 或 not ground floor 编成现有字段或软喜好。"
+    },
+    "empty_constraints": {
+      "type": "object",
+      "required": [
+        "location_keywords",
+        "commute_destination",
+        "max_rent",
+        "layout_options",
+        "furnish_type",
+        "let_type",
+        "available_from",
+        "pets_allowed",
+        "garden",
+        "parking",
+        "bills_included",
+        "student_friendly",
+        "families_allowed",
+        "smokers_allowed",
+        "dss_accepted"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "location_keywords": {
+          "const": []
+        },
+        "commute_destination": {
+          "const": null
+        },
+        "max_rent": {
+          "const": null
+        },
+        "layout_options": {
+          "const": []
+        },
+        "furnish_type": {
+          "const": null
+        },
+        "let_type": {
+          "const": null
+        },
+        "available_from": {
+          "const": null
+        },
+        "pets_allowed": {
+          "const": null
+        },
+        "garden": {
+          "const": null
+        },
+        "parking": {
+          "const": null
+        },
+        "bills_included": {
+          "const": null
+        },
+        "student_friendly": {
+          "const": null
+        },
+        "families_allowed": {
+          "const": null
+        },
+        "smokers_allowed": {
+          "const": null
+        },
+        "dss_accepted": {
+          "const": null
+        }
+      }
+    }
+  }
+}

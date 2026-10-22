@@ -1,0 +1,14 @@
+{
+ "name": "selftest_broken",
+ "test": "test_extract_v1.jsonl",
+ "test_sha256": "f2f9330dd29ba4f7f4dddadd3242d5a33e54e065bf645884a5a1e472167e7011",
+ "n": 300,
+ "field_f1": 0.996,
+ "precision": 0.998,
+ "recall": 0.9941,
+ "intent_accuracy": 0.9967,
+ "extra_field_rate": 0.0003,
+ "json_valid_rate": 0.9967,
+ "schema_valid_rate": 0.9967,
+ "missing_predictions": 0
+}

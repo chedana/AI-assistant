@@ -1,0 +1,54 @@
+{
+  "generated_at": "2026-10-22T14:30:29+00:00",
+  "source_sha256": "6204d6001adbfdda37d09b06ba9d1c1c2054987e69cb84c25968c4a98da75fc7",
+  "kept": 21965,
+  "excluded_by_type": 7154,
+  "kept_by_source": {
+    "rightmove": 18903,
+    "openrent": 3062
+  },
+  "kept_by_type": {
+    "Flat": 12281,
+    "Apartment": 6652,
+    "Penthouse": 212,
+    "Maisonette": 556,
+    "Studio": 2073,
+    "Ground Maisonette": 25,
+    "Ground Flat": 103,
+    "Duplex": 63
+  },
+  "excluded_types_top": {
+    "Room": 2072,
+    "Terraced": 1470,
+    "House": 761,
+    "House Share": 662,
+    "Semi-Detached": 613,
+    "Detached": 442,
+    "End of Terrace": 214,
+    "Flat Share": 183,
+    "ask agent": 174,
+    "Town House": 100,
+    "Semi-detached": 90,
+    "Mews": 88,
+    "Parking": 51,
+    "Bungalow": 50,
+    "House of Multiple Occupation": 35
+  },
+  "stats": {
+    "raw_total": 29119,
+    "available_future_month": 5196,
+    "postcode_district_address": 14158,
+    "available_now": 11291,
+    "postcode_district_missing": 4194,
+    "postcode_district_source": 3607,
+    "studio_bathrooms_overridden": 162,
+    "let_type_non_tenancy_value": 3080,
+    "address_page_text": 354,
+    "address_replaced_by_title": 354,
+    "postcode_district_title": 6,
+    "bathrooms_nulled_gt10": 3,
+    "price_outlier_flagged": 55,
+    "studio_bedrooms_overridden": 705,
+    "derived_price_pw": 3062
+  }
+}
