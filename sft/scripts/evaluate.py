@@ -87,6 +87,7 @@ def main():
     ap.add_argument("--pred", required=True)
     ap.add_argument("--name", required=True)
     ap.add_argument("--examples", type=int, default=3)
+    ap.add_argument("--outdir", default="results", help="评测结果输出目录（相对 sft/）")
     a = ap.parse_args()
     tpath = Path(a.test)
     h = hashlib.sha256(tpath.read_bytes()).hexdigest()
@@ -163,7 +164,8 @@ def main():
             L.append(f"- `{t['id']}` {t['query']!r}")
             L.append(f"  - gold: `{json.dumps(gv, ensure_ascii=False)}`；pred: `{json.dumps(pv, ensure_ascii=False)}`")
         L.append("")
-    res_dir = ROOT / "results"
+    res_dir = ROOT / a.outdir
+    res_dir.mkdir(parents=True, exist_ok=True)
     (res_dir / f"eval_{a.name}.md").write_text("\n".join(L) + "\n", encoding="utf-8")
     (res_dir / f"eval_{a.name}.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1))
     print(json.dumps(summary, ensure_ascii=False, indent=1))

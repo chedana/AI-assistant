@@ -1,0 +1,39 @@
+{
+  "records": 100,
+  "sources": {
+    "gumtree": 30,
+    "reddit": 40,
+    "thestudentroom": 3,
+    "eastdulwichforum": 1,
+    "mumsnet": 3,
+    "openrent_forum": 11,
+    "expat": 2,
+    "spareroom": 9,
+    "findaflat": 1
+  },
+  "source_categories": {
+    "gumtree": 30,
+    "reddit": 40,
+    "other_forum": 20,
+    "shared_platform": 10
+  },
+  "in_scope": 98,
+  "trimmed": 91,
+  "known_post_date": 45,
+  "explicit_pii_redaction_rows": 3,
+  "schema_valid": 100,
+  "structural_problems": 0,
+  "notes": "Automated checks plus collector manual source/author/semantic review; draft labels await Claude blind review.",
+  "real_queries_check_problems": 0,
+  "prepare_records": 100,
+  "review_input_fields": [
+    "task_id",
+    "query"
+  ],
+  "search_index_only_records": 21,
+  "final_file_sha256": {
+    "collected.jsonl": "c5c345554828427ab1065bd5bd29c5de583d26bfd896161e70b87a089226b40f",
+    "gold_gpt.jsonl": "3d87bd9aa4e9aac826e8b74ece9a836c51a19c5292374e7e6da85bd23c6d9664",
+    "review_input_for_claude.jsonl": "cee20feb2714360e20f3139360a4083e3707c472131a967219a2d09682d9ba1a"
+  }
+}

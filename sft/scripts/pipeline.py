@@ -11,6 +11,8 @@
   python3 scripts/pipeline.py prepare data/pilot   # 生成双方都完成后执行
   python3 scripts/pipeline.py merge data/pilot     # 双方盲审都完成后执行
   python3 scripts/pipeline.py precheck data/pilot claude   # 只做本方格式自检
+  python3 scripts/pipeline.py prepare data/train_v1 --sample   # 训练集：只抽 10% 给对方盲审
+  python3 scripts/pipeline.py merge data/train_v1 --sample     # 未抽中的样本通过格式检查即保留
 """
 import difflib, json, re, sys
 from collections import Counter
@@ -152,18 +154,23 @@ def precheck(d, g):
     print(f"{g}: {len(tasks)} 个任务，格式问题 {bad} 条")
 
 
-def prepare(d):
+def prepare(d, sample=None):
+    """sample 为抽样比例（如 0.1）时，只把固定种子抽中的样本交给对方盲审（D9：训练集由单一生成方生成）。"""
+    import random
     for g in ("claude", "gpt"):
         gens = load(d / f"gen_{g}.jsonl")
         tasks = load(d / f"tasks_{g}.jsonl")
+        ids = sorted(gens)
+        if sample:
+            ids = sorted(random.Random(f"review:{d.name}").sample(ids, round(len(ids) * sample))) if ids else []
         with (d / f"review_input_for_{OTHER[g]}.jsonl").open("w") as f:
-            for tid in sorted(gens):
+            for tid in ids:
                 f.write(json.dumps({"task_id": tid, "context": tasks[tid].get("context"),
                                     "query": gens[tid]["query"]}, ensure_ascii=False) + "\n")
-        print(f"review_input_for_{OTHER[g]}.jsonl: {len(gens)} 条")
+        print(f"review_input_for_{OTHER[g]}.jsonl: {len(ids)} 条")
 
 
-def merge(d):
+def merge(d, sample=False):
     accepted, rejected = [], []
     reasons, by_gen, style_count, kind_count = Counter(), Counter(), Counter(), Counter()
     for g in ("claude", "gpt"):
@@ -194,10 +201,14 @@ def merge(d):
                     p = [f"schema: {e.message}"]
             if not p:
                 r = reviews.get(tid)
-                if r is None:
+                if r is None and sample:
+                    p = []
+                    rec["reviewed"] = False
+                elif r is None:
                     p = ["缺少盲审结果"]
                 else:
                     p, w = compare(rec["gold"], r, kind)
+                    rec["reviewed"] = True
                     if w:
                         rec["review_warnings"] = w
             if p:
@@ -210,8 +221,18 @@ def merge(d):
                 accepted.append(rec)
     # 去重：字符级相似度 > 0.9 只保留第一条
     kept = []
+
+    def near_dup(a, b):
+        # 先用长度和粗略上限预筛（都是 ratio 的上界），再做精确比较；结果与直接比较完全相同
+        la, lb = len(a), len(b)
+        if 2 * min(la, lb) / (la + lb) <= DUP_THRESHOLD:
+            return False
+        m = difflib.SequenceMatcher(None, a, b)
+        return m.real_quick_ratio() > DUP_THRESHOLD and m.quick_ratio() > DUP_THRESHOLD and m.ratio() > DUP_THRESHOLD
+
     for rec in accepted:
-        if any(difflib.SequenceMatcher(None, rec["query"].lower(), k["query"].lower()).ratio() > DUP_THRESHOLD for k in kept):
+        q = rec["query"].lower()
+        if any(near_dup(q, k["query"].lower()) for k in kept):
             reasons["近似重复"] += 1
             rejected.append({**rec, "reasons": ["近似重复"]})
         else:
@@ -224,8 +245,11 @@ def merge(d):
             for rec in rows:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
     total = len(kept) + len(rejected)
+    rv = [r for r in kept + rejected if r.get("reviewed")]
+    rv_bad = [r for r in rejected if r.get("reviewed") and r["reasons"] != ["近似重复"]]
     L = [f"# 质检报告：{d.name}", "",
          f"通过 {len(kept)} / {total}（{len(kept)/max(total,1):.0%}）", "",
+         *( [f"抽样盲审：审了 {len(rv)} 条，不一致 {len(rv_bad)} 条，估计错误率 {len(rv_bad)/max(len(rv),1):.1%}；未抽中的样本只经过格式与 schema 检查。", ""] if sample else [] ),
          "| 生成方 | 通过 | 丢弃 |", "| --- | ---: | ---: |"]
     for g in ("claude", "gpt"):
         L.append(f"| {g} | {by_gen[(g,'accepted')]} | {by_gen[(g,'rejected')]} |")
@@ -251,5 +275,6 @@ def merge(d):
 
 if __name__ == "__main__":
     cmd, d = sys.argv[1], ROOT / sys.argv[2]
-    {"prepare": lambda: prepare(d), "merge": lambda: merge(d),
+    smp = "--sample" in sys.argv
+    {"prepare": lambda: prepare(d, 0.1 if smp else None), "merge": lambda: merge(d, smp),
      "precheck": lambda: precheck(d, sys.argv[3])}[cmd]()

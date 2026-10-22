@@ -4,6 +4,13 @@
 
 最后更新：2026-10-22，Codex。
 
+## 分工（负责人 2026-10-22 决定，D10）
+
+- **Claude**：规划实验、设计流程与脚本、编写 prompt、布置任务、审核结果（抽样盲审、错误分析）、决定下一步。
+- **GPT（Codex）**：消耗大量 token 的重复性工作，例如按既定 prompt 批量生成数据、批量逐条处理。
+- 审核与生成必须来自不同厂商：GPT 生成的数据由 Claude 审核。
+- 任务通过本文件布置；Codex 完成后在对应进度表打勾、追加更新记录，由负责人通知 Claude 审核。
+
 ## 方案
 
 1. `scripts/make_tasks.py` 从房源抽取任务，**gold 由脚本决定**；每套房源按固定种子分给 GPT 或 Claude。
@@ -132,6 +139,49 @@ GPT 本轮盲审在独立上下文中只读取 `review_v2.md` 和 `data/pilot2/r
 | 盲审对方 | ✅ `review_by_claude.jsonl` 351 条；GPT 生成部分合并结果 351/351 通过 | ✅ `review_by_gpt.jsonl` 338 条 |
 | 合并 | ✅ 通过 689/689，去重后 687 条，`data/test_v1/report.md` | |
 
+## 训练集（`data/train_v1/`，D9：全部由 GPT 生成）
+
+`scripts/make_train_tasks.py --seed 6` 生成 3,564 个任务（目标 3,300 条，训练 3,000 + 验证 300，约 8% 超量），只用 train 房源，引用非 train 房源 0：
+
+| 类型 | 任务数 | prompt |
+| --- | ---: | --- |
+| 普通 Search | 2,495 | `gen_search_v1.md` |
+| 软偏好 | 356 | `gen_softpref_v2.md`（同时遵守 `gen_search_v1.md`） |
+| 带新条件追问 | 178 | `gen_intent_v1.md` |
+| Compare | 249 | `gen_intent_v1.md` |
+| Specific_QA | 143 | `gen_intent_v1.md` |
+| Chitchat | 143 | `gen_intent_v1.md` |
+
+按零样本错误分析加权：缩写户型 874、拼写错误地名 752、完全不提户型 1,087、含 “&” 的站名 46；Compare 中“选最优”52、“排序”56。
+
+### Codex 执行步骤
+
+在 `/Users/Shared/LLM_project/AI-assistant/sft` 下：
+
+1. 读 `data/train_v1/tasks_gpt.jsonl`，按 `kind` 选 prompt（见上表），**分批追加**写入 `data/train_v1/gen_gpt.jsonl`（建议每批 200–300 条）。每批后运行：
+   - `python3 scripts/pipeline.py precheck data/train_v1 gpt`：只看已写部分的问题，未写任务显示“缺少生成结果”属正常；
+   - `python3 scripts/lint_gen.py data/train_v1 gpt`：逐条判断，确属错误就改写。
+2. 句式要多样：同一类任务不要反复使用相同的开头和模板；`hints` 与 `style_tags` 是写法要求，必须遵守。
+3. 全部写完、两项检查都无问题后运行 `python3 scripts/pipeline.py prepare data/train_v1 --sample`，生成给 Claude 的 10% 抽样盲审输入。
+4. 在下表打勾，并在更新记录追加一行。
+
+### Claude 执行步骤
+
+只读 `data/train_v1/review_input_for_claude.jsonl` 盲审，写 `review_by_claude.jsonl`，然后 `python3 scripts/pipeline.py merge data/train_v1 --sample`。估计错误率不超过 3% 则整体接受；否则定位问题模式，改 prompt 后重做相关部分。
+
+| 步骤 | GPT（Codex） | Claude |
+| --- | --- | --- |
+| 生成 3,564 条 | ✅ 3,552 条；12 条软偏好任务因描述缺少素材未生成，按负责人决定放弃（软偏好仍有 344 条，超过目标 330） | |
+| 10% 抽样盲审 | | ✅ 355 条，不一致 0 条，软偏好措辞差异 0 条 |
+| 合并 | | ✅ 通过 3,552 条，无近似重复；`data/train_v1/report.md` |
+
+### 训练集结果（2026-10-22）
+
+- 估计错误率 0.0%（355 条抽样，95% 置信上限约 1%），低于 3% 门槛，整体接受。
+- `scripts/split_train_val.py`（种子 20261023）按类型分层切分：`data/train_v1.jsonl` 3,197 条、`data/val_v1.jsonl` 355 条；数据量消融子集 `data/train_v1_1000.jsonl`、`data/train_v1_500.jsonl`（嵌套于全量训练集）。
+- 意图分布：Search 3,017（含软偏好 344、追问 178）、Compare 249、Specific_QA 143、Chitchat 143。
+- `scripts/pipeline.py` 去重加入长度与粗略相似度预筛，结果与原算法等价（测试集重跑一致），3,500 条合并从超时降到数秒。
+
 ## 小样之后
 
 负责人看过小样报告、确认 prompt 和审核标准没问题后，再按同样流程批量生成：测试集约 600 条（阶段 4），训练集约 3,000 条（阶段 6），并考虑 500 / 1,000 / 3,000 条的数据量消融。非 Search 样本（阶段 3.2）和软偏好样本（阶段 3.3）的生成 prompt 尚未编写。
@@ -150,3 +200,8 @@ GPT 本轮盲审在独立上下文中只读取 `review_v2.md` 和 `data/pilot2/r
 | 2026-10-22 | Claude | 测试集 Claude 一半 338 条生成完成，格式自检 0 问题；规则语义自查发现并修正 1 条（软偏好中出现 flat）。 |
 | 2026-10-22 | Claude | 盲审 GPT 生成的 351 条（只读 review_input_for_claude），预合并显示 GPT 生成部分 351/351 通过；等待 GPT 盲审 Claude 的 338 条后正式合并。 |
 | 2026-10-22 | Claude | 正式合并 689/689 通过；截取 test_extract_v1、test_intent_v1 各 300 条，配额满足、无泄漏；导出人工抽检表 results/spotcheck_test_v1.xlsx。 |
+| 2026-10-22 | Claude | D9：训练集全部由 GPT 生成、Claude 10% 抽样盲审；生成训练任务 `data/train_v1`（3,564 个），流水线增加 `--sample` 抽样模式；写明 Codex 执行步骤。 |
+| 2026-10-22 | Claude | 记录 D10 分工：Claude 规划、审核、布置任务；GPT 负责批量生成等重复性工作。 |
+| 2026-10-22 | Codex | 按训练集步骤并行逐条生成并分 15 批写入 `data/train_v1/gen_gpt.jsonl`：3,552/3,564 条（Search 2,495、softpref 344、followup 178、Compare 249、Specific_QA 143、Chitchat 143）；12 条描述无法支持规定数量的非硬字段软偏好，未编造或修改任务，清单为 `data/train_v1/generation_issues_gpt.jsonl`。每批执行 precheck 和 lint；有效行格式/schema 无问题，最终缺少项恰为上述 12 条；lint 提示经核对为词根误报（站名 Garden/Shortlands、along、short stroll、weekly cleaning），无实际条件增漏。修正 7 条近似重复句式、1 处指代歧义及软偏好无来源修饰，最终 3,552 条按合并阈值无近似重复；344 条软偏好均完成独立来源自查。尚未执行 prepare --sample，待负责人确认不足任务的处理方式或 Claude 补充任务后再准备抽审。 |
+| 2026-10-22 | Claude | 训练集 10% 抽样盲审 355 条全部一致；合并 3,552 条；分层切分训练 3,197 / 验证 355，并生成 500、1000 条消融子集；去重提速。 |
+| 2026-10-22 | Claude | 新增真实 query 收集任务（D11），说明见 `REAL_QUERY_COLLECTION.md`。 |

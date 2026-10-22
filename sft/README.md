@@ -53,3 +53,16 @@
 - 推理：`scripts/infer.py`（vLLM，关闭思考模式，temperature 0；带上下文的样本以 “上一轮房源 + User message” 作为用户消息；另测 30 条单条延迟的 p50）。
 - 评测：`scripts/evaluate.py`。评测前校验测试集 SHA-256，与冻结版本不一致即拒绝运行。字段级微平均 F1、意图准确率与混淆矩阵、多余字段率、JSON 与 schema 合法率、按 style_tag / 样本类型 / 生成方拆分，并输出错误样例。
 - 自测：以 gold 作为预测时两个测试集 F1 与意图准确率均为 1.0；人为加入 3 处错误（预算改错、多抽花园、非法 JSON）后，F1 0.996、精确率 0.998、召回 0.9941，与手算一致。自测结果在 `results/selftest/`。
+
+## 零样本基线结果（2026-10-22）
+
+Qwen/Qwen3.5-4B，`zeroshot_v1`，vLLM 0.32.0，temperature 0，关闭思考模式。
+
+| 指标 | test_extract_v1 | test_intent_v1 |
+| --- | ---: | ---: |
+| 字段级 F1 | 0.923 | 0.930 |
+| 意图准确率 | 0.993 | 0.843 |
+| schema 合规率 | 0.677 | 0.880 |
+| 单条延迟 p50 | 4.7 s | 4.7 s |
+
+明细见 `results/eval_zeroshot_extract.md`、`results/eval_zeroshot_intent.md`，错误分析见 `results/zeroshot_errors.md`。每日进展见 `PROGRESS.md`。
